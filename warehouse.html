@@ -1,0 +1,1778 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Muevo Drive — Portal Warehouse</title>
+<style>
+  /* ── Reset & base ──────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0D0D0D;
+    --surface:   #151515;
+    --card:      #1C1C1C;
+    --card2:     #222222;
+    --orange:    #F47B20;
+    --orange-dim: rgba(244,123,32,0.10);
+    --orange-bdr: rgba(244,123,32,0.25);
+    --white:     #F8FAFB;
+    --muted:     #8A8A8A;
+    --border:    rgba(255,255,255,0.07);
+    --green:     #27AE60;
+    --green-dim: rgba(39,174,96,0.10);
+    --green-bdr: rgba(39,174,96,0.25);
+    --red:       #E74C3C;
+    --red-dim:   rgba(231,76,60,0.10);
+    --blue:      #2E86DE;
+    --blue-dim:  rgba(46,134,222,0.10);
+    --blue-bdr:  rgba(46,134,222,0.25);
+    --yellow:    #F1C40F;
+    --yellow-dim:rgba(241,196,15,0.10);
+    --radius:    10px;
+    --radius-lg: 14px;
+    --font:      -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;
+    --font-mono: 'SF Mono', 'Fira Code', monospace;
+  }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--white);
+    min-height: 100vh;
+    display: flex;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* ── Sidebar ──────────────────────────────────────────────────────────── */
+  .sidebar {
+    width: 220px;
+    min-height: 100vh;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    position: fixed;
+    top: 0; left: 0; bottom: 0;
+    z-index: 100;
+  }
+
+  .sidebar-logo {
+    padding: 20px 18px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-icon {
+    width: 32px; height: 32px;
+    background: var(--orange);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+
+  .logo-text { font-size: 15px; font-weight: 600; color: var(--white); letter-spacing: -.3px; }
+  .logo-sub  { font-size: 10px; color: var(--orange); font-weight: 500; letter-spacing: .5px; }
+
+  .sidebar-nav { flex: 1; padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; }
+
+  .nav-section-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 1px;
+    color: var(--muted); text-transform: uppercase;
+    padding: 10px 8px 4px;
+  }
+
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 8px;
+    cursor: pointer; font-size: 13px; font-weight: 500;
+    color: var(--muted); transition: all .15s;
+    border: none; background: none; width: 100%; text-align: left;
+  }
+  .nav-item:hover { background: var(--card); color: var(--white); }
+  .nav-item.active { background: var(--orange-dim); color: var(--orange); }
+  .nav-item .nav-icon { width: 16px; text-align: center; font-size: 14px; }
+  .nav-badge {
+    margin-left: auto;
+    background: var(--orange); color: #111;
+    font-size: 10px; font-weight: 700;
+    padding: 1px 6px; border-radius: 10px;
+  }
+
+  .sidebar-bottom {
+    padding: 12px 10px;
+    border-top: 1px solid var(--border);
+  }
+
+  .user-card {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 8px;
+    cursor: pointer;
+  }
+  .user-card:hover { background: var(--card); }
+  .user-avatar {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--orange);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; color: #111; flex-shrink: 0;
+  }
+  .user-name  { font-size: 12px; font-weight: 500; color: var(--white); }
+  .user-role  { font-size: 10px; color: var(--muted); }
+
+  /* ── Main ─────────────────────────────────────────────────────────────── */
+  .main {
+    margin-left: 220px;
+    flex: 1;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Topbar ───────────────────────────────────────────────────────────── */
+  .topbar {
+    height: 56px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 28px;
+    position: sticky; top: 0; z-index: 50;
+  }
+
+  .topbar-title { font-size: 15px; font-weight: 600; color: var(--white); }
+  .topbar-sub   { font-size: 12px; color: var(--muted); margin-top: 1px; }
+
+  .topbar-actions { display: flex; gap: 8px; align-items: center; }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border-radius: 8px;
+    font-size: 12px; font-weight: 500;
+    cursor: pointer; border: none; transition: all .15s;
+  }
+  .btn-primary { background: var(--orange); color: #111; }
+  .btn-primary:hover { background: #f08c3a; }
+  .btn-ghost {
+    background: var(--card); color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { color: var(--white); border-color: rgba(255,255,255,0.15); }
+
+  /* ── Content ──────────────────────────────────────────────────────────── */
+  .content { padding: 28px; flex: 1; }
+
+  /* ── KPI row ──────────────────────────────────────────────────────────── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .kpi-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px 20px;
+  }
+  .kpi-label { font-size: 11px; color: var(--muted); font-weight: 500; letter-spacing: .3px; margin-bottom: 8px; }
+  .kpi-value { font-size: 26px; font-weight: 600; letter-spacing: -1px; color: var(--white); }
+  .kpi-value.orange { color: var(--orange); }
+  .kpi-value.green  { color: var(--green);  }
+  .kpi-sub {
+    font-size: 11px; color: var(--muted); margin-top: 6px;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .kpi-sub.up   { color: var(--green); }
+  .kpi-sub.down { color: var(--red);   }
+
+  /* ── Section header ───────────────────────────────────────────────────── */
+  .section-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .section-title { font-size: 13px; font-weight: 600; color: var(--white); }
+  .section-sub   { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* ── Table ────────────────────────────────────────────────────────────── */
+  .table-wrap {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+
+  .table-filters {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex; gap: 8px; align-items: center;
+  }
+
+  .search-box {
+    flex: 1; display: flex; align-items: center; gap: 8px;
+    background: var(--card2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 12px;
+  }
+  .search-box input {
+    background: none; border: none; outline: none;
+    color: var(--white); font-size: 12px; font-family: var(--font);
+    flex: 1;
+  }
+  .search-box input::placeholder { color: var(--muted); }
+  .search-icon { color: var(--muted); font-size: 13px; }
+
+  .filter-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 12px; border-radius: 8px;
+    background: var(--card2); border: 1px solid var(--border);
+    color: var(--muted); font-size: 12px; cursor: pointer;
+    transition: all .15s;
+  }
+  .filter-btn:hover { color: var(--white); }
+  .filter-btn.active { border-color: var(--orange); color: var(--orange); background: var(--orange-dim); }
+
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    padding: 10px 18px;
+    text-align: left; font-size: 11px; font-weight: 600;
+    color: var(--muted); text-transform: uppercase; letter-spacing: .6px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tbody tr {
+    border-bottom: 1px solid var(--border);
+    cursor: pointer; transition: background .1s;
+  }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--card2); }
+  tbody td { padding: 13px 18px; font-size: 13px; color: var(--white); vertical-align: middle; }
+
+  /* ── Badges ───────────────────────────────────────────────────────────── */
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 9px; border-radius: 20px;
+    font-size: 11px; font-weight: 500; white-space: nowrap;
+  }
+  .badge-green  { background: var(--green-dim);  color: var(--green);  border: 1px solid var(--green-bdr); }
+  .badge-orange { background: var(--orange-dim); color: var(--orange); border: 1px solid var(--orange-bdr); }
+  .badge-blue   { background: var(--blue-dim);   color: var(--blue);   border: 1px solid var(--blue-bdr); }
+  .badge-red    { background: var(--red-dim);     color: var(--red);    border: 1px solid rgba(231,76,60,.25); }
+  .badge-muted  { background: var(--card2);       color: var(--muted);  border: 1px solid var(--border); }
+  .badge-yellow { background: var(--yellow-dim);  color: var(--yellow); border: 1px solid rgba(241,196,15,.25); }
+
+  /* ── Upload zone ──────────────────────────────────────────────────────── */
+  .upload-zone {
+    border: 2px dashed var(--orange-bdr);
+    border-radius: var(--radius-lg);
+    padding: 36px 24px;
+    text-align: center;
+    background: var(--orange-dim);
+    cursor: pointer;
+    transition: all .2s;
+    margin-bottom: 16px;
+  }
+  .upload-zone:hover { border-color: var(--orange); background: rgba(244,123,32,0.15); }
+  .upload-icon { font-size: 32px; margin-bottom: 10px; }
+  .upload-title { font-size: 14px; font-weight: 600; color: var(--white); margin-bottom: 4px; }
+  .upload-sub   { font-size: 12px; color: var(--muted); }
+  .upload-link  { color: var(--orange); text-decoration: underline; cursor: pointer; }
+
+  /* ── Grid layouts ─────────────────────────────────────────────────────── */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+
+  /* ── Card ─────────────────────────────────────────────────────────────── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 18px;
+  }
+  .card-title { font-size: 13px; font-weight: 600; color: var(--white); margin-bottom: 4px; }
+  .card-sub   { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+  /* ── Route detail panel ───────────────────────────────────────────────── */
+  .detail-panel {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: 420px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    z-index: 200;
+    transform: translateX(100%);
+    transition: transform .2s ease;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .detail-panel.open { transform: translateX(0); }
+
+  .panel-header {
+    padding: 18px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: flex-start; justify-content: space-between;
+  }
+  .panel-close {
+    width: 28px; height: 28px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 6px; cursor: pointer; font-size: 16px; color: var(--muted);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-left: 10px;
+  }
+  .panel-close:hover { color: var(--white); }
+  .panel-body { flex: 1; overflow-y: auto; padding: 20px; }
+
+  .stop-timeline { display: flex; flex-direction: column; gap: 0; }
+  .stop-item {
+    display: flex; gap: 12px;
+    position: relative; padding-bottom: 16px;
+  }
+  .stop-item:last-child { padding-bottom: 0; }
+  .stop-item::before {
+    content: '';
+    position: absolute; left: 13px; top: 28px; bottom: 0;
+    width: 1px; background: var(--border);
+  }
+  .stop-item:last-child::before { display: none; }
+  .stop-dot {
+    width: 26px; height: 26px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; flex-shrink: 0; z-index: 1;
+  }
+  .stop-dot.done    { background: var(--green);  color: #fff; }
+  .stop-dot.active  { background: var(--orange); color: #111; }
+  .stop-dot.pending { background: var(--card2);  color: var(--muted); border: 1px solid var(--border); }
+  .stop-content { flex: 1; }
+  .stop-company { font-size: 13px; font-weight: 500; color: var(--white); margin-bottom: 2px; }
+  .stop-address { font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+  .stop-meta    { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  /* ── Map placeholder ──────────────────────────────────────────────────── */
+  .map-box {
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    height: 180px;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 8px; margin-bottom: 16px;
+    position: relative; overflow: hidden;
+  }
+  .map-box::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      45deg,
+      transparent, transparent 20px,
+      rgba(255,255,255,0.015) 20px, rgba(255,255,255,0.015) 21px
+    );
+  }
+  .map-label { font-size: 12px; color: var(--muted); z-index: 1; }
+
+  /* ── Progress bar ─────────────────────────────────────────────────────── */
+  .prog-wrap { margin-bottom: 16px; }
+  .prog-label { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 11px; color: var(--muted); }
+  .prog-track { height: 5px; background: var(--card2); border-radius: 3px; overflow: hidden; }
+  .prog-fill  { height: 100%; border-radius: 3px; background: var(--orange); }
+  .prog-fill.green { background: var(--green); }
+
+  /* ── Cost row ─────────────────────────────────────────────────────────── */
+  .cost-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px;
+  }
+  .cost-row:last-child { border: none; }
+  .cost-label { color: var(--muted); }
+  .cost-value { font-weight: 500; color: var(--white); }
+  .cost-value.orange { color: var(--orange); }
+  .cost-value.green  { color: var(--green); }
+
+  /* ── CSV preview table ────────────────────────────────────────────────── */
+  .csv-preview {
+    background: var(--card2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden; margin-bottom: 16px;
+  }
+  .csv-preview table { font-size: 11px; font-family: var(--font-mono); }
+  .csv-preview thead th { background: var(--card); font-size: 10px; letter-spacing: .3px; }
+  .csv-preview tbody td { padding: 8px 14px; color: var(--muted); }
+  .csv-preview tbody tr:hover { background: rgba(255,255,255,0.03); }
+
+  /* ── Metric mini ──────────────────────────────────────────────────────── */
+  .metric-row {
+    display: flex; gap: 10px; margin-bottom: 16px;
+  }
+  .metric {
+    flex: 1; background: var(--card2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px;
+    text-align: center;
+  }
+  .metric-val { font-size: 18px; font-weight: 600; color: var(--white); }
+  .metric-lbl { font-size: 10px; color: var(--muted); margin-top: 3px; }
+
+  /* ── Alert banner ─────────────────────────────────────────────────────── */
+  .alert {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 12px 16px; border-radius: var(--radius);
+    margin-bottom: 16px; font-size: 12px;
+  }
+  .alert-icon { flex-shrink: 0; font-size: 14px; margin-top: 1px; }
+  .alert-body { flex: 1; line-height: 1.5; }
+  .alert-title { font-weight: 600; margin-bottom: 2px; }
+  .alert.warn { background: var(--yellow-dim); border: 1px solid rgba(241,196,15,.25); color: var(--yellow); }
+  .alert.info { background: var(--blue-dim);   border: 1px solid var(--blue-bdr);     color: var(--blue); }
+  .alert.ok   { background: var(--green-dim);  border: 1px solid var(--green-bdr);    color: var(--green); }
+
+  /* ── Tabs ─────────────────────────────────────────────────────────────── */
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+  .tab {
+    padding: 10px 18px; font-size: 13px; font-weight: 500;
+    color: var(--muted); cursor: pointer; border: none; background: none;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: all .15s;
+  }
+  .tab:hover { color: var(--white); }
+  .tab.active { color: var(--orange); border-bottom-color: var(--orange); }
+
+  /* ── Empty state ──────────────────────────────────────────────────────── */
+  .empty { text-align: center; padding: 40px 20px; color: var(--muted); }
+  .empty-icon { font-size: 36px; margin-bottom: 10px; }
+  .empty-title { font-size: 14px; font-weight: 500; color: var(--white); margin-bottom: 6px; }
+  .empty-sub   { font-size: 12px; line-height: 1.6; }
+
+  /* ── Overlay ──────────────────────────────────────────────────────────── */
+  .overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.6); z-index: 150;
+  }
+  .overlay.show { display: block; }
+
+  /* ── Scrollbar ────────────────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--card2); border-radius: 3px; }
+
+  /* ── Toast ────────────────────────────────────────────────────────────── */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 18px;
+    font-size: 13px;
+    display: flex; align-items: center; gap: 10px;
+    z-index: 999;
+    transform: translateY(80px);
+    opacity: 0;
+    transition: all .25s ease;
+    max-width: 320px;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { border-left: 3px solid var(--green); }
+  .toast.info    { border-left: 3px solid var(--orange); }
+</style>
+</head>
+<body>
+
+<!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <img src="data:image/png;base64,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" style="width:36px;height:36px;border-radius:8px;object-fit:cover;flex-shrink:0">
+    <div>
+      <div class="logo-text">muevo</div>
+      <div class="logo-sub">WAREHOUSE PORTAL</div>
+    </div>
+  </div>
+
+  <nav class="sidebar-nav">
+    <div class="nav-section-label">Principal</div>
+    <button class="nav-item active" onclick="showView('dashboard')">
+      <span class="nav-icon">▦</span> Dashboard
+    </button>
+    <button class="nav-item" onclick="showView('rutas')">
+      <span class="nav-icon">🗺</span> Mis rutas
+      <span class="nav-badge">3</span>
+    </button>
+    <button class="nav-item" onclick="showView('upload')">
+      <span class="nav-icon">↑</span> Subir CSV
+    </button>
+    <button class="nav-item" onclick="showView('tracking')">
+      <span class="nav-icon">📍</span> Tracking live
+    </button>
+    <button class="nav-item" onclick="showView('pod')">
+      <span class="nav-icon">✅</span> Confirmaciones
+    </button>
+
+    <div class="nav-section-label" style="margin-top:8px">Gestión</div>
+    <button class="nav-item" onclick="showView('transportistas')">
+      <span class="nav-icon">🚛</span> Transportistas
+    </button>
+    <button class="nav-item" onclick="showView('facturacion')">
+      <span class="nav-icon">💰</span> Facturación
+    </button>
+    <button class="nav-item" onclick="showView('reportes')">
+      <span class="nav-icon">📈</span> Reportes
+    </button>
+  </nav>
+
+  <div class="sidebar-bottom">
+    <div class="user-card">
+      <div class="user-avatar">LD</div>
+      <div>
+        <div class="user-name">LegalDocs Express</div>
+        <div class="user-role">Admin corporativo</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ── Overlay ──────────────────────────────────────────────────────────── -->
+<div class="overlay" id="overlay" onclick="closePanel()"></div>
+
+<!-- ── Toast ────────────────────────────────────────────────────────────── -->
+<div class="toast" id="toast"></div>
+
+<!-- ── Login modal ──────────────────────────────────────────────────────── -->
+<div id="loginOverlay" style="position:fixed;inset:0;background:#0D0D0D;z-index:500;display:flex;align-items:center;justify-content:center">
+  <div style="width:340px;background:#1C1C1C;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:28px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+      <img src="data:image/png;base64,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" style="width:36px;height:36px;border-radius:10px;object-fit:cover">
+      <div style="font-size:16px;font-weight:600;color:#F8FAFB">muevo</div>
+    </div>
+    <div style="font-size:13px;color:#8A8A8A;margin-bottom:16px">Portal Warehouse — Inicia sesión</div>
+    <input id="loginEmail" type="email" placeholder="Email" value="carlos@muevo.app"
+      style="width:100%;padding:10px 12px;margin-bottom:8px;background:#222;border:1px solid rgba(255,255,255,0.07);border-radius:8px;color:#fff;font-size:13px;box-sizing:border-box">
+    <input id="loginPassword" type="password" placeholder="Contraseña" value="muevo123"
+      style="width:100%;padding:10px 12px;margin-bottom:14px;background:#222;border:1px solid rgba(255,255,255,0.07);border-radius:8px;color:#fff;font-size:13px;box-sizing:border-box">
+    <button onclick="handleLogin()" style="width:100%;padding:10px;background:#F47B20;border:none;border-radius:8px;color:#111;font-weight:600;font-size:13px;cursor:pointer">Iniciar sesión</button>
+    <div id="loginError" style="color:#E74C3C;font-size:12px;margin-top:10px;display:none"></div>
+    <div style="text-align:center;margin-top:14px">
+      <span onclick="skipLogin()" style="color:#8A8A8A;font-size:11px;text-decoration:underline;cursor:pointer">Continuar con datos demo (sin backend)</span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Detail panel ─────────────────────────────────────────────────────── -->
+<div class="detail-panel" id="detailPanel">
+  <div class="panel-header">
+    <div>
+      <div class="card-title" id="panelTitle">Ruta R-2024-001</div>
+      <div class="card-sub" id="panelSub">Bufetes Legales — Manhattan</div>
+    </div>
+    <button class="panel-close" onclick="closePanel()">✕</button>
+  </div>
+  <div class="panel-body" id="panelBody"></div>
+</div>
+
+<!-- ── Main ─────────────────────────────────────────────────────────────── -->
+<div class="main">
+  <div class="topbar">
+    <div>
+      <div class="topbar-title" id="topbarTitle">Dashboard</div>
+      <div class="topbar-sub" id="topbarSub">Hoy · Lunes, 15 jun 2026</div>
+    </div>
+    <div class="topbar-actions">
+      <button class="btn btn-ghost" onclick="showView('upload')">↑ Subir CSV</button>
+      <button class="btn btn-primary" onclick="showView('upload')">+ Nueva ruta</button>
+    </div>
+  </div>
+
+  <div class="content" id="content">
+    <!-- Rendered by JS -->
+  </div>
+</div>
+
+<script>
+// ── API layer ─────────────────────────────────────────────────────────────
+const API_BASE = 'http://localhost:8000/api/v1';
+let authToken = null;
+let useRealData = false;
+
+async function apiLogin(email, password) {
+  const body = new URLSearchParams({ username: email, password });
+  const res = await fetch(`${API_BASE}/auth/token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  if (!res.ok) throw new Error('Login fallido');
+  const data = await res.json();
+  authToken = data.access_token;
+  return data;
+}
+
+async function apiGet(path) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { 'Authorization': `Bearer ${authToken}` },
+  });
+  if (!res.ok) throw new Error(`API error ${res.status}`);
+  return res.json();
+}
+
+async function apiPost(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`API error ${res.status}: ${errText}`);
+  }
+  return res.json();
+}
+
+// ── Data ──────────────────────────────────────────────────────────────────
+const ROUTES = [
+  {
+    id: 'R-2024-001', num: 'R-001',
+    title: 'Bufetes Legales — Manhattan',
+    client: 'LegalDocs Express LLC',
+    mode: 'Mensajería', status: 'in_progress',
+    date: '15 Jun 2026', time: '10:00 AM – 1:30 PM',
+    stops_total: 4, stops_done: 2,
+    km: 18.4,
+    gross: 87.50, commission: 10.50, net: 77.00,
+    transportista: 'Rapid Courier Orlando LLC',
+    transportista_rating: 4.9,
+    vehicle: 'Furgoneta · NY-ABC-1234',
+    driver: 'Carlos Mendez',
+    stops: [
+      { order:1, company:'Sullivan & Cromwell LLP', address:'1221 6th Ave, Piso 38, NY', eta:'10:15 AM', status:'done', code:'LC-001847', pod:'firma' },
+      { order:2, company:'Skadden Arps',            address:'200 Park Ave, NY',          eta:'10:45 AM', status:'done', code:'LC-001848', pod:'firma+foto' },
+      { order:3, company:'Davis Polk & Wardwell',   address:'30 Rockefeller Plaza, NY',  eta:'11:20 AM', status:'active', code:'LC-001849', pod:'foto' },
+      { order:4, company:'Cravath Swaine & Moore',  address:'450 Lexington Ave, NY',     eta:'12:00 PM', status:'pending', code:'LC-001850', pod:'firma' },
+    ]
+  },
+  {
+    id: 'R-2024-002', num: 'R-002',
+    title: 'Transporte Empleados — Brooklyn',
+    client: 'TechCorp Inc.',
+    mode: 'Empleados', status: 'scheduled',
+    date: '16 Jun 2026', time: '8:00 AM – 9:30 AM',
+    stops_total: 3, stops_done: 0,
+    km: 22.6,
+    gross: 120.00, commission: 14.40, net: 105.60,
+    transportista: 'FlorFleet Services Corp.',
+    transportista_rating: 4.7,
+    vehicle: 'Van · FL-XYZ-789',
+    driver: 'Maria Gonzalez',
+    stops: [
+      { order:1, company:'Pickup A — Atlantic Ave', address:'125 Atlantic Ave, Brooklyn', eta:'8:00 AM', status:'pending', code:'', pod:'check-in' },
+      { order:2, company:'Pickup B — Adams St',     address:'345 Adams St, Brooklyn',     eta:'8:15 AM', status:'pending', code:'', pod:'check-in' },
+      { order:3, company:'TechCorp HQ',             address:'55 Water St, New York',      eta:'9:00 AM', status:'pending', code:'', pod:'check-in' },
+    ]
+  },
+  {
+    id: 'R-2024-003', num: 'R-003',
+    title: 'Logística Almacén — Queens',
+    client: 'QuickShip Logistics',
+    mode: 'Logística', status: 'completed',
+    date: '14 Jun 2026', time: '7:00 AM – 11:00 AM',
+    stops_total: 6, stops_done: 6,
+    km: 34.2,
+    gross: 180.00, commission: 21.60, net: 158.40,
+    transportista: 'Atlas Transport LLC',
+    transportista_rating: 4.8,
+    vehicle: 'Furgón · FL-ATL-456',
+    driver: 'Roberto Diaz',
+    // Detalles del envío logístico
+    shipment: {
+      total_packages: 48,
+      total_weight_lbs: 1240,
+      total_volume_ft3: 186,
+      stackable: true,
+      fragile: false,
+      hazmat: false,
+      temp_controlled: false,
+      special_instructions: 'Palets en posición vertical. No apilar más de 3 cajas de altura.',
+      cargo_value: 18500,
+      insurance_required: true,
+    },
+    stops: [
+      { order:1, company:'Almacén Central',  address:'15-30 129th St, Queens',   eta:'7:30 AM', status:'done', code:'QS-3301', pod:'foto',
+        packages:12, weight_lbs:310, volume_ft3:46, dock:'Muelle 4', wait_min:20, notes:'Recoger paleta azul · Muelle 4' },
+      { order:2, company:'Bodega Sur',       address:'90-15 Sutphin Blvd, NY',   eta:'8:15 AM', status:'done', code:'QS-3302', pod:'qr',
+        packages:8,  weight_lbs:205, volume_ft3:31, dock:'Puerta trasera', wait_min:10, notes:'Entregar solo a encargado de turno' },
+      { order:3, company:'Depot Norte',      address:'38-01 Queens Blvd, NY',    eta:'9:00 AM', status:'done', code:'QS-3303', pod:'firma',
+        packages:6,  weight_lbs:180, volume_ft3:27, dock:'', wait_min:15, notes:'Pedir firma del supervisor' },
+      { order:4, company:'Centro Dist. A',   address:'60-20 Woodhaven Blvd, NY', eta:'9:45 AM', status:'done', code:'QS-3304', pod:'foto',
+        packages:10, weight_lbs:260, volume_ft3:38, dock:'Muelle 1', wait_min:25, notes:'Carga sensible, no voltear' },
+      { order:5, company:'Centro Dist. B',   address:'101-09 Jamaica Ave, NY',   eta:'10:15 AM',status:'done', code:'QS-3305', pod:'qr',
+        packages:7,  weight_lbs:175, volume_ft3:26, dock:'', wait_min:10, notes:'' },
+      { order:6, company:'Recogida Final',   address:'88-11 Sutphin Blvd, NY',   eta:'10:45 AM',status:'done', code:'QS-3306', pod:'firma',
+        packages:5,  weight_lbs:110, volume_ft3:18, dock:'', wait_min:5,  notes:'Confirmar recibo total del pedido' },
+    ]
+  },
+];
+
+const TRANSPORTISTAS = [
+  { name:'Rapid Courier Orlando LLC', vehicles:4, rating:4.9, routes:24, ontime:'98%', status:'active' },
+  { name:'FlorFleet Services Corp.',  vehicles:8, rating:4.7, routes:41, ontime:'94%', status:'active' },
+  { name:'Atlas Transport LLC',       vehicles:6, rating:4.8, routes:18, ontime:'96%', status:'active' },
+  { name:'Central FL Logistics Inc.', vehicles:3, rating:4.5, routes: 9, ontime:'91%', status:'pending' },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function statusBadge(status) {
+  const map = {
+    in_progress: ['badge-orange','En curso'],
+    scheduled:   ['badge-blue',  'Programada'],
+    completed:   ['badge-green', 'Completada'],
+    cancelled:   ['badge-red',   'Cancelada'],
+    pending:     ['badge-muted', 'Pendiente'],
+  };
+  const [cls, label] = map[status] || ['badge-muted', status];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function modeBadge(mode) {
+  const map = {
+    'Mensajería': ['badge-blue',   '📦'],
+    'Empleados':  ['badge-green',  '👥'],
+    'Logística':  ['badge-yellow', '🏭'],
+  };
+  const [cls, icon] = map[mode] || ['badge-muted','📋'];
+  return `<span class="badge ${cls}">${icon} ${mode}</span>`;
+}
+
+function stopDot(status) {
+  if (status === 'done')    return 'done';
+  if (status === 'active')  return 'active';
+  return 'pending';
+}
+
+function stopIcon(status) {
+  if (status === 'done')    return '✓';
+  if (status === 'active')  return '⬤';
+  return '○';
+}
+
+function pct(a, b) { return b > 0 ? Math.round(a/b*100) : 0; }
+function fmt$(n)    { return '$' + n.toFixed(2); }
+
+// ── Views ─────────────────────────────────────────────────────────────────
+let currentView = 'dashboard';
+let activeTab   = 'todas';
+let csvStep     = 0;
+
+function showView(view) {
+  currentView = view;
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  const idx = ['dashboard','rutas','upload','tracking','pod','transportistas','facturacion','reportes'].indexOf(view);
+  document.querySelectorAll('.nav-item')[idx]?.classList.add('active');
+
+  const titles = {
+    dashboard:      ['Dashboard', 'Resumen de operaciones · Hoy, 15 jun 2026'],
+    rutas:          ['Mis rutas', 'Historial y estado de todas las rutas'],
+    upload:         ['Subir CSV', 'Importar rutas desde tu sistema de logística'],
+    tracking:       ['Tracking live', 'Estado en tiempo real de tus entregas activas'],
+    pod:            ['Confirmaciones de entrega', 'Pruebas de entrega recibidas (firmas, fotos, QR)'],
+    transportistas: ['Empresas de transporte', 'Red de operadores asignados a tu cuenta'],
+    facturacion:    ['Facturación', 'Historial de pagos y facturas descargables'],
+    reportes:       ['Reportes', 'Analytics de rendimiento y eficiencia'],
+  };
+  const [title, sub] = titles[view] || ['', ''];
+  document.getElementById('topbarTitle').textContent = title;
+  document.getElementById('topbarSub').textContent   = sub;
+
+  const renders = {
+    dashboard:      renderDashboard,
+    rutas:          renderRutas,
+    upload:         renderUpload,
+    tracking:       renderTracking,
+    pod:            renderPoD,
+    transportistas: renderTransportistas,
+    facturacion:    renderFacturacion,
+    reportes:       renderReportes,
+  };
+  document.getElementById('content').innerHTML = (renders[view] || (() => ''))();
+  csvStep = 0;
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────────────
+function renderDashboard() {
+  const allRoutes = getActiveRoutes();
+  const active    = allRoutes.filter(r => r.status === 'in_progress');
+  const scheduled = allRoutes.filter(r => r.status === 'scheduled');
+  const completed = allRoutes.filter(r => r.status === 'completed');
+  const totalNet  = allRoutes.reduce((s,r) => s + r.net, 0);
+
+  return `
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Rutas activas hoy</div>
+        <div class="kpi-value orange">${active.length}</div>
+        <div class="kpi-sub up">↑ En ejecución ahora</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Programadas próx. 24h</div>
+        <div class="kpi-value">${scheduled.length}</div>
+        <div class="kpi-sub">Asignación automática pendiente</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Completadas esta semana</div>
+        <div class="kpi-value green">${completed.length}</div>
+        <div class="kpi-sub up">↑ 100% on-time</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Gasto neto esta semana</div>
+        <div class="kpi-value orange">${fmt$(totalNet)}</div>
+        <div class="kpi-sub">Comisión Muevo (12%) incluida</div>
+      </div>
+    </div>
+
+    <div class="alert ok">
+      <div class="alert-icon">✅</div>
+      <div class="alert-body">
+        <div class="alert-title">Dispatcher automático activo</div>
+        La ruta R-002 (Transporte Empleados) fue asignada automáticamente a FlorFleet Services Corp. · Score 94 / 100 · hace 3 minutos.
+      </div>
+    </div>
+
+    <div class="section-hdr">
+      <div>
+        <div class="section-title">Rutas en curso</div>
+        <div class="section-sub">Actualizado hace 30 segundos</div>
+      </div>
+      <button class="btn btn-ghost" onclick="showView('tracking')">Ver tracking live →</button>
+    </div>
+
+    ${active.map(r => dashRouteCard(r)).join('')}
+
+    <div class="section-hdr" style="margin-top:8px">
+      <div class="section-title">Próximas rutas</div>
+      <button class="btn btn-ghost" onclick="showView('rutas')">Ver todas →</button>
+    </div>
+
+    ${scheduled.map(r => dashRouteCard(r)).join('')}
+    ${completed.map(r => dashRouteCard(r)).join('')}
+  `;
+}
+
+function dashRouteCard(r) {
+  const pctDone = pct(r.stops_done, r.stops_total);
+  return `
+    <div class="card" style="margin-bottom:10px;cursor:pointer" onclick="openRoute('${r.id}')">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-size:12px;color:var(--muted);font-family:var(--font-mono)">${r.num}</span>
+            ${statusBadge(r.status)}
+            ${modeBadge(r.mode)}
+          </div>
+          <div class="card-title">${r.title}</div>
+          <div class="card-sub">${r.transportista} · ${r.vehicle}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:16px">
+          <div style="font-size:18px;font-weight:600;color:var(--orange)">${fmt$(r.net)}</div>
+          <div style="font-size:11px;color:var(--muted)">neto · ${r.km} km</div>
+        </div>
+      </div>
+      <div class="prog-wrap" style="margin-bottom:8px">
+        <div class="prog-label">
+          <span>${r.stops_done} de ${r.stops_total} paradas completadas</span>
+          <span>${pctDone}%</span>
+        </div>
+        <div class="prog-track">
+          <div class="prog-fill ${r.status==='completed'?'green':''}" style="width:${pctDone}%"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <span class="badge badge-muted">📅 ${r.date}</span>
+        <span class="badge badge-muted">🕐 ${r.time}</span>
+        <span class="badge badge-muted">★ ${r.transportista_rating}</span>
+        <span style="margin-left:auto;font-size:12px;color:var(--orange)">Ver detalle →</span>
+      </div>
+    </div>
+  `;
+}
+
+// ── Rutas ──────────────────────────────────────────────────────────────────
+function renderRutas() {
+  return `
+    <div class="tabs">
+      <button class="tab ${activeTab==='todas'?'active':''}"    onclick="setTab('todas')">Todas (${ROUTES.length})</button>
+      <button class="tab ${activeTab==='activas'?'active':''}"  onclick="setTab('activas')">En curso (${ROUTES.filter(r=>r.status==='in_progress').length})</button>
+      <button class="tab ${activeTab==='proximas'?'active':''}" onclick="setTab('proximas')">Programadas (${ROUTES.filter(r=>r.status==='scheduled').length})</button>
+      <button class="tab ${activeTab==='completadas'?'active':''}" onclick="setTab('completadas')">Completadas (${ROUTES.filter(r=>r.status==='completed').length})</button>
+    </div>
+
+    <div class="table-wrap">
+      <div class="table-filters">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" placeholder="Buscar por ruta, empresa, dirección...">
+        </div>
+        <button class="btn btn-ghost">🗓 Filtrar fecha</button>
+        <button class="btn btn-ghost">↓ Exportar</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Ruta</th>
+            <th>Tipo</th>
+            <th>Fecha</th>
+            <th>Transportista</th>
+            <th>Paradas</th>
+            <th>Estado</th>
+            <th>Costo neto</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filteredRoutes().map(r => `
+            <tr onclick="openRoute('${r.id}')">
+              <td>
+                <div style="font-weight:500">${r.title}</div>
+                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${r.num}</div>
+              </td>
+              <td>${modeBadge(r.mode)}</td>
+              <td>
+                <div style="font-size:12px">${r.date}</div>
+                <div style="font-size:11px;color:var(--muted)">${r.time}</div>
+              </td>
+              <td>
+                <div style="font-size:12px">${r.transportista}</div>
+                <div style="font-size:11px;color:var(--muted)">★ ${r.transportista_rating}</div>
+              </td>
+              <td>
+                <div style="font-size:12px">${r.stops_done}/${r.stops_total}</div>
+                <div style="width:60px;height:3px;background:var(--border);border-radius:2px;margin-top:4px">
+                  <div style="width:${pct(r.stops_done,r.stops_total)}%;height:100%;background:var(--orange);border-radius:2px"></div>
+                </div>
+              </td>
+              <td>${statusBadge(r.status)}</td>
+              <td style="font-weight:500;color:var(--orange)">${fmt$(r.net)}</td>
+              <td style="color:var(--muted);font-size:12px">Ver →</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function setTab(tab) {
+  activeTab = tab;
+  document.getElementById('content').innerHTML = renderRutas();
+}
+
+function filteredRoutes() {
+  const map = { todas:'', activas:'in_progress', proximas:'scheduled', completadas:'completed' };
+  const s = map[activeTab];
+  const all = getActiveRoutes();
+  return s ? all.filter(r => r.status === s) : all;
+}
+
+// ── Upload ─────────────────────────────────────────────────────────────────
+function renderUpload() {
+  if (csvStep === 0) return uploadStep0();
+  if (csvStep === 1) return uploadStep1();
+  return uploadStep2();
+}
+
+function uploadStep0() {
+  const type = csvRouteType || 'mensajeria';
+
+  const typeInfo = {
+    mensajeria: {
+      label: 'Mensajería', icon: '📦',
+      desc: 'Entrega de sobres o paquetes individuales a una o varias direcciones.',
+      cols: ['fecha','hora_inicio','hora_fin','destino_1','ciudad_1','estado_1','contacto_1','paquetes','peso_lbs','volumen_ft3','fragil','pod_requerido','tipo_vehiculo','gross_pay'],
+      example: ['2026-06-23','10:00','13:30','200 Park Ave','New York','NY','James R.','4','85','12','no','signature','furgoneta','87.50'],
+    },
+    logistica: {
+      label: 'Logística', icon: '🏭',
+      desc: 'Rutas de distribución entre almacenes, con muelle de carga y volumen mayor.',
+      cols: ['fecha','hora_inicio','hora_fin','destino_1','ciudad_1','estado_1','contacto_1','paquetes','peso_lbs','volumen_ft3','fragil','muelle','pod_requerido','tipo_vehiculo','gross_pay'],
+      example: ['2026-06-23','07:00','11:00','Bodega Sur','New York','NY','Encargado turno','12','310','46','no','Muelle 4','photo','furgon','180.00'],
+    },
+    empleados: {
+      label: 'Transporte Empleados', icon: '👥',
+      desc: 'Traslado de personal entre puntos de recogida y el destino final.',
+      cols: ['fecha','hora_inicio','hora_fin','destino_1','ciudad_1','estado_1','contacto_1','pasajeros','pod_requerido','tipo_vehiculo','gross_pay'],
+      example: ['2026-06-23','08:00','09:00','TechCorp HQ','New York','NY','3 empleados','3','signature','van','120.00'],
+    },
+  };
+  const info = typeInfo[type];
+
+  return `
+    <div style="max-width:680px;margin:0 auto">
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title" style="margin-bottom:4px">Importar rutas desde CSV</div>
+        <div class="card-sub">Elegí el tipo de ruta — cada uno tiene su propia plantilla y campos.</div>
+      </div>
+
+      <div class="grid3" style="margin-bottom:16px">
+        ${Object.entries(typeInfo).map(([key, t]) => `
+          <div class="card" style="cursor:pointer;text-align:center;padding:16px;${type===key ? 'border-color:var(--orange);background:var(--orange-dim)' : ''}"
+            onclick="csvRouteType='${key}';document.getElementById('content').innerHTML=renderUpload()">
+            <div style="font-size:24px;margin-bottom:6px">${t.icon}</div>
+            <div style="font-size:12px;font-weight:600;color:${type===key ? 'var(--orange)' : 'var(--white)'}">${t.label}</div>
+          </div>
+        `).join('')}
+      </div>
+
+      <input type="file" id="csvFileInput" accept=".csv" style="display:none" onchange="handleCsvFile(event)">
+      <div class="upload-zone" onclick="document.getElementById('csvFileInput').click()">
+        <div class="upload-icon">${info.icon}</div>
+        <div class="upload-title">Subí tu CSV de <strong>${info.label}</strong> o <span class="upload-link">buscá en tu computadora</span></div>
+        <div class="upload-sub">${info.desc}</div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title" style="margin-bottom:12px">Formato esperado — ${info.label}</div>
+        <div class="csv-preview">
+          <table>
+            <thead><tr>${info.cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+            <tbody><tr>${info.example.map(v => `<td>${v}</td>`).join('')}</tr></tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn btn-ghost" style="font-size:11px" onclick="downloadCsvTemplate('${type}')">↓ Descargar plantilla ${info.label}</button>
+          <button class="btn btn-ghost" style="font-size:11px">↓ Ver documentación completa</button>
+        </div>
+      </div>
+
+      <div class="alert info">
+        <div class="alert-icon">ℹ</div>
+        <div class="alert-body">
+          <div class="alert-title">Integración API disponible</div>
+          Si tu sistema de logística soporta webhooks, podés configurar el envío automático de rutas sin subir archivos manualmente. <span style="text-decoration:underline;cursor:pointer" onclick="showToast('Documentación API próximamente disponible', 'info')">Ver documentación API →</span>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function uploadStep1() {
+  const routes = parsedCsvRoutes || [];
+  const totalStops = routes.reduce((s, r) => s + r.stops.length, 0);
+  return `
+    <div style="max-width:680px;margin:0 auto">
+      <div class="alert ok" style="margin-bottom:20px">
+        <div class="alert-icon">✅</div>
+        <div class="alert-body">
+          <div class="alert-title">Archivo procesado correctamente</div>
+          ${csvFileName || 'archivo.csv'} · ${routes.length} ruta${routes.length===1?'':'s'} detectada${routes.length===1?'':'s'} · 0 errores
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+          <div class="card-title">Vista previa — ${routes.length} ruta${routes.length===1?'':'s'} detectada${routes.length===1?'':'s'}</div>
+          <div style="display:flex;gap:6px">
+            <span class="badge badge-green">${routes.length} válida${routes.length===1?'':'s'}</span>
+            <span class="badge badge-muted">0 errores</span>
+          </div>
+        </div>
+        <div class="csv-preview">
+          <table>
+            <thead>
+              <tr><th>#</th><th>Título</th><th>Tipo</th><th>Fecha</th><th>Paradas</th><th>Vehículo</th><th>Estado</th></tr>
+            </thead>
+            <tbody>
+              ${routes.map((r, i) => `
+                <tr>
+                  <td>${i+1}</td><td>${r.title}</td><td>${r.service_mode}</td>
+                  <td>${r.scheduled_date} · ${new Date(r.scheduled_start).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}</td>
+                  <td>${r.stops.length} parada${r.stops.length===1?'':'s'}</td><td>${r.required_vehicle_type || '—'}</td>
+                  <td><span class="badge badge-green" style="font-size:10px">✓ Válida</span></td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title" style="margin-bottom:10px">Resumen de carga detectada</div>
+        <div class="metric-row">
+          <div class="metric"><div class="metric-val" style="color:var(--orange)">${totalStops}</div><div class="metric-lbl">Paradas totales</div></div>
+          <div class="metric"><div class="metric-val">${routes.length}</div><div class="metric-lbl">Rutas a crear</div></div>
+          <div class="metric"><div class="metric-val" style="color:var(--green)">100%</div><div class="metric-lbl">Filas válidas</div></div>
+        </div>
+        <div style="font-size:12px;color:var(--muted)">Las rutas se crearán en estado "draft" en tu cuenta. El despacho automático las asignará a una empresa de transporte.</div>
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="csvStep=0;document.getElementById('content').innerHTML=renderUpload()">← Volver</button>
+        <button class="btn btn-primary" onclick="confirmCsvImport()">Confirmar e importar →</button>
+      </div>
+    </div>
+  `;
+}
+
+function uploadStep2() {
+  const result = csvImportResult;
+  if (!result) {
+    return `<div style="max-width:680px;margin:0 auto"><div class="alert warn"><div class="alert-icon">⚠️</div><div class="alert-body">No hay resultado de importación. <span style="text-decoration:underline;cursor:pointer" onclick="csvStep=0;document.getElementById('content').innerHTML=renderUpload()">Volver al inicio</span></div></div></div>`;
+  }
+  return `
+    <div style="max-width:680px;margin:0 auto">
+      <div class="alert ok" style="margin-bottom:20px">
+        <div class="alert-icon">🚀</div>
+        <div class="alert-body">
+          <div class="alert-title">${result.routes_created} ruta${result.routes_created===1?'':'s'} importada${result.routes_created===1?'':'s'} correctamente</div>
+          Las rutas quedaron creadas en estado borrador en tu cuenta. El despacho automático las asignará a una empresa de transporte verificada.
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:12px">
+        <div class="card-title" style="margin-bottom:14px">Rutas creadas</div>
+        ${(result.route_numbers || []).map(num => `
+          <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+            <div style="font-family:var(--font-mono);font-size:11px;color:var(--muted);width:140px">${num}</div>
+            <div style="flex:1;font-size:12px;color:var(--muted)">Pendiente de asignación automática</div>
+            <span class="badge badge-yellow">⏳ Borrador</span>
+          </div>
+        `).join('')}
+      </div>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="showView('rutas')">Ver en mis rutas</button>
+        <button class="btn btn-primary" onclick="showView('dashboard')">Volver al dashboard →</button>
+      </div>
+    </div>
+  `;
+}
+
+// ── CSV parsing & import ─────────────────────────────────────────────────
+let csvRouteType = 'mensajeria';
+let parsedCsvRoutes = null;
+let csvFileName = null;
+let csvImportResult = null;
+
+const CSV_TEMPLATES = {
+  mensajeria: {
+    header: 'fecha,hora_inicio,hora_fin,destino_1,ciudad_1,estado_1,contacto_1,paquetes,peso_lbs,volumen_ft3,fragil,pod_requerido,tipo_vehiculo,gross_pay',
+    example: '2026-06-23,10:00,13:30,200 Park Ave,New York,NY,James R.,4,85,12,no,signature,furgoneta,87.50',
+  },
+  logistica: {
+    header: 'fecha,hora_inicio,hora_fin,destino_1,ciudad_1,estado_1,contacto_1,paquetes,peso_lbs,volumen_ft3,fragil,muelle,pod_requerido,tipo_vehiculo,gross_pay',
+    example: '2026-06-23,07:00,11:00,Bodega Sur,New York,NY,Encargado turno,12,310,46,no,Muelle 4,photo,furgon,180.00',
+  },
+  empleados: {
+    header: 'fecha,hora_inicio,hora_fin,destino_1,ciudad_1,estado_1,contacto_1,pasajeros,pod_requerido,tipo_vehiculo,gross_pay',
+    example: '2026-06-23,08:00,09:00,TechCorp HQ,New York,NY,3 empleados,3,signature,van,120.00',
+  },
+};
+
+function downloadCsvTemplate(type) {
+  const t = CSV_TEMPLATES[type] || CSV_TEMPLATES.mensajeria;
+  const blob = new Blob([t.header + '\n' + t.example + '\n'], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `plantilla_muevo_${type}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function normalizeVehicleType(val) {
+  if (!val) return null;
+  const v = val.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // quita tildes
+  const map = { moto: 'moto', sedan: 'sedan', furgoneta: 'furgoneta', furgon: 'furgon', van: 'furgoneta', camion: 'furgon', truck: 'furgon' };
+  return map[v] || null;
+}
+
+function parseCsvText(text, type) {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+  const rows = lines.slice(1).map(line => {
+    const cells = line.split(',').map(c => c.trim());
+    const row = {};
+    headers.forEach((h, i) => row[h] = cells[i] || '');
+    return row;
+  });
+
+  // Cada fila del CSV = una ruta de 1 parada. Los campos varían según el tipo.
+  return rows.map((row, idx) => {
+    const date = row['fecha'] || new Date().toISOString().slice(0,10);
+    const start = `${date}T${row['hora_inicio'] || '09:00'}:00`;
+    const end   = `${date}T${row['hora_fin'] || row['hora_inicio'] || '10:00'}:00`;
+
+    const stop = {
+      address: row['destino_1'] || '',
+      city: row['ciudad_1'] || '',
+      state: row['estado_1'] || '',
+      contact_name: row['contacto_1'] || '',
+      pod_required: row['pod_requerido'] || 'signature',
+    };
+
+    if (type === 'empleados') {
+      stop.passengers_count = parseInt(row['pasajeros']) || 0;
+    } else {
+      stop.packages_count = parseInt(row['paquetes']) || 0;
+      stop.weight_lbs = parseFloat(row['peso_lbs']) || 0;
+      stop.volume_ft3 = parseFloat(row['volumen_ft3']) || 0;
+      stop.is_fragile = (row['fragil'] || '').toLowerCase().startsWith('s');
+      if (type === 'logistica') {
+        stop.dock_number = row['muelle'] && row['muelle'] !== '—' ? row['muelle'] : null;
+      }
+    }
+
+    return {
+      title: `Ruta ${row['destino_1'] || 'Importada'} #${idx+1}`,
+      service_mode: type,
+      scheduled_date: date,
+      scheduled_start: start,
+      scheduled_end: end,
+      gross_pay: parseFloat(row['gross_pay']) || 50.00,
+      required_vehicle_type: normalizeVehicleType(row['tipo_vehiculo']),
+      stops: [stop],
+    };
+  });
+}
+
+function handleCsvFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  csvFileName = file.name;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      parsedCsvRoutes = parseCsvText(e.target.result, csvRouteType);
+      if (parsedCsvRoutes.length === 0) {
+        showToast('El archivo no tiene filas válidas', 'warn');
+        return;
+      }
+      csvStep = 1;
+      document.getElementById('content').innerHTML = renderUpload();
+      showToast(`${parsedCsvRoutes.length} ruta(s) de ${csvRouteType} detectada(s)`, 'success');
+    } catch (err) {
+      showToast('Error al leer el CSV: ' + err.message, 'warn');
+    }
+  };
+  reader.readAsText(file);
+}
+
+async function confirmCsvImport() {
+  if (!useRealData) {
+    showToast('Iniciá sesión con el backend real para importar rutas', 'warn');
+    return;
+  }
+  if (!parsedCsvRoutes || parsedCsvRoutes.length === 0) return;
+
+  try {
+    showToast('Importando rutas...', 'info');
+    csvImportResult = await apiPost('/warehouse/routes/bulk-import', { routes: parsedCsvRoutes });
+    csvStep = 2;
+    document.getElementById('content').innerHTML = renderUpload();
+    showToast(`${csvImportResult.routes_created} ruta(s) importada(s) con éxito`, 'success');
+    // Refrescar datos para que aparezcan en dashboard/rutas
+    await loadRealData();
+  } catch (err) {
+    showToast('Error al importar: ' + err.message, 'warn');
+  }
+}
+
+// ── Tracking ───────────────────────────────────────────────────────────────
+function renderTracking() {
+  const active = getActiveRoutes().filter(r => r.status === 'in_progress');
+  return `
+    <div class="grid2">
+      <div>
+        <div class="section-hdr">
+          <div class="section-title">Rutas en curso (${active.length})</div>
+        </div>
+        ${active.map(r => `
+          <div class="card" style="margin-bottom:10px;cursor:pointer" onclick="openRoute('${r.id}')">
+            <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+              <div>
+                <div class="card-title" style="font-size:13px">${r.title}</div>
+                <div class="card-sub">${r.transportista}</div>
+              </div>
+              ${statusBadge(r.status)}
+            </div>
+            <div class="prog-wrap" style="margin-bottom:8px">
+              <div class="prog-label"><span>Progreso</span><span>${r.stops_done}/${r.stops_total} paradas</span></div>
+              <div class="prog-track"><div class="prog-fill" style="width:${pct(r.stops_done,r.stops_total)}%"></div></div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <span class="badge badge-muted">🚐 ${r.vehicle}</span>
+              <span class="badge badge-muted">👤 ${r.driver}</span>
+              <span style="margin-left:auto;font-size:12px;color:var(--orange)">Ver paradas →</span>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div>
+        <div class="section-hdr">
+          <div class="section-title">Mapa en tiempo real</div>
+        </div>
+        <div class="map-box" style="height:320px">
+          <div style="font-size:36px;z-index:1">🗺</div>
+          <div class="map-label">Tracking Mapbox en tiempo real</div>
+          <div style="font-size:11px;color:var(--muted);z-index:1">Disponible con backend conectado</div>
+          <div style="position:absolute;top:12px;right:12px;z-index:1">
+            <span class="badge badge-orange">● 1 ruta activa</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:12px">
+          <div class="card-title" style="margin-bottom:12px">Alertas activas</div>
+          <div class="alert warn" style="margin-bottom:0">
+            <div class="alert-icon">⚠️</div>
+            <div class="alert-body">
+              <div class="alert-title">Posible retraso — Parada 3</div>
+              Davis Polk & Wardwell · ETA 11:20 AM · Tráfico en 6th Ave detectado
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ── PoD ────────────────────────────────────────────────────────────────────
+function renderPoD() {
+  const completedStops = ROUTES.flatMap(r =>
+    r.stops.filter(s => s.status === 'done').map(s => ({ ...s, route: r }))
+  );
+  return `
+    <div class="table-wrap">
+      <div class="table-filters">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" placeholder="Buscar por empresa, código de paquete...">
+        </div>
+        <button class="btn btn-ghost">↓ Exportar todas</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Parada</th><th>Ruta</th><th>ETA</th>
+            <th>Código</th><th>Tipo PoD</th><th>Estado</th><th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${completedStops.map(s => `
+            <tr>
+              <td>
+                <div style="font-weight:500">${s.company}</div>
+                <div style="font-size:11px;color:var(--muted)">${s.address}</div>
+              </td>
+              <td>
+                <div style="font-size:12px">${s.route.num}</div>
+                <div style="font-size:11px;color:var(--muted)">${s.route.transportista}</div>
+              </td>
+              <td style="font-size:12px;color:var(--muted)">${s.eta}</td>
+              <td style="font-family:var(--font-mono);font-size:11px;color:var(--muted)">${s.code || '—'}</td>
+              <td><span class="badge badge-muted">${s.pod}</span></td>
+              <td><span class="badge badge-green">✓ Confirmada</span></td>
+              <td>
+                <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px"
+                  onclick="showToast('Abriendo prueba de entrega...', 'info')">Ver PoD</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// ── Transportistas ─────────────────────────────────────────────────────────
+function renderTransportistas() {
+  return `
+    <div class="section-hdr">
+      <div>
+        <div class="section-title">Empresas de transporte asignadas</div>
+        <div class="section-sub">Operadores verificados con acceso a tu cuenta</div>
+      </div>
+      <button class="btn btn-primary">+ Solicitar nuevo operador</button>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Empresa</th><th>Flota</th><th>Rating</th><th>Rutas</th><th>On-time</th><th>Estado</th><th></th></tr>
+        </thead>
+        <tbody>
+          ${TRANSPORTISTAS.map(t => `
+            <tr>
+              <td>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <div style="width:32px;height:32px;border-radius:8px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">🚐</div>
+                  <div>
+                    <div style="font-weight:500;font-size:13px">${t.name}</div>
+                    <div style="font-size:11px;color:var(--muted)">Orlando, FL</div>
+                  </div>
+                </div>
+              </td>
+              <td style="font-size:13px">${t.vehicles} vehículos</td>
+              <td>
+                <div style="font-size:13px;font-weight:500;color:var(--orange)">★ ${t.rating}</div>
+              </td>
+              <td style="font-size:13px">${t.routes} rutas</td>
+              <td>
+                <div style="font-size:13px;font-weight:500;color:var(--green)">${t.ontime}</div>
+              </td>
+              <td>${t.status === 'active'
+                ? '<span class="badge badge-green">Activo</span>'
+                : '<span class="badge badge-yellow">Verificación pendiente</span>'}</td>
+              <td>
+                <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px"
+                  onclick="showToast('Perfil del transportista próximamente', 'info')">Ver perfil</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="alert info">
+      <div class="alert-icon">ℹ</div>
+      <div class="alert-body">
+        <div class="alert-title">¿Tenés un transportista de confianza?</div>
+        Podés invitarlos a registrarse en Muevo Drive. Una vez verificados, el dispatcher los priorizará en tus rutas.
+        <span style="text-decoration:underline;cursor:pointer;margin-left:4px" onclick="showToast('Función de invitación próximamente', 'info')">Invitar transportista →</span>
+      </div>
+    </div>
+  `;
+}
+
+// ── Facturación ────────────────────────────────────────────────────────────
+function renderFacturacion() {
+  const real = (useRealData && REAL_BILLING) ? REAL_BILLING : null;
+  const kpiSpend     = real ? real.total_spend : 341.00;
+  const kpiCommission= real ? real.total_commission : 46.50;
+  const kpiCount      = real ? real.invoice_count : 3;
+  const rows = real ? real.invoices : getActiveRoutes().filter(r=>r.status==='completed').map((r,i) => ({
+    route_id: r.num, route_number: r.num, title: r.title, date: r.date,
+    transport_company: r.transportista, gross_pay: r.gross, commission: r.commission, net_pay: r.net,
+  }));
+
+  return `
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Gasto total ${real ? '' : 'junio'}</div>
+        <div class="kpi-value orange">${fmt$(kpiSpend)}</div>
+        <div class="kpi-sub">${kpiCount} rutas completadas</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Comisión Muevo</div>
+        <div class="kpi-value">${fmt$(kpiCommission)}</div>
+        <div class="kpi-sub">12% promedio</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Facturas pendientes</div>
+        <div class="kpi-value">0</div>
+        <div class="kpi-sub up">Al día</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Fuente de datos</div>
+        <div class="kpi-value" style="font-size:14px">${real ? '🟢 Backend real' : '🟡 Demo'}</div>
+        <div class="kpi-sub">${real ? 'Conectado a PostgreSQL' : 'Datos de ejemplo'}</div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <div class="table-filters">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" placeholder="Buscar factura...">
+        </div>
+        <button class="btn btn-ghost">↓ Exportar todo</button>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Factura</th><th>Ruta</th><th>Fecha</th><th>Transportista</th><th>Subtotal</th><th>Comisión</th><th>Total</th><th></th></tr>
+        </thead>
+        <tbody>
+          ${rows.map((r,i) => `
+            <tr>
+              <td style="font-family:var(--font-mono);font-size:12px;color:var(--muted)">INV-2024-00${i+1}</td>
+              <td>
+                <div style="font-weight:500;font-size:13px">${r.route_number || r.num} · ${r.title}</div>
+                <div style="font-size:11px;color:var(--muted)">${r.date}</div>
+              </td>
+              <td style="font-size:12px">${r.date}</td>
+              <td style="font-size:12px">${r.transport_company || r.transportista || 'Sin asignar'}</td>
+              <td style="font-weight:500">${fmt$(r.gross_pay)}</td>
+              <td style="color:var(--muted);font-size:12px">${fmt$(r.commission)}</td>
+              <td style="font-weight:600;color:var(--orange)">${fmt$(r.net_pay)}</td>
+              <td>
+                <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px"
+                  onclick="showToast('Descargando PDF...', 'success')">↓ PDF</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+// ── Reportes ───────────────────────────────────────────────────────────────
+function renderReportes() {
+  return `
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">On-time rate</div>
+        <div class="kpi-value green">96%</div>
+        <div class="kpi-sub up">↑ +3% vs mes anterior</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Entregas confirmadas</div>
+        <div class="kpi-value">8/8</div>
+        <div class="kpi-sub up">100% PoD completado</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Km totales</div>
+        <div class="kpi-value">75.2</div>
+        <div class="kpi-sub">-4.2 km por optimización IA</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Costo por km</div>
+        <div class="kpi-value orange">$4.53</div>
+        <div class="kpi-sub">Promedio esta semana</div>
+      </div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <div class="card-title" style="margin-bottom:14px">Rutas por tipo de servicio</div>
+        ${[['Mensajería', 1, '#2E86DE'],['Empleados', 1, '#27AE60'],['Logística', 1, '#F1C40F']].map(([label, n, color]) => `
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <div style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></div>
+            <div style="flex:1;font-size:12px">${label}</div>
+            <div style="font-size:12px;font-weight:500">${n} ruta</div>
+            <div style="width:80px;height:4px;background:var(--card2);border-radius:2px;overflow:hidden">
+              <div style="width:33%;height:100%;background:${color};border-radius:2px"></div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="margin-bottom:14px">Rendimiento de transportistas</div>
+        ${TRANSPORTISTAS.filter(t=>t.status==='active').map(t => `
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+            <div style="flex:1">
+              <div style="font-size:12px;font-weight:500">${t.name.split(' ').slice(0,2).join(' ')}</div>
+              <div style="font-size:11px;color:var(--muted)">${t.routes} rutas · ${t.ontime} on-time</div>
+            </div>
+            <div style="font-size:13px;font-weight:500;color:var(--orange)">★ ${t.rating}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// ── Detail Panel ──────────────────────────────────────────────────────────
+function openRoute(id) {
+  const r = getActiveRoutes().find(x => x.id === id);
+  if (!r) return;
+
+  document.getElementById('panelTitle').textContent = r.num + ' — ' + r.title;
+  document.getElementById('panelSub').textContent   = r.transportista;
+
+  const pctDone = pct(r.stops_done, r.stops_total);
+
+  document.getElementById('panelBody').innerHTML = `
+    <div style="margin-bottom:16px;display:flex;gap:6px;flex-wrap:wrap">
+      ${statusBadge(r.status)} ${modeBadge(r.mode)}
+      <span class="badge badge-muted">📅 ${r.date}</span>
+      <span class="badge badge-muted">🕐 ${r.time}</span>
+    </div>
+
+    <div class="map-box">
+      <div style="font-size:28px;z-index:1">🗺</div>
+      <div class="map-label">Mapa de ruta</div>
+    </div>
+
+    <div class="prog-wrap">
+      <div class="prog-label">
+        <span>Progreso general</span>
+        <span style="color:var(--orange)">${r.stops_done}/${r.stops_total} paradas · ${pctDone}%</span>
+      </div>
+      <div class="prog-track">
+        <div class="prog-fill ${r.status==='completed'?'green':''}" style="width:${pctDone}%"></div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">Transportista asignado</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="width:36px;height:36px;border-radius:10px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:16px">🚐</div>
+        <div style="flex:1">
+          <div style="font-size:13px;font-weight:500;color:var(--white)">${r.transportista}</div>
+          <div style="font-size:11px;color:var(--muted)">${r.vehicle} · ${r.driver}</div>
+        </div>
+        <div style="font-size:14px;font-weight:600;color:var(--orange)">★ ${r.transportista_rating}</div>
+      </div>
+    </div>
+
+    ${r.shipment ? `
+    <div class="card" style="margin-bottom:16px;border-color:var(--orange-bdr)">
+      <div style="font-size:11px;font-weight:600;color:var(--orange);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px">📦 Detalle del envío</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
+        <div class="cost-row"><span class="cost-label">Total de paquetes</span><span class="cost-value">${r.shipment.total_packages} unidades</span></div>
+        <div class="cost-row"><span class="cost-label">Peso total</span><span class="cost-value">${r.shipment.total_weight_lbs.toLocaleString()} lbs</span></div>
+        <div class="cost-row"><span class="cost-label">Volumen total</span><span class="cost-value">${r.shipment.total_volume_ft3} ft³</span></div>
+        <div class="cost-row"><span class="cost-label">Valor de la carga</span><span class="cost-value orange">$${r.shipment.cargo_value.toLocaleString()}</span></div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        ${r.shipment.stackable ? '<span class="badge badge-muted">⬆ Apilable</span>' : '<span class="badge badge-red">✗ No apilar</span>'}
+        ${r.shipment.fragile ? '<span class="badge badge-yellow">⚠ Frágil</span>' : ''}
+        ${r.shipment.hazmat ? '<span class="badge badge-red">☢ HazMat</span>' : ''}
+        ${r.shipment.temp_controlled ? '<span class="badge badge-blue">❄ Temp. controlada</span>' : ''}
+        ${r.shipment.insurance_required ? '<span class="badge badge-orange">🛡 Seguro requerido</span>' : ''}
+      </div>
+      ${r.shipment.special_instructions ? `
+        <div style="margin-top:10px;padding:8px 10px;background:var(--card2);border-radius:6px;font-size:11px;color:var(--muted);border:1px solid var(--border)">
+          ℹ ${r.shipment.special_instructions}
+        </div>` : ''}
+    </div>` : ''}
+
+    <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px">
+      ${r.stops.length} PARADAS
+    </div>
+    <div class="stop-timeline">
+      ${r.stops.map(s => `
+        <div class="stop-item">
+          <div class="stop-dot ${stopDot(s.status)}">${stopIcon(s.status)}</div>
+          <div class="stop-content">
+            <div class="stop-company">${s.company}</div>
+            <div class="stop-address">${s.address}</div>
+            <div class="stop-meta">
+              <span class="badge badge-muted" style="font-size:10px">🕐 ${s.eta}</span>
+              ${s.code ? `<span class="badge badge-blue" style="font-size:10px">📦 ${s.code}</span>` : ''}
+              ${s.packages ? `<span class="badge badge-muted" style="font-size:10px">${s.packages} pkg · ${s.weight_lbs} lbs · ${s.volume_ft3} ft³</span>` : ''}
+              ${s.dock ? `<span class="badge badge-yellow" style="font-size:10px">🏭 ${s.dock}</span>` : ''}
+              ${s.wait_min ? `<span class="badge badge-muted" style="font-size:10px">⏳ ~${s.wait_min} min espera</span>` : ''}
+              <span class="badge badge-muted" style="font-size:10px">PoD: ${s.pod}</span>
+              ${s.status==='done' ? `<span class="badge badge-green" style="font-size:10px">✓ Entregado</span>` : ''}
+            </div>
+            ${s.notes ? `<div style="font-size:11px;color:var(--muted);margin-top:5px;padding:5px 8px;background:var(--card2);border-radius:5px;border:1px solid var(--border)">ℹ ${s.notes}</div>` : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">Desglose financiero</div>
+      <div class="cost-row"><span class="cost-label">Tarifa bruta</span><span class="cost-value">${fmt$(r.gross)}</span></div>
+      <div class="cost-row"><span class="cost-label">Comisión Muevo (12%)</span><span class="cost-value" style="color:var(--red)">-${fmt$(r.commission)}</span></div>
+      <div class="cost-row"><span class="cost-label">Total neto</span><span class="cost-value orange">${fmt$(r.net)}</span></div>
+    </div>
+
+    <div style="display:flex;gap:8px;margin-top:16px">
+      <button class="btn btn-ghost" style="flex:1" onclick="showToast('Descargando factura PDF...','success')">↓ Factura PDF</button>
+      ${r.status!=='completed' ? `<button class="btn btn-ghost" style="flex:1;color:var(--red)" onclick="showToast('Contactá soporte para cancelar una ruta activa','info')">Cancelar ruta</button>` : ''}
+    </div>
+  `;
+
+  document.getElementById('detailPanel').classList.add('open');
+  document.getElementById('overlay').classList.add('show');
+}
+
+function closePanel() {
+  document.getElementById('detailPanel').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────
+function showToast(msg, type='info') {
+  const el = document.getElementById('toast');
+  const icons = { success:'✅', info:'ℹ️', warn:'⚠️' };
+  el.className = `toast ${type}`;
+  el.innerHTML = `<span>${icons[type]||'ℹ️'}</span><span>${msg}</span>`;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── Auth flow ────────────────────────────────────────────────────────────
+async function handleLogin() {
+  const email = document.getElementById('loginEmail').value;
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  errEl.style.display = 'none';
+  try {
+    await apiLogin(email, password);
+    useRealData = true;
+    await loadRealData();
+    document.getElementById('loginOverlay').style.display = 'none';
+    showView('dashboard');
+    showToast('Conectado al backend real', 'success');
+  } catch (e) {
+    errEl.textContent = 'Email o contraseña incorrectos, o el backend no está corriendo.';
+    errEl.style.display = 'block';
+  }
+}
+
+function skipLogin() {
+  useRealData = false;
+  document.getElementById('loginOverlay').style.display = 'none';
+  showView('dashboard');
+}
+
+let REAL_DASHBOARD = null;
+let REAL_ROUTES = null;
+let REAL_BILLING = null;
+
+async function loadRealData() {
+  try {
+    REAL_DASHBOARD = await apiGet('/warehouse/dashboard');
+    REAL_ROUTES = await apiGet('/warehouse/routes');
+    REAL_BILLING = await apiGet('/warehouse/billing');
+  } catch (e) {
+    console.error('Error cargando datos reales:', e);
+    useRealData = false;
+  }
+}
+
+// Mapea una RouteHeader real (API) al shape que usa el resto del HTML/JS
+function mapRealRoute(r) {
+  return {
+    id: r.id, num: r.route_number, title: r.title,
+    client: r.company_name || 'Cliente corporativo',
+    mode: r.service_mode === 'mensajeria' ? 'Mensajería' : r.service_mode === 'logistica' ? 'Logística' : 'Empleados',
+    status: r.status === 'in_progress' ? 'in_progress' : r.status === 'completed' ? 'completed' : r.status === 'published' || r.status === 'assigned' ? 'scheduled' : r.status,
+    date: r.scheduled_date ? new Date(r.scheduled_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) : '',
+    time: r.scheduled_start && r.scheduled_end
+      ? `${new Date(r.scheduled_start).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})} – ${new Date(r.scheduled_end).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}`
+      : '',
+    stops_total: r.total_stops || 0, stops_done: r.completed_stops || 0,
+    km: r.total_km || 0,
+    gross: r.gross_pay || 0, commission: (r.gross_pay||0) - (r.net_pay||0), net: r.net_pay || 0,
+    transportista: r.transport_company_name || 'Sin asignar', transportista_rating: 4.8,
+    vehicle: '', driver: '',
+    shipment: r.total_packages > 0 ? {
+      total_packages: r.total_packages, total_weight_lbs: r.total_weight_lbs,
+      total_volume_ft3: r.total_volume_ft3, stackable: true,
+      fragile: r.has_fragile_items, hazmat: r.has_hazmat_items, temp_controlled: r.requires_temp_control,
+      cargo_value: r.total_cargo_value, insurance_required: r.requires_insurance,
+      special_instructions: r.driver_notes || '',
+    } : null,
+    stops: (r.stops || []).map(s => ({
+      order: s.sequence_order, company: s.company_name || '', address: s.address || '',
+      eta: s.eta_scheduled ? new Date(s.eta_scheduled).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}) : '',
+      status: s.status, code: s.items?.[0]?.package_code || '', pod: s.pod_required,
+      packages: s.packages_count, weight_lbs: s.weight_lbs, volume_ft3: s.volume_ft3,
+      dock: s.dock_number || '', wait_min: s.wait_minutes_estimated || 0, notes: s.access_notes || '',
+    })),
+  };
+}
+
+function getActiveRoutes() {
+  if (useRealData && REAL_ROUTES) return REAL_ROUTES.map(mapRealRoute);
+  return ROUTES;
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+// La pantalla de login se muestra por defecto (ver #loginOverlay en el HTML).
+// showView('dashboard') se llama después de login exitoso o de "Continuar con datos demo".
+
+</script>
+</body>
+</html>
