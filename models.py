@@ -83,6 +83,15 @@ class RouteStatus(str, PyEnum):
     CANCELLED     = "cancelled"
     FAILED        = "failed"          # no completada por fuerza mayor
 
+class ContractStatus(str, PyEnum):
+    DRAFT              = "draft"               # en negociación, sin firmar
+    PENDING_SIGNATURE  = "pending_signature"   # enviado, esperando firma
+    ACTIVE             = "active"              # firmado y vigente
+    SUSPENDED          = "suspended"           # pausado temporalmente (vuelve a active)
+    EXPIRED            = "expired"             # venció sin renovación
+    RENEWED            = "renewed"             # terminó, dio lugar a un contrato nuevo
+    CANCELLED          = "cancelled"           # terminado antes de tiempo
+
 class StopStatus(str, PyEnum):
     PENDING       = "pending"
     IN_TRANSIT    = "in_transit"      # conductor en camino a esta parada
@@ -658,6 +667,10 @@ class Contract(Base):
     service_mode        = Column(Enum(ServiceMode, values_callable=lambda obj: [e.value for e in obj]), nullable=False)
     vehicle_type        = Column(Enum(VehicleType, values_callable=lambda obj: [e.value for e in obj]), nullable=True)  # None = cualquier tipo
 
+    # Flujo de estado — ver ContractStatus para las transiciones válidas
+    status              = Column(Enum(ContractStatus, values_callable=lambda obj: [e.value for e in obj]),
+                                 default=ContractStatus.DRAFT, nullable=False)
+
     # Tarifas acordadas
     base_rate           = Column(Numeric(10, 2), nullable=False)    # tarifa base por ruta
     rate_per_km         = Column(Numeric(8, 4),  nullable=True)     # costo adicional por km
@@ -672,7 +685,16 @@ class Contract(Base):
     # Vigencia
     start_date          = Column(DateTime(timezone=True), nullable=False)
     end_date            = Column(DateTime(timezone=True), nullable=True)  # None = indefinido
+
+    # is_active es una columna calculada — un trigger de PostgreSQL la
+    # mantiene en True únicamente cuando status='active'. Se conserva
+    # por retrocompatibilidad con código que ya filtra por is_active;
+    # el código nuevo debería filtrar directamente por status.
     is_active           = Column(Boolean, default=True, nullable=False)
+
+    # Si este contrato fue reemplazado por uno nuevo (status=renewed),
+    # apunta al contrato sucesor.
+    renewed_into_id      = Column(UUID(as_uuid=True), ForeignKey("contracts.id"), nullable=True)
 
     signed_document_url = Column(String(512), nullable=True)
     notes               = Column(Text, nullable=True)
