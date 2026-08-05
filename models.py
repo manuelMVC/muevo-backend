@@ -72,16 +72,54 @@ class ServiceMode(str, PyEnum):
     MENSAJERIA    = "mensajeria"      # documentos / paquetes
     LOGISTICA     = "logistica"       # almacén / carga / palets
     EMPLEADOS     = "empleados"       # transporte corporativo
+    PAQUETERIA    = "paqueteria"      # paquetes medianos / e-commerce
     MIXTO         = "mixto"
 
 class RouteStatus(str, PyEnum):
-    DRAFT         = "draft"           # en preparación por el despachador
-    PUBLISHED     = "published"       # visible para conductores
-    ASSIGNED      = "assigned"        # conductor asignado, pendiente inicio
-    IN_PROGRESS   = "in_progress"     # ruta activa
-    COMPLETED     = "completed"       # todas las paradas confirmadas
-    CANCELLED     = "cancelled"
-    FAILED        = "failed"          # no completada por fuerza mayor
+    DRAFT              = "draft"              # en preparación por el despachador
+    PUBLISHED          = "published"          # visible para conductores
+    ASSIGNED           = "assigned"           # conductor asignado, pendiente inicio
+    IN_PROGRESS        = "in_progress"        # ruta activa
+    INCIDENT_REPORTED  = "incident_reported"  # pausada por incidencia activa
+    COMPLETED          = "completed"          # todas las paradas confirmadas
+    CANCELLED          = "cancelled"
+    FAILED             = "failed"             # no completada por fuerza mayor
+
+class BatchStatus(str, PyEnum):
+    DRAFT                = "draft"
+    APPROVED             = "approved"
+    PARTIALLY_ACCEPTED   = "partially_accepted"
+    FULLY_ACCEPTED       = "fully_accepted"
+    PARTIALLY_COMPLETED  = "partially_completed"
+    COMPLETED            = "completed"
+    CLOSED_WITH_INCIDENTS= "closed_with_incidents"
+    CANCELLED            = "cancelled"
+    EXPIRED              = "expired"
+
+class BatchItemStatus(str, PyEnum):
+    PENDING              = "pending"
+    ACCEPTED             = "accepted"
+    REJECTED             = "rejected"
+    REASSIGNED           = "reassigned"
+    COMPLETED            = "completed"
+    CLOSED_WITH_INCIDENTS= "closed_with_incidents"
+
+class IncidentStatus(str, PyEnum):
+    OPEN         = "open"
+    UNDER_REVIEW = "under_review"
+    RESOLVED     = "resolved"
+    UNRESOLVED   = "unresolved"
+
+class IncidentSeverity(str, PyEnum):
+    LOW      = "low"
+    MEDIUM   = "medium"
+    HIGH     = "high"
+    CRITICAL = "critical"
+
+class ReporterRole(str, PyEnum):
+    DRIVER            = "driver"
+    TRANSPORT_ADMIN   = "transport_admin"
+    WAREHOUSE_ADMIN   = "warehouse_admin"
 
 class ContractStatus(str, PyEnum):
     DRAFT              = "draft"               # en negociación, sin firmar
@@ -148,6 +186,8 @@ class User(Base):
     # Relaciones
     driver            = relationship("Driver",  back_populates="user",    uselist=False)
     company_admin     = relationship("CompanyAdmin", back_populates="user", uselist=False)
+    transport_company_admin = relationship("TransportCompanyAdmin", back_populates="user", uselist=False)
+    holding_user            = relationship("HoldingUser", back_populates="user", uselist=False)
 
     def __repr__(self):
         return f"<User {self.email} ({self.role})>"
@@ -265,6 +305,7 @@ class TransportCompany(Base):
 
     # Relaciones
     vehicles    = relationship("Vehicle", back_populates="transport_company", cascade="all, delete-orphan")
+    admins      = relationship("TransportCompanyAdmin", back_populates="transport_company", cascade="all, delete-orphan")
 
     __table_args__ = (
         Index("ix_tc_is_active",   "is_active"),
@@ -295,6 +336,7 @@ class Vehicle(Base):
     is_active              = Column(Boolean, default=True, nullable=False)
 
     # Identificación
+    vehicle_type_code = Column(String(60), ForeignKey("vehicle_types.code"), nullable=True)
     vehicle_type      = Column(Enum(VehicleType, values_callable=lambda obj: [e.value for e in obj]), nullable=False)
     make              = Column(String(100), nullable=False)   # Ford, Toyota...
     model             = Column(String(100), nullable=False)   # Transit, Camry...
@@ -328,9 +370,11 @@ class Vehicle(Base):
     updated_at        = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relaciones
-    driver             = relationship("Driver",           back_populates="vehicles")
-    transport_company   = relationship("TransportCompany", back_populates="vehicles")
-    routes               = relationship("Route",            back_populates="vehicle")
+    driver              = relationship("Driver",            back_populates="vehicles")
+    transport_company   = relationship("TransportCompany",  back_populates="vehicles")
+    routes              = relationship("Route",             back_populates="vehicle")
+    vehicle_type_config = relationship("VehicleTypeConfig", back_populates="vehicles",
+                                       foreign_keys=[vehicle_type_code])
 
     __table_args__ = (
         Index("ix_vehicles_driver_id", "driver_id"),
@@ -449,26 +493,70 @@ class HoldingRole(str, PyEnum):
     VIEWER        = "viewer"         # solo lectura de reportes agregados
 
 class HoldingUser(Base):
-    """Usuario con visibilidad/gestión a nivel de TODO el holding (todas sus subsidiarias)."""
+    """
+    Usuario perteneciente a un holding. Puede tener acceso granular a
+    una o más compañías del holding, con permisos distintos por compañía.
+    """
     __tablename__ = "holding_users"
 
-    id          = uuid_pk()
-    holding_id  = Column(UUID(as_uuid=True), ForeignKey("holdings.id", ondelete="CASCADE"), nullable=False)
-    user_id     = Column(UUID(as_uuid=True), ForeignKey("users.id",    ondelete="CASCADE"), nullable=False)
+    id              = uuid_pk()
+    holding_id      = Column(UUID(as_uuid=True), ForeignKey("holdings.id", ondelete="CASCADE"), nullable=False)
+    user_id         = Column(UUID(as_uuid=True), ForeignKey("users.id",    ondelete="CASCADE"), nullable=False)
 
-    role        = Column(String(30), nullable=False, default="executive_viewer")
-    # holding_admin | executive_viewer | billing_manager
+    role            = Column(String(30), nullable=False, default="operator")
+    # super_admin | admin | operator | viewer
 
+    is_super_admin  = Column(Boolean, default=False, nullable=False)
+    is_active       = Column(Boolean, default=True,  nullable=False)
+
+    # Legacy — mantenidos por compatibilidad
     can_create_companies          = Column(Boolean, default=False, nullable=False)
     can_view_consolidated_billing = Column(Boolean, default=True,  nullable=False)
 
-    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+    created_at      = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at      = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    holding     = relationship("Holding", back_populates="holding_users")
-    user        = relationship("User")
+    holding         = relationship("Holding", back_populates="holding_users")
+    user            = relationship("User", back_populates="holding_user")
+    company_access  = relationship("HoldingUserCompany", back_populates="holding_user",
+                                   cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint("holding_id", "user_id", name="uq_holding_user"),
+    )
+
+
+class HoldingUserCompany(Base):
+    """
+    Acceso granular de un HoldingUser a una Company específica.
+    Permisos:
+      can_view    — ver rutas, reportes, facturación de esa compañía
+      can_operate — crear rutas, usar dispatcher, subir CSV
+      can_invoice — ver y descargar facturas
+      is_admin    — gestionar usuarios del holding para esa compañía
+    """
+    __tablename__ = "holding_user_companies"
+
+    id              = uuid_pk()
+    holding_user_id = Column(UUID(as_uuid=True), ForeignKey("holding_users.id", ondelete="CASCADE"), nullable=False)
+    company_id      = Column(UUID(as_uuid=True), ForeignKey("companies.id",     ondelete="CASCADE"), nullable=False)
+
+    can_view        = Column(Boolean, default=True,  nullable=False)
+    can_operate     = Column(Boolean, default=False, nullable=False)
+    can_invoice     = Column(Boolean, default=False, nullable=False)
+    is_admin        = Column(Boolean, default=False, nullable=False)
+
+    granted_at      = Column(DateTime(timezone=True), server_default=func.now())
+    granted_by_id   = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    holding_user    = relationship("HoldingUser", back_populates="company_access")
+    company         = relationship("Company",     foreign_keys=[company_id])
+    granted_by      = relationship("User",        foreign_keys=[granted_by_id])
+
+    __table_args__ = (
+        UniqueConstraint("holding_user_id", "company_id", name="uq_holding_user_company"),
+        Index("ix_huc_holding_user_id", "holding_user_id"),
+        Index("ix_huc_company_id",      "company_id"),
     )
 
 # ─── COMPANIES ────────────────────────────────────────────────────────────────
@@ -553,6 +641,28 @@ class CompanyAdmin(Base):
 
     __table_args__ = (
         UniqueConstraint("company_id", "user_id", name="uq_company_admin"),
+    )
+
+class TransportCompanyAdmin(Base):
+    """Usuarios administradores de una empresa de transporte — gestionan
+    flota, conductores, aceptación de rutas, y facturación de la empresa."""
+    __tablename__ = "transport_company_admins"
+
+    id                    = uuid_pk()
+    transport_company_id = Column(UUID(as_uuid=True), ForeignKey("transport_companies.id", ondelete="CASCADE"), nullable=False)
+    user_id               = Column(UUID(as_uuid=True), ForeignKey("users.id",               ondelete="CASCADE"), nullable=False)
+    is_primary            = Column(Boolean, default=False, nullable=False)
+    can_accept_routes     = Column(Boolean, default=True,  nullable=False)  # aceptar/rechazar rutas ofrecidas
+    can_manage_fleet      = Column(Boolean, default=True,  nullable=False)  # CRUD vehículos/conductores
+    can_view_billing      = Column(Boolean, default=False, nullable=False)  # ver facturación consolidada
+
+    created_at            = Column(DateTime(timezone=True), server_default=func.now())
+
+    transport_company     = relationship("TransportCompany", back_populates="admins")
+    user                  = relationship("User", back_populates="transport_company_admin")
+
+    __table_args__ = (
+        UniqueConstraint("transport_company_id", "user_id", name="uq_transport_company_admin"),
     )
 
 # ─── WAREHOUSES ───────────────────────────────────────────────────────────────
@@ -915,6 +1025,8 @@ class RouteHeader(Base):
 
     title                     = Column(String(255), nullable=False)
     service_mode               = Column(Enum(ServiceMode, values_callable=lambda obj: [e.value for e in obj]), nullable=False)
+    service_type_id            = Column(UUID(as_uuid=True), ForeignKey("service_types.id"), nullable=True)
+    client_code                = Column(String(100), nullable=True)  # propagado desde paradas si todas son del mismo cliente
     status                     = Column(Enum(RouteStatus, values_callable=lambda obj: [e.value for e in obj]), default=RouteStatus.DRAFT, nullable=False)
 
     # Programación
@@ -978,10 +1090,12 @@ class RouteHeader(Base):
     updated_at                                                   = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relaciones
-    company             = relationship("Company",   foreign_keys=[company_id])
-    origin_warehouse     = relationship("Warehouse", foreign_keys=[origin_warehouse_id])
-    details               = relationship("RouteDetail", back_populates="route_header",
-                                        cascade="all, delete-orphan", order_by="RouteDetail.sequence_order")
+    company             = relationship("Company",          foreign_keys=[company_id])
+    origin_warehouse    = relationship("Warehouse",         foreign_keys=[origin_warehouse_id])
+    service_type_rel    = relationship("ServiceType",       foreign_keys=[service_type_id], viewonly=True)
+    transport_company   = relationship("TransportCompany",  foreign_keys=[transport_company_id])
+    details             = relationship("RouteDetail", back_populates="route_header",
+                                       cascade="all, delete-orphan", order_by="RouteDetail.sequence_order")
 
     __table_args__ = (
         Index("ix_rh_company_id",      "company_id"),
@@ -1030,6 +1144,7 @@ class RouteDetail(Base):
     contact_phone                               = Column(String(30), nullable=True)
     contact_email                                = Column(String(255), nullable=True)
     floor_suite                                   = Column(String(100), nullable=True)
+    codigo_cliente                                = Column(String(100), nullable=True)  # código de cliente del warehouse
     access_notes                                   = Column(Text, nullable=True)
 
     # Totales de envío de ESTA parada (mantenidos por trigger desde shipment_items)
@@ -1102,6 +1217,8 @@ class ShipmentItem(Base):
 
     line_number            = Column(Integer, nullable=False)
     package_code             = Column(String(100), nullable=True, index=True)
+    barcode                    = Column(String(200), nullable=True)   # código de barras
+    qr_code                    = Column(String(500), nullable=True)   # contenido del QR
     description                = Column(String(255), nullable=True)
 
     item_type                    = Column(String(30), default="box", nullable=False)
@@ -1327,4 +1444,412 @@ class DriverMetric(Base):
         UniqueConstraint("driver_id", "metric_date", name="uq_driver_metric_date"),
         Index("ix_driver_metrics_driver_id", "driver_id"),
         Index("ix_driver_metrics_date",      "metric_date"),
+    )
+
+
+# ─── VEHICLE TYPES ───────────────────────────────────────────────────────────
+
+class VehicleTypeConfig(Base):
+    """
+    Catálogo de tipos de vehículo — configurable sin tocar código.
+    Reemplaza el enum VehicleType hardcodeado con una tabla configurable.
+    """
+    __tablename__ = "vehicle_types"
+
+    id              = uuid_pk()
+    code            = Column(String(60),   unique=True, nullable=False)
+    name            = Column(String(120),  nullable=False)
+    description     = Column(Text,         nullable=True)
+    peso_max_lbs    = Column(Numeric(10,2), default=0,    nullable=False)
+    volumen_max_ft3 = Column(Numeric(10,2), default=0,    nullable=False)
+    habilitado      = Column(Boolean,       default=True,  nullable=False)
+    maneja_unidades = Column(Boolean,       default=False, nullable=False)
+    unidades_max    = Column(Integer,       nullable=True)
+    created_at      = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at      = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    vehicles        = relationship("Vehicle", back_populates="vehicle_type_config",
+                                   foreign_keys="Vehicle.vehicle_type_code")
+
+
+# ─── SERVICE TYPES ────────────────────────────────────────────────────────────
+
+class ServiceType(Base):
+    """
+    Catálogo de tipos de servicio — configurable sin tocar código.
+    Define la naturaleza de la operación y sus parámetros financieros.
+    """
+    __tablename__ = "service_types"
+
+    id                = uuid_pk()
+    code              = Column(String(60),  unique=True, nullable=False)
+    name              = Column(String(120), nullable=False)
+    description       = Column(Text,        nullable=True)
+    porcentaje_muevo  = Column(Numeric(5,  2), default=12.00, nullable=False)
+    importe_minimo    = Column(Numeric(10, 2), default=0.00,  nullable=False)
+    importe_maximo    = Column(Numeric(10, 2), nullable=True)
+    precio_servicio   = Column(Numeric(10, 2), default=0.00,  nullable=False)
+    habilitado        = Column(Boolean, default=True, nullable=False)
+    created_at        = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at        = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+# ─── INCIDENT TYPES ───────────────────────────────────────────────────────────
+
+class IncidentType(Base):
+    """Catálogo de tipos de incidencia — configurable sin tocar código."""
+    __tablename__ = "incident_types"
+
+    id                   = uuid_pk()
+    code                 = Column(String(60), unique=True, nullable=False)
+    name                 = Column(String(120), nullable=False)
+    description          = Column(Text, nullable=True)
+    severity             = Column(Enum(IncidentSeverity, values_callable=lambda obj: [e.value for e in obj]),
+                                  default=IncidentSeverity.MEDIUM, nullable=False)
+    affects_route_status = Column(Boolean, default=False, nullable=False)
+    is_active            = Column(Boolean, default=True, nullable=False)
+    created_at           = Column(DateTime(timezone=True), server_default=func.now())
+
+    incidents = relationship("Incident", back_populates="incident_type")
+
+
+# ─── INCIDENTS ────────────────────────────────────────────────────────────────
+
+class Incident(Base):
+    """Incidencia reportada durante la ejecución de una ruta o parada."""
+    __tablename__ = "incidents"
+
+    id                   = uuid_pk()
+    incident_type_id     = Column(UUID(as_uuid=True), ForeignKey("incident_types.id"), nullable=False)
+    reported_by_user_id  = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    reporter_role        = Column(Enum(ReporterRole,   values_callable=lambda obj: [e.value for e in obj]), nullable=False)
+
+    # Contexto de la incidencia — al menos uno debe estar presente
+    route_header_id      = Column(UUID(as_uuid=True), ForeignKey("route_headers.id"), nullable=True)
+    route_detail_id      = Column(UUID(as_uuid=True), ForeignKey("route_details.id"), nullable=True)
+    batch_item_id        = Column(UUID(as_uuid=True), ForeignKey("route_batch_items.id"), nullable=True)
+
+    status               = Column(Enum(IncidentStatus, values_callable=lambda obj: [e.value for e in obj]),
+                                  default=IncidentStatus.OPEN, nullable=False)
+    title                = Column(String(200), nullable=False)
+    description          = Column(Text, nullable=False)
+    evidence_urls        = Column(JSON, default=list, nullable=False)  # lista de URLs de fotos/videos
+
+    # Resolución
+    resolved_by_user_id  = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    resolution_notes     = Column(Text, nullable=True)
+    resolved_at          = Column(DateTime(timezone=True), nullable=True)
+
+    reported_at          = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at           = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relaciones
+    incident_type        = relationship("IncidentType",  back_populates="incidents")
+    reported_by          = relationship("User", foreign_keys=[reported_by_user_id])
+    resolved_by          = relationship("User", foreign_keys=[resolved_by_user_id])
+    route_header         = relationship("RouteHeader",   foreign_keys=[route_header_id])
+    route_detail         = relationship("RouteDetail",   foreign_keys=[route_detail_id])
+
+    __table_args__ = (
+        Index("ix_incidents_route_header_id", "route_header_id"),
+        Index("ix_incidents_status",          "status"),
+        Index("ix_incidents_reported_by",     "reported_by_user_id"),
+    )
+
+
+# ─── ROUTE BATCHES ────────────────────────────────────────────────────────────
+
+class RouteBatch(Base):
+    """Lote de rutas ofrecido a una o más empresas de transporte."""
+    __tablename__ = "route_batches"
+
+    id            = uuid_pk()
+    company_id    = Column(UUID(as_uuid=True), ForeignKey("companies.id"),      nullable=False)
+    contract_id   = Column(UUID(as_uuid=True), ForeignKey("contracts.id"),      nullable=True)
+    client_id     = Column(UUID(as_uuid=True), ForeignKey("batch_clients.id"),  nullable=True)
+    batch_number  = Column(String(50),  nullable=True, unique=True)  # ORL-LOT-0001
+    client_code   = Column(String(100), nullable=True)
+    vehicle_type  = Column(String(50),  nullable=True)  # tipo de vehículo del lote
+    service_type  = Column(String(50),  nullable=True)  # tipo de servicio del lote
+    status        = Column(Enum(BatchStatus, values_callable=lambda obj: [e.value for e in obj]),
+                           default=BatchStatus.DRAFT, nullable=False)
+    notes         = Column(Text, nullable=True)
+    offered_at    = Column(DateTime(timezone=True), nullable=True)
+    expires_at    = Column(DateTime(timezone=True), nullable=True)
+    created_at    = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at    = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relaciones
+    company       = relationship("Company",     foreign_keys=[company_id])
+    contract      = relationship("Contract",     foreign_keys=[contract_id])
+    client        = relationship("BatchClient",  foreign_keys="RouteBatch.client_id", back_populates="batches")
+    items         = relationship("RouteBatchItem", back_populates="batch", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_route_batches_company_id", "company_id"),
+        Index("ix_route_batches_status",     "status"),
+    )
+
+
+# ─── ROUTE BATCH ITEMS ────────────────────────────────────────────────────────
+
+class RouteBatchItem(Base):
+    """
+    Ítem individual dentro de un lote — una ruta que puede ser aceptada,
+    rechazada, o reasignada a otra empresa de transporte.
+    """
+    __tablename__ = "route_batch_items"
+
+    id                    = uuid_pk()
+    batch_id              = Column(UUID(as_uuid=True), ForeignKey("route_batches.id",    ondelete="CASCADE"), nullable=False)
+    route_header_id       = Column(UUID(as_uuid=True), ForeignKey("route_headers.id"),   nullable=False)
+    transport_company_id  = Column(UUID(as_uuid=True), ForeignKey("transport_companies.id"), nullable=True)
+    status                = Column(Enum(BatchItemStatus, values_callable=lambda obj: [e.value for e in obj]),
+                                   default=BatchItemStatus.PENDING, nullable=False)
+    assigned_at           = Column(DateTime(timezone=True), nullable=True)
+    incident_id           = Column(UUID(as_uuid=True), ForeignKey("incidents.id"), nullable=True)
+    created_at            = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at            = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relaciones
+    batch                 = relationship("RouteBatch",         back_populates="items")
+    route_header          = relationship("RouteHeader",        foreign_keys=[route_header_id])
+    transport_company     = relationship("TransportCompany",   foreign_keys=[transport_company_id])
+    incident              = relationship("Incident",           foreign_keys=[incident_id])
+
+    __table_args__ = (
+        UniqueConstraint("batch_id", "route_header_id", name="uq_batch_route"),
+        Index("ix_batch_items_batch_id",            "batch_id"),
+        Index("ix_batch_items_route_header_id",     "route_header_id"),
+        Index("ix_batch_items_transport_company_id","transport_company_id"),
+        Index("ix_batch_items_status",              "status"),
+    )
+
+# ─── WAREHOUSE INVENTORY ──────────────────────────────────────────────────────
+
+class InventoryItemStatus(PyEnum):
+    PENDING        = "pending"
+    ADDED_TO_BATCH = "added_to_batch"
+    CANCELLED      = "cancelled"
+
+
+class WarehouseInventoryItem(Base):
+    """
+    Ítem de inventario escaneado en el warehouse.
+    Cuando se escanea el mismo código múltiples veces se incrementa quantity.
+    Puede vivir como inventario pre-lote (flujo A) o agregarse directo
+    a un lote en curso (flujo B).
+    """
+    __tablename__ = "warehouse_inventory_items"
+
+    id                = uuid_pk()
+    company_id        = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+
+    # Código crudo escaneado (barcode o QR)
+    raw_code          = Column(String(500), nullable=False)
+
+    # Datos parseados del código
+    codigo_cliente    = Column(String(100), nullable=True)
+    destino           = Column(String(255), nullable=True)
+    direccion         = Column(String(500), nullable=True)
+    lat               = Column(Float,       nullable=True)
+    lng               = Column(Float,       nullable=True)
+    peso_lbs_unit     = Column(Numeric(10,2), default=0, nullable=False)
+    volumen_ft3_unit  = Column(Numeric(10,2), default=0, nullable=False)
+    contacto          = Column(String(255), nullable=True)
+    telefono          = Column(String(30),  nullable=True)
+    notas             = Column(Text,        nullable=True)
+
+    # Cantidad de cajas con el mismo código
+    quantity          = Column(Integer, default=1, nullable=False)
+
+    # Totales calculados (unit * quantity)
+    peso_lbs_total    = Column(Numeric(10,2), default=0, nullable=False)
+    volumen_ft3_total = Column(Numeric(10,2), default=0, nullable=False)
+
+    status            = Column(
+        Enum(InventoryItemStatus, values_callable=lambda obj: [e.value for e in obj]),
+        default=InventoryItemStatus.PENDING, nullable=False
+    )
+
+    batch_id          = Column(UUID(as_uuid=True), ForeignKey("route_batches.id"), nullable=True)
+    scanned_at        = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at        = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    scanned_by_id     = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    company           = relationship("Company",    foreign_keys=[company_id])
+    batch             = relationship("RouteBatch", foreign_keys=[batch_id])
+    scanned_by        = relationship("User",       foreign_keys=[scanned_by_id])
+
+    __table_args__ = (
+        Index("ix_wii_company_id",          "company_id"),
+        Index("ix_wii_raw_code",            "raw_code"),
+        Index("ix_wii_status",              "status"),
+        Index("ix_wii_batch_id",            "batch_id"),
+        Index("ix_wii_codigo_cliente",      "codigo_cliente"),
+        Index("ix_wii_company_code_status", "company_id", "raw_code", "status"),
+    )
+
+# ─── BATCH CLIENTS ────────────────────────────────────────────────────────────
+
+class BatchClient(Base):
+    """
+    Contacto externo al que se le notifica sobre el estado de un lote.
+    Un cliente pertenece a una compañía del holding y puede estar
+    asociado a N lotes. Las notificaciones son por email (push futuro).
+    """
+    __tablename__ = "batch_clients"
+
+    id                   = uuid_pk()
+    company_id           = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    name                 = Column(String(255), nullable=False)
+    email                = Column(String(255), nullable=False)
+    phone                = Column(String(30),  nullable=True)
+    push_token           = Column(String(255), nullable=True)   # futuro: Expo/FCM token
+
+    # Preferencias de notificación
+    codigo_cliente       = Column(String(100), nullable=True)
+    direccion            = Column(String(500), nullable=True)
+    ciudad               = Column(String(100), nullable=True)
+    estado               = Column(String(50),  nullable=True)
+
+    notify_batch_status  = Column(Boolean, default=True,  nullable=False)  # cambios de estado del lote
+    notify_stop_status   = Column(Boolean, default=False, nullable=False)  # cambios de estado de parada
+    notify_delivery      = Column(Boolean, default=True,  nullable=False)  # entrega confirmada (PoD)
+    notify_incident      = Column(Boolean, default=True,  nullable=False)  # incidencia reportada
+
+    is_active            = Column(Boolean, default=True,  nullable=False)
+    created_at           = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at           = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    company              = relationship("Company",     foreign_keys=[company_id])
+    batches              = relationship("RouteBatch",  back_populates="client")
+
+    __table_args__ = (
+        Index("ix_batch_clients_company_id", "company_id"),
+        Index("ix_batch_clients_email",      "email"),
+    )
+
+# ─── ADMIN — MODULES, ACTIONS, PERMISSIONS, PROFILES ─────────────────────────
+
+class Module(Base):
+    """Módulo del sistema al que aplica un permiso."""
+    __tablename__ = "modules"
+
+    id          = uuid_pk()
+    code        = Column(String(60),  unique=True, nullable=False)
+    name        = Column(String(120), nullable=False)
+    description = Column(Text,        nullable=True)
+    sort_order  = Column(Integer,     default=0,   nullable=False)
+
+    permissions = relationship("Permission", back_populates="module")
+
+
+class Action(Base):
+    """Acción posible sobre un módulo."""
+    __tablename__ = "actions"
+
+    id          = uuid_pk()
+    code        = Column(String(60),  unique=True, nullable=False)
+    name        = Column(String(120), nullable=False)
+    description = Column(Text,        nullable=True)
+    sort_order  = Column(Integer,     default=0,   nullable=False)
+
+    permissions = relationship("Permission", back_populates="action")
+
+
+class Permission(Base):
+    """Combinación de módulo + acción que define un permiso granular."""
+    __tablename__ = "permissions"
+
+    id          = uuid_pk()
+    code        = Column(String(120), unique=True, nullable=False)
+    # código compuesto: module_code.action_code  ej: "routes.approve"
+    name        = Column(String(200), nullable=False)
+    description = Column(Text,        nullable=True)
+    module_id   = Column(UUID(as_uuid=True), ForeignKey("modules.id"), nullable=False)
+    action_id   = Column(UUID(as_uuid=True), ForeignKey("actions.id"), nullable=False)
+    is_active   = Column(Boolean, default=True, nullable=False)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+
+    module              = relationship("Module", back_populates="permissions")
+    action              = relationship("Action", back_populates="permissions")
+    profile_permissions = relationship("ProfilePermission", back_populates="permission",
+                                       cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("module_id", "action_id", name="uq_permission_module_action"),
+        Index("ix_permissions_module_id", "module_id"),
+        Index("ix_permissions_action_id", "action_id"),
+    )
+
+
+class Profile(Base):
+    """Perfil de usuario — agrupa permisos reutilizables."""
+    __tablename__ = "profiles"
+
+    id          = uuid_pk()
+    code        = Column(String(60),  unique=True, nullable=False)
+    name        = Column(String(120), nullable=False)
+    description = Column(Text,        nullable=True)
+    is_system   = Column(Boolean, default=False, nullable=False)
+    # Los perfiles del sistema no se pueden eliminar
+    is_active   = Column(Boolean, default=True,  nullable=False)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at  = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    permissions      = relationship("ProfilePermission", back_populates="profile",
+                                    cascade="all, delete-orphan")
+    user_profiles    = relationship("HoldingUserProfile", back_populates="profile")
+
+
+class ProfilePermission(Base):
+    """Relación perfil ↔ permiso."""
+    __tablename__ = "profile_permissions"
+
+    id            = uuid_pk()
+    profile_id    = Column(UUID(as_uuid=True), ForeignKey("profiles.id",    ondelete="CASCADE"), nullable=False)
+    permission_id = Column(UUID(as_uuid=True), ForeignKey("permissions.id", ondelete="CASCADE"), nullable=False)
+    created_at    = Column(DateTime(timezone=True), server_default=func.now())
+
+    profile    = relationship("Profile",    back_populates="permissions")
+    permission = relationship("Permission", back_populates="profile_permissions")
+
+    __table_args__ = (
+        UniqueConstraint("profile_id", "permission_id", name="uq_profile_permission"),
+        Index("ix_profile_permissions_profile_id",    "profile_id"),
+        Index("ix_profile_permissions_permission_id", "permission_id"),
+    )
+
+
+class HoldingUserProfile(Base):
+    """
+    Asignación de un perfil a un HoldingUser, con alcance opcional
+    a una compañía y/o warehouse específicos.
+
+    Alcance:
+      company_id = NULL  → aplica a todo el holding
+      company_id = X     → aplica a la compañía X
+      warehouse_id = Y   → aplica al warehouse Y dentro de la compañía X
+    """
+    __tablename__ = "holding_user_profiles"
+
+    id              = uuid_pk()
+    holding_user_id = Column(UUID(as_uuid=True), ForeignKey("holding_users.id",  ondelete="CASCADE"), nullable=False)
+    profile_id      = Column(UUID(as_uuid=True), ForeignKey("profiles.id",       ondelete="CASCADE"), nullable=False)
+    company_id      = Column(UUID(as_uuid=True), ForeignKey("companies.id",      ondelete="CASCADE"), nullable=True)
+    warehouse_id    = Column(UUID(as_uuid=True), ForeignKey("warehouses.id",     ondelete="CASCADE"), nullable=True)
+    granted_by_id   = Column(UUID(as_uuid=True), ForeignKey("users.id"),         nullable=True)
+    granted_at      = Column(DateTime(timezone=True), server_default=func.now())
+
+    holding_user = relationship("HoldingUser", foreign_keys=[holding_user_id])
+    profile      = relationship("Profile",     back_populates="user_profiles")
+    company      = relationship("Company",     foreign_keys=[company_id])
+    warehouse    = relationship("Warehouse",   foreign_keys=[warehouse_id])
+    granted_by   = relationship("User",        foreign_keys=[granted_by_id])
+
+    __table_args__ = (
+        Index("ix_hup_holding_user_id", "holding_user_id"),
+        Index("ix_hup_profile_id",      "profile_id"),
+        Index("ix_hup_company_id",      "company_id"),
     )

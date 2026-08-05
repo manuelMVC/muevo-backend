@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Muevo — Iniciar sesión</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background:#0D0D0D; color:#fff; height:100vh;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .login-card {
+    width:340px; background:#1C1C1C; border:1px solid rgba(255,255,255,0.07);
+    border-radius:14px; padding:28px;
+  }
+  .login-logo { display:flex; align-items:center; gap:10px; margin-bottom:20px; }
+  .login-logo img { width:36px; height:36px; border-radius:10px; object-fit:cover; }
+  .login-logo .name { font-size:16px; font-weight:600; color:var(--white, #F8FAFB); }
+  .login-sub { font-size:13px; color:#8A8A8A; margin-bottom:16px; }
+
+  [data-theme="light"] {
+    --bg:      #F4F4F2;
+    --card:    #FFFFFF;
+    --white:   #1A1A1A;
+    --muted:   #6B6B6B;
+    --border:  rgba(0,0,0,0.09);
+    --input-bg: #FAFAF8;
+    --input-border: rgba(0,0,0,0.12);
+  }
+
+  input {
+    width:100%; padding:10px 12px; margin-bottom:8px; background:#222;
+    border:1px solid var(--input-border, rgba(255,255,255,0.07)); border-radius:8px; color:#fff;
+    font-size:13px; box-sizing:border-box;
+  }
+  input:last-of-type { margin-bottom:14px; }
+  button.login-btn {
+    width:100%; padding:10px; background:#F47B20; border:none; border-radius:8px;
+    color:#111; font-weight:600; font-size:13px; cursor:pointer;
+  }
+  button.login-btn:disabled { opacity:0.6; cursor:not-allowed; }
+  .login-error { color:#E74C3C; font-size:12px; margin-top:10px; display:none; }
+  .login-redirect { color:#8A8A8A; font-size:12px; margin-top:10px; display:none; text-align:center; }
+  .quick-access { text-align:center; margin-top:14px; font-size:11px; color:#5A5A5A; }
+
+  [data-theme="light"] body {
+    background: #F4F4F2;
+    color: #1A1A1A;
+  }
+  [data-theme="light"] .login-card {
+    background: #FFFFFF;
+    border-color: rgba(0,0,0,0.08);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  }
+  [data-theme="light"] input {
+    background: #FAFAF8 !important;
+    border-color: rgba(0,0,0,0.12) !important;
+    color: #1A1A1A !important;
+  }
+  [data-theme="light"] .login-sub,
+  [data-theme="light"] .quick-access { color: #888; }
+
+</style>
+</head>
+<body>
+
+<div id="companySelector" style="width:340px;background:#1C1C1C;border:1px solid rgba(255,255,255,0.07);border-radius:14px;padding:28px;display:none"></div>
+<div class="login-card" id="loginCard">
+  <div class="login-logo">
+    <img src="data:image/png;base64,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" alt="Muevo">
+    <div class="name">muevo</div>
+  </div>
+  <div class="login-sub">Inicia sesión para continuar</div>
+
+  <input id="loginEmail" type="email" placeholder="Email" autocomplete="username">
+  <input id="loginPassword" type="password" placeholder="Contraseña" autocomplete="current-password">
+
+  <button class="login-btn" id="loginBtn" onclick="handleLogin()">Iniciar sesión</button>
+
+  <div id="loginError" class="login-error"></div>
+  <div id="loginRedirect" class="login-redirect"></div>
+
+  <div style="text-align:right;margin-bottom:4px">
+    <button id="themeToggleBtn" onclick="toggleTheme()" title="Cambiar tema"
+      style="background:none;border:none;cursor:pointer;font-size:18px;opacity:.6">🌙</button>
+  </div>
+  <div class="quick-access">Portal warehouse, transportista, o conductor — el sistema te redirige automáticamente</div>
+</div>
+
+<script>
+const API_BASE = '/api/v1';
+
+document.getElementById('loginPassword').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') handleLogin();
+});
+
+async function handleLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const errEl = document.getElementById('loginError');
+  const redirectEl = document.getElementById('loginRedirect');
+  const btn = document.getElementById('loginBtn');
+
+  errEl.style.display = 'none';
+  redirectEl.style.display = 'none';
+
+  if (!email || !password) {
+    errEl.textContent = 'Completá email y contraseña.';
+    errEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
+
+  try {
+    const body = new URLSearchParams({ username: email, password });
+    const res = await fetch(`${API_BASE}/auth/token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+
+    if (!res.ok) {
+      throw new Error('Email o contraseña incorrectos.');
+    }
+
+    const data = await res.json();
+
+    // Guardamos el token en sessionStorage para que warehouse.html / transport.html
+    // lo recojan al cargar, sin pedir login de nuevo.
+    sessionStorage.setItem('muevo_token', data.access_token);
+    sessionStorage.setItem('muevo_user', JSON.stringify(data.user));
+
+    if (data.portal === 'driver') {
+      errEl.textContent = 'Esta cuenta es de conductor — usá la app Muevo Drive, no el portal web.';
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Iniciar sesión';
+      return;
+    }
+
+    if (!data.redirect) {
+      errEl.textContent = 'No pudimos determinar tu portal. Contactá al administrador.';
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Iniciar sesión';
+      return;
+    }
+
+    // Guardar token y datos de usuario
+    sessionStorage.setItem('muevo_token', data.access_token);
+    sessionStorage.setItem('muevo_user', JSON.stringify(data.user));
+
+    // Si tiene más de 1 compañía → mostrar selector de contexto
+    if (data.companies && data.companies.length > 1 && !data.auto_company) {
+      showCompanySelector(data);
+      return;
+    }
+
+    // Una sola compañía o auto-company → guardar y redirigir directo
+    const company = data.auto_company || (data.companies && data.companies[0]);
+    if (company) {
+      sessionStorage.setItem('muevo_company', JSON.stringify(company));
+    }
+    redirectEl.textContent = 'Redirigiendo a tu portal...';
+    redirectEl.style.display = 'block';
+    setTimeout(() => { window.location.href = data.redirect; }, 400);
+  } catch (e) {
+    errEl.textContent = e.message || 'Error al conectar con el servidor.';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Iniciar sesión';
+  }
+}
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const btn = document.getElementById('themeToggleBtn');
+  if (btn) btn.textContent = theme === 'light' ? '☀️' : '🌙';
+}
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('muevo_theme', next);
+  applyTheme(next);
+}
+(function initTheme() {
+  const saved = localStorage.getItem('muevo_theme') || 'dark';
+  applyTheme(saved);
+})();
+
+
+// ── Company selector ─────────────────────────────────────────────────────────
+let pendingPortalData = null;
+
+function showCompanySelector(data) {
+  pendingPortalData = data;
+  document.getElementById('loginCard').style.display = 'none';
+
+  const selector = document.getElementById('companySelector');
+  selector.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+      <div style="width:36px;height:36px;border-radius:10px;background:#F47B20;display:flex;align-items:center;justify-content:center;font-size:18px">🏢</div>
+      <div>
+        <div style="font-size:15px;font-weight:600;color:var(--white, #F8FAFB)">Seleccioná una empresa</div>
+        <div style="font-size:12px;color:#8A8A8A">Tenés acceso a ${data.companies.length} compañías</div>
+      </div>
+    </div>
+    ${data.companies.map(c => `
+      <button onclick="selectCompany('${c.id}', '${c.name}', '${data.redirect}')"
+        style="width:100%;text-align:left;padding:14px 16px;background:#222;border:1px solid rgba(255,255,255,0.07);
+               border-radius:10px;color:#fff;cursor:pointer;margin-bottom:8px;transition:border-color .15s"
+        onmouseover="this.style.borderColor='#F47B20'" onmouseout="this.style.borderColor='rgba(255,255,255,0.07)'">
+        <div style="font-size:14px;font-weight:500">${c.name}</div>
+        <div style="font-size:11px;color:#8A8A8A;margin-top:2px">
+          ${c.can_operate ? '✏️ Operación' : '👁 Solo lectura'}
+          ${c.can_invoice ? ' · 💰 Facturación' : ''}
+          ${c.is_admin    ? ' · 👑 Admin' : ''}
+        </div>
+      </button>
+    `).join('')}
+    <button onclick="document.getElementById('loginCard').style.display='';document.getElementById('companySelector').innerHTML=''"
+      style="width:100%;padding:10px;background:none;border:none;color:#8A8A8A;cursor:pointer;font-size:12px;margin-top:4px">
+      ← Volver al login
+    </button>
+  `;
+  selector.style.display = 'block';
+}
+
+function selectCompany(companyId, companyName, redirect) {
+  const company = pendingPortalData.companies.find(c => c.id === companyId);
+  sessionStorage.setItem('muevo_company', JSON.stringify(company || { id: companyId, name: companyName }));
+  window.location.href = redirect;
+}
+
+</script>
+
+</body>
+</html>

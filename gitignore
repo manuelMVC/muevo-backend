@@ -1,0 +1,44 @@
+# ─── Python / FastAPI backend ─────────────────────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.env
+*.log
+
+# ─── Node / Expo mobile ────────────────────────────────────────────────────────
+node_modules/
+.expo/
+.expo-shared/
+dist/
+web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# ─── OS / editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# ─── Secrets / credenciales ────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*_credentials.json
+serviceAccountKey.json
+
+# ─── Base de datos local ───────────────────────────────────────────────────────
+*.sqlite3
+*.db
+
+# ─── Builds ─────────────────────────────────────────────────────────────────────
+*.apk
+*.aab
+*.ipa
