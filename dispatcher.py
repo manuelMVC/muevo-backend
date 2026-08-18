@@ -43,6 +43,7 @@ class Stop:
     temp_id:         str   = field(default_factory=lambda: str(uuid.uuid4())[:8])
     destino:         str   = ""
     direccion:       str   = ""
+    codigo_postal:   str   = ""
     lat:             float = 0.0
     lng:             float = 0.0
 
@@ -65,6 +66,13 @@ class Stop:
 
     # Auditoría
     source:          str   = "csv"     # "csv" | "manual"
+
+    # Desglose de paquetes de esta parada (opcional).
+    # Si viene vacío, la parada se trata como un único paquete
+    # (comportamiento legacy). Cada entrada es un dict con las mismas
+    # claves que StopInput a nivel paquete: package_code, barcode, qr_code,
+    # weight_lbs, volume_ft3, declared_value.
+    items:           list  = field(default_factory=list)
 
 
 @dataclass
@@ -242,6 +250,7 @@ def planned_route_to_dict(route: PlannedRoute) -> dict:
                 "temp_id":         s.temp_id,
                 "destino":         s.destino,
                 "direccion":       s.direccion,
+                "codigo_postal":   s.codigo_postal,
                 "lat":             s.lat,
                 "lng":             s.lng,
                 "peso_lbs":        s.peso_lbs,
@@ -256,6 +265,7 @@ def planned_route_to_dict(route: PlannedRoute) -> dict:
                 "notas":           s.notas,
                 "valor_declarado": s.valor_declarado,
                 "source":          s.source,
+                "items":           s.items,
             }
             for s in route.stops
         ],

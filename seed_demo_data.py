@@ -35,37 +35,39 @@ def uid(): return uuid.uuid4()
 def hhmm(h, m=0): return datetime.strptime(f"{h}:{m:02d}", "%H:%M").time()
 
 # ── Paradas reales Orlando FL ─────────────────────────────────────────────────
+# lat/lng/zip_code obtenidos por geocodificación inversa (Nominatim/OpenStreetMap)
+# sobre las coordenadas ya cargadas, para que coincidan con la dirección real.
 STOPS = [
-    ("Orange County Courthouse",      "425 N Orange Ave",        28.5493,-81.3791),
-    ("City Hall Orlando",             "400 S Orange Ave",        28.5381,-81.3791),
-    ("Dr. Phillips Center",           "445 S Magnolia Ave",      28.5370,-81.3752),
-    ("Amway Center",                  "400 W Church St",         28.5392,-81.3836),
-    ("Bank of America Tower",         "390 N Orange Ave",        28.5481,-81.3791),
-    ("CNL Center",                    "450 S Orange Ave",        28.5365,-81.3791),
-    ("SunTrust Center",               "200 S Orange Ave",        28.5423,-81.3791),
-    ("UCF Downtown Campus",           "500 W Livingston St",     28.5414,-81.3866),
-    ("Orange Ave Medical Center",     "1800 N Orange Ave",       28.5661,-81.3791),
-    ("AdventHealth Orlando",          "601 E Rollins St",        28.5653,-81.3670),
-    ("Florida Hospital East",         "7727 Lake Underhill Rd",  28.5321,-81.2902),
-    ("Marriott World Center",         "8701 World Center Dr",    28.3871,-81.5227),
-    ("Disney Springs",                "1486 Buena Vista Dr",     28.3706,-81.5193),
-    ("SeaWorld Orlando",              "7007 Sea World Dr",       28.4109,-81.4612),
-    ("Universal Studios",             "6000 Universal Blvd",     28.4747,-81.4672),
-    ("Orange County Convention",      "9800 International Dr",   28.4244,-81.4697),
-    ("Mall at Millenia",              "4200 Conroy Rd",          28.5025,-81.4358),
-    ("Florida Mall",                  "8001 S Orange Blossom Tr",28.4538,-81.4080),
-    ("Deloitte Orlando",              "200 S Orange Ave #2200",  28.5419,-81.3791),
-    ("PwC Orlando",                   "300 S Orange Ave #800",   28.5405,-81.3791),
-    ("KPMG Orlando",                  "420 S Orange Ave #600",   28.5371,-81.3791),
-    ("Siemens Orlando",               "3333 S Orange Ave",       28.5049,-81.3791),
-    ("Darden Restaurants HQ",         "1000 Darden Center Dr",   28.4613,-81.4636),
-    ("HCA Healthcare Orlando",        "52 W Underwood St",       28.5199,-81.3766),
-    ("Tupperware Brands",             "14901 S Orange Blossom",  28.4050,-81.4080),
-    ("Danaher Altamonte",             "828 Douglas Ave",         28.6611,-81.3964),
-    ("Lockheed Martin Orl",           "9500 Astronaut Blvd",     28.4903,-80.7077),
-    ("Tech Data Orl",                 "5350 Tech Data Dr",       28.5723,-81.3964),
-    ("Hertz Orlando Airport",         "8501 Williams Rd",        28.4278,-81.3120),
-    ("Amazon Fulfillment ORL",        "12340 Boggy Creek Rd",    28.4027,-81.2820),
+    ("Orange County Courthouse",      "425 N Orange Ave",        28.5493,-81.3791, "32801"),
+    ("City Hall Orlando",             "400 S Orange Ave",        28.5381,-81.3791, "32801"),
+    ("Dr. Phillips Center",           "445 S Magnolia Ave",      28.5370,-81.3752, "32801"),
+    ("Amway Center",                  "400 W Church St",         28.5392,-81.3836, "32801"),
+    ("Bank of America Tower",         "390 N Orange Ave",        28.5481,-81.3791, "32801"),
+    ("CNL Center",                    "450 S Orange Ave",        28.5365,-81.3791, "32801"),
+    ("SunTrust Center",               "200 S Orange Ave",        28.5423,-81.3791, "32801"),
+    ("UCF Downtown Campus",           "500 W Livingston St",     28.5414,-81.3866, "32805"),
+    ("Orange Ave Medical Center",     "1800 N Orange Ave",       28.5661,-81.3791, "32804"),
+    ("AdventHealth Orlando",          "601 E Rollins St",        28.5653,-81.3670, "32803"),
+    ("Florida Hospital East",         "7727 Lake Underhill Rd",  28.5321,-81.2902, "32807"),
+    ("Marriott World Center",         "8701 World Center Dr",    28.3871,-81.5227, "32836"),
+    ("Disney Springs",                "1486 Buena Vista Dr",     28.3706,-81.5193, "32821"),
+    ("SeaWorld Orlando",              "7007 Sea World Dr",       28.4109,-81.4612, "32821"),
+    ("Universal Studios",             "6000 Universal Blvd",     28.4747,-81.4672, "32819"),
+    ("Orange County Convention",      "9800 International Dr",   28.4244,-81.4697, "32819"),
+    ("Mall at Millenia",              "4200 Conroy Rd",          28.5025,-81.4358, "32811"),
+    ("Florida Mall",                  "8001 S Orange Blossom Tr",28.4538,-81.4080, "32809"),
+    ("Deloitte Orlando",              "200 S Orange Ave #2200",  28.5419,-81.3791, "32801"),
+    ("PwC Orlando",                   "300 S Orange Ave #800",   28.5405,-81.3791, "32801"),
+    ("KPMG Orlando",                  "420 S Orange Ave #600",   28.5371,-81.3791, "32801"),
+    ("Siemens Orlando",               "3333 S Orange Ave",       28.5049,-81.3791, "32806"),
+    ("Darden Restaurants HQ",         "1000 Darden Center Dr",   28.4613,-81.4636, "32819"),
+    ("HCA Healthcare Orlando",        "52 W Underwood St",       28.5199,-81.3766, "32855"),
+    ("Tupperware Brands",             "14901 S Orange Blossom",  28.4050,-81.4080, "32837"),
+    ("Danaher Altamonte",             "828 Douglas Ave",         28.6611,-81.3964, "32714"),
+    ("Lockheed Martin Orl",           "9500 Astronaut Blvd",     28.4903,-80.7077, "32953"),
+    ("Tech Data Orl",                 "5350 Tech Data Dr",       28.5723,-81.3964, "32804"),
+    ("Hertz Orlando Airport",         "8501 Williams Rd",        28.4278,-81.3120, "32862"),
+    ("Amazon Fulfillment ORL",        "12340 Boggy Creek Rd",    28.4027,-81.2820, "32827"),
 ]
 
 with Session(engine) as db:
@@ -131,21 +133,21 @@ with Session(engine) as db:
             total_stops=len(stop_indices),
             completed_stops=completed,
             gross_pay=gross,
-            muevo_commission_pct=12,
-            muevo_commission_amt=round(gross * 0.12, 2),
+            muevo_commission_pct=5,
+            muevo_commission_amt=round(gross * 0.05, 2),
             net_pay_estimated=round(gross * 0.88, 2),
         )
         db.add(r); db.flush()
 
         for seq, idx in enumerate(stop_indices, 1):
-            nm, addr, lat, lng = STOPS[idx]
+            nm, addr, lat, lng, zip_code = STOPS[idx]
             done = seq <= completed
             d = RouteDetail(
                 id=uid(), route_header_id=r.id,
                 sequence_order=seq,
                 status=StopStatus.COMPLETED if done else StopStatus.PENDING,
                 company_name=nm, address_line1=addr,
-                city="Orlando", state="FL", lat=lat, lng=lng,
+                city="Orlando", state="FL", zip_code=zip_code, lat=lat, lng=lng,
                 contact_name="Recepción", contact_phone=f"+1 407 555 {seq:04d}",
                 weight_lbs=20.0 + seq * 5, volume_ft3=3.0 + seq,
                 codigo_cliente=client_code, pod_required='signature',
@@ -163,7 +165,15 @@ with Session(engine) as db:
             ))
         return r
 
-    batch_counter = [0]  # mutable counter for sequential numbering
+    # Arrancar el contador desde el máximo batch_number ya existente para esta compañía
+    existing_last = db.execute(
+        select(RouteBatch.batch_number)
+        .where(RouteBatch.company_id == company.id, RouteBatch.batch_number.isnot(None))
+        .order_by(RouteBatch.batch_number.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    start_n = int(existing_last.split('-')[-1]) if existing_last else 0
+    batch_counter = [start_n]  # mutable counter for sequential numbering
 
     def make_batch(notes, status, client_id, client_code, routes_specs, sched_date,
                     vehicle_type='furgoneta', service_type='mensajeria'):
@@ -235,7 +245,7 @@ with Session(engine) as db:
              380.00, RouteStatus.IN_PROGRESS, 2),
             ("Equipos Clínicos — Zona Norte",
              [25,27,8], st_log.id if st_log else None, ServiceMode.LOGISTICA,
-             280.00, RouteStatus.ASSIGNED, 0),
+             280.00, RouteStatus.PUBLISHED, 0),
             ("Reactivos Lab — Zona Este",
              [10,29,17], st_log.id if st_log else None, ServiceMode.LOGISTICA,
              195.00, RouteStatus.DRAFT, 0),

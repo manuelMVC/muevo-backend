@@ -29,6 +29,7 @@ Endpoints:
 """
 
 import os
+import re
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional, List
@@ -39,7 +40,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import bcrypt as _bcrypt
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import create_engine, text, select, update, func, delete as sa_delete
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -67,6 +68,12 @@ from models import (
     BatchClient,
     # Warehouse inventory
     WarehouseInventoryItem, InventoryItemStatus,
+    # Recepción de mercancía (inbound)
+    Reception, ReceptionItem, ReceptionSourceType, ReceptionStatus, ReceptionItemStatus,
+    # Catálogo de mensajes
+    MessageTemplate,
+    # Negociación de precios
+    RoutePriceOffer, NegotiationStatus, OfferSource, OfferStatus,
     # Company & Warehouse management
     Warehouse,
 )
@@ -81,6 +88,11 @@ DATABASE_URL = os.getenv(
 SECRET_KEY        = os.getenv("SECRET_KEY", "muevo-secret-key-cambiar-en-produccion")
 ALGORITHM         = "HS256"
 TOKEN_EXPIRE_HOURS = 24
+
+# Límites de carga de CSV — default global, sobreescribible por compañía
+# (Company.max_csv_rows / max_csv_file_size_mb; NULL = usar este default).
+DEFAULT_MAX_CSV_ROWS         = 2000
+DEFAULT_MAX_CSV_FILE_SIZE_MB = 5
 
 # ─── Database ─────────────────────────────────────────────────────────────────
 
@@ -849,9 +861,10 @@ async def accept_route(
         select(Vehicle).where(Vehicle.driver_id == driver.id, Vehicle.is_active == True)
     ).scalar_one_or_none()
 
-    header.status               = RouteStatus.ASSIGNED
     header.vehicle_id           = vehicle.id if vehicle else None
     header.transport_company_id = vehicle.transport_company_id if vehicle else header.transport_company_id
+    # Solo pasar a ASSIGNED si efectivamente hay una empresa de transporte asociada
+    header.status = RouteStatus.ASSIGNED if header.transport_company_id else RouteStatus.PUBLISHED
     db.commit()
 
     return {"status": "assigned", "route_id": route_id}
@@ -1125,10 +1138,13 @@ class ServiceTypeCreate(BaseModel):
     code:             str
     name:             str
     description:      Optional[str] = None
-    porcentaje_muevo: float = 12.00
+    porcentaje_muevo: float = 5.00
     importe_minimo:   float = 0.00
     importe_maximo:   Optional[float] = None
     precio_servicio:  float = 0.00
+    precio_por_km:    float = Field(0.00, ge=0)
+    precio_por_lb:    float = Field(0.00, ge=0)
+    precio_por_ft3:   float = Field(0.00, ge=0)
     habilitado:       bool  = True
 
 
@@ -1139,6 +1155,9 @@ class ServiceTypeUpdate(BaseModel):
     importe_minimo:   Optional[float] = None
     importe_maximo:   Optional[float] = None
     precio_servicio:  Optional[float] = None
+    precio_por_km:    Optional[float] = Field(None, ge=0)
+    precio_por_lb:    Optional[float] = Field(None, ge=0)
+    precio_por_ft3:   Optional[float] = Field(None, ge=0)
     habilitado:       Optional[bool]  = None
 
 
@@ -1152,6 +1171,9 @@ def serialize_service_type(st: ServiceType) -> dict:
         "importe_minimo":   float(st.importe_minimo),
         "importe_maximo":   float(st.importe_maximo) if st.importe_maximo else None,
         "precio_servicio":  float(st.precio_servicio),
+        "precio_por_km":    float(st.precio_por_km or 0),
+        "precio_por_lb":    float(st.precio_por_lb or 0),
+        "precio_por_ft3":   float(st.precio_por_ft3 or 0),
         "habilitado":       st.habilitado,
         "created_at":       st.created_at.isoformat() if st.created_at else None,
         "updated_at":       st.updated_at.isoformat() if st.updated_at else None,
@@ -1204,6 +1226,9 @@ async def create_service_type(
         importe_minimo=data.importe_minimo,
         importe_maximo=data.importe_maximo,
         precio_servicio=data.precio_servicio,
+        precio_por_km=data.precio_por_km,
+        precio_por_lb=data.precio_por_lb,
+        precio_por_ft3=data.precio_por_ft3,
         habilitado=data.habilitado,
     )
     db.add(st)
@@ -1229,6 +1254,9 @@ async def update_service_type(
     if data.importe_minimo   is not None: st.importe_minimo   = data.importe_minimo
     if data.importe_maximo   is not None: st.importe_maximo   = data.importe_maximo
     if data.precio_servicio  is not None: st.precio_servicio  = data.precio_servicio
+    if data.precio_por_km    is not None: st.precio_por_km    = data.precio_por_km
+    if data.precio_por_lb    is not None: st.precio_por_lb    = data.precio_por_lb
+    if data.precio_por_ft3   is not None: st.precio_por_ft3   = data.precio_por_ft3
     if data.habilitado       is not None: st.habilitado       = data.habilitado
 
     db.commit()
@@ -2013,6 +2041,8 @@ class CompanyCreate(BaseModel):
     country:            str = "US"
     allowed_modes:      list[str] = []
     payment_terms_days: int = 30
+    max_csv_rows:          Optional[int] = Field(None, ge=1)
+    max_csv_file_size_mb:  Optional[int] = Field(None, ge=1)
 
 class CompanyUpdate(BaseModel):
     name:               Optional[str]      = None
@@ -2025,6 +2055,8 @@ class CompanyUpdate(BaseModel):
     allowed_modes:      Optional[list[str]] = None
     payment_terms_days: Optional[int]      = None
     is_active:          Optional[bool]     = None
+    max_csv_rows:          Optional[int] = Field(None, ge=1)
+    max_csv_file_size_mb:  Optional[int] = Field(None, ge=1)
 
 
 def serialize_company(c: Company, db: Session) -> dict:
@@ -2040,6 +2072,11 @@ def serialize_company(c: Company, db: Session) -> dict:
         "is_active": getattr(c, 'is_active', True),
         "warehouse_count": wh_count,
         "holding_id": str(c.holding_id) if c.holding_id else None,
+        # Límites de CSV — el valor efectivo (custom de la company, o el default global)
+        "max_csv_rows":            c.max_csv_rows or DEFAULT_MAX_CSV_ROWS,
+        "max_csv_file_size_mb":    c.max_csv_file_size_mb or DEFAULT_MAX_CSV_FILE_SIZE_MB,
+        "max_csv_rows_custom":     c.max_csv_rows,           # None = usa el default
+        "max_csv_file_size_mb_custom": c.max_csv_file_size_mb,
     }
 
 
@@ -2074,6 +2111,8 @@ async def admin_create_company(
         allowed_modes=data.allowed_modes,
         payment_terms_days=data.payment_terms_days,
         is_primary_company=False,
+        max_csv_rows=data.max_csv_rows,
+        max_csv_file_size_mb=data.max_csv_file_size_mb,
     )
     db.add(company)
     db.commit()
@@ -2100,6 +2139,8 @@ async def admin_update_company(
     if data.country            is not None: company.country            = data.country
     if data.allowed_modes      is not None: company.allowed_modes      = data.allowed_modes
     if data.payment_terms_days is not None: company.payment_terms_days = data.payment_terms_days
+    if data.max_csv_rows         is not None: company.max_csv_rows         = data.max_csv_rows
+    if data.max_csv_file_size_mb is not None: company.max_csv_file_size_mb = data.max_csv_file_size_mb
 
     db.commit()
     return serialize_company(company, db)
@@ -2614,17 +2655,787 @@ async def inventory_to_batch_stops(
     return {"stops": stops, "count": len(stops)}
 
 
+# ─── Recepción de mercancía (inbound) ─────────────────────────────────────────
+
+def next_reception_number(company_id: uuid.UUID, db: Session) -> str:
+    """Genera el siguiente número secuencial de recepción: ORL-REC-0001, 0002, ..."""
+    last = db.execute(
+        select(Reception.reception_number)
+        .where(Reception.company_id == company_id, Reception.reception_number.isnot(None))
+        .order_by(Reception.reception_number.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+    if last:
+        try:
+            n = int(last.split('-')[-1]) + 1
+        except ValueError:
+            n = 1
+    else:
+        n = 1
+    return f"ORL-REC-{n:04d}"
+
+
+def serialize_reception_item(ri: ReceptionItem) -> dict:
+    return {
+        "id":                str(ri.id),
+        "codigo_cliente":    ri.codigo_cliente,
+        "descripcion":       ri.descripcion,
+        "expected_quantity": ri.expected_quantity,
+        "received_quantity": ri.received_quantity,
+        "peso_lbs_unit":     float(ri.peso_lbs_unit),
+        "volumen_ft3_unit":  float(ri.volumen_ft3_unit),
+        "status":            ri.status.value if hasattr(ri.status, 'value') else ri.status,
+        "notas":             ri.notas,
+        "inventory_item_id": str(ri.inventory_item_id) if ri.inventory_item_id else None,
+    }
+
+
+def serialize_reception(r: Reception, include_items: bool = True) -> dict:
+    items = list(r.items)
+    data = {
+        "id":               str(r.id),
+        "reception_number": r.reception_number,
+        "source_type":      r.source_type.value if hasattr(r.source_type, 'value') else r.source_type,
+        "reference":        r.reference,
+        "origin_route_id":  str(r.origin_route_id) if r.origin_route_id else None,
+        "status":           r.status.value if hasattr(r.status, 'value') else r.status,
+        "expected_at":      r.expected_at.isoformat() if r.expected_at else None,
+        "received_at":      r.received_at.isoformat() if r.received_at else None,
+        "notes":            r.notes,
+        "created_at":       r.created_at.isoformat() if r.created_at else None,
+        "summary": {
+            "expected_items": len(items),
+            "expected_qty":   sum(i.expected_quantity for i in items),
+            "received":       sum(1 for i in items if i.status == ReceptionItemStatus.RECEIVED),
+            "damaged":        sum(1 for i in items if i.status == ReceptionItemStatus.DAMAGED),
+            "missing":        sum(1 for i in items if i.status == ReceptionItemStatus.MISSING),
+            "pending":        sum(1 for i in items if i.status == ReceptionItemStatus.PENDING),
+        },
+    }
+    if include_items:
+        data["items"] = [serialize_reception_item(i) for i in items]
+    return data
+
+
+class ReceptionItemInput(BaseModel):
+    codigo_cliente:    str   = Field("", max_length=100)
+    descripcion:       str   = Field("", max_length=255)
+    expected_quantity: int   = Field(1, ge=1)
+    peso_lbs_unit:     float = Field(0.0, ge=0)
+    volumen_ft3_unit:  float = Field(0.0, ge=0)
+    notas:             str   = ""
+
+
+class CreateReceptionRequest(BaseModel):
+    source_type:     str
+    reference:       str = Field("", max_length=255)
+    origin_route_id: Optional[str] = None
+    expected_at:     Optional[str] = None
+    notes:           str = ""
+    items:           list[ReceptionItemInput] = Field(min_length=1)
+
+
+class UpdateReceptionRequest(BaseModel):
+    reference:   Optional[str] = None
+    expected_at: Optional[str] = None
+    notes:       Optional[str] = None
+
+
+class CheckInReceptionItemRequest(BaseModel):
+    received_quantity: int = Field(..., ge=0)
+    status:             str  # "received" | "damaged"
+    notas:              Optional[str] = None
+
+
+def _get_reception_or_404(db: Session, reception_id: str, company_id: uuid.UUID) -> Reception:
+    reception = db.get(Reception, uuid.UUID(reception_id))
+    if not reception or reception.company_id != company_id:
+        raise HTTPException(status_code=404, detail="Recepción no encontrada")
+    return reception
+
+
+@app.post("/api/v1/warehouse/receptions", status_code=201)
+async def create_reception(
+    data:         CreateReceptionRequest,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
+):
+    """Crea una recepción esperada (manifiesto) — todavía no implica que algo llegó físicamente."""
+    company = get_current_company(current_user, db, x_company_id)
+
+    try:
+        source_type = ReceptionSourceType(data.source_type)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="source_type debe ser 'supplier' o 'return'")
+
+    origin_route_uuid = None
+    if data.origin_route_id:
+        origin_route_uuid = uuid.UUID(data.origin_route_id)
+        route = db.get(RouteHeader, origin_route_uuid)
+        if not route:
+            raise HTTPException(status_code=404, detail="La ruta de origen indicada no existe")
+
+    reception = Reception(
+        id=uuid.uuid4(),
+        company_id=company.id,
+        reception_number=next_reception_number(company.id, db),
+        source_type=source_type,
+        reference=data.reference or None,
+        origin_route_id=origin_route_uuid,
+        status=ReceptionStatus.EXPECTED,
+        expected_at=datetime.fromisoformat(data.expected_at) if data.expected_at else None,
+        notes=data.notes or None,
+        created_by_id=current_user.id,
+    )
+    db.add(reception)
+    db.flush()
+
+    for it in data.items:
+        db.add(ReceptionItem(
+            id=uuid.uuid4(),
+            reception_id=reception.id,
+            codigo_cliente=it.codigo_cliente or None,
+            descripcion=it.descripcion or None,
+            expected_quantity=it.expected_quantity,
+            peso_lbs_unit=it.peso_lbs_unit,
+            volumen_ft3_unit=it.volumen_ft3_unit,
+            notas=it.notas or None,
+            status=ReceptionItemStatus.PENDING,
+        ))
+
+    db.commit()
+    db.refresh(reception)
+    return serialize_reception(reception)
+
+
+@app.get("/api/v1/warehouse/receptions")
+async def list_receptions(
+    status:       Optional[str] = None,
+    source_type:  Optional[str] = None,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
+):
+    company = get_current_company(current_user, db, x_company_id)
+    query = select(Reception).where(Reception.company_id == company.id).order_by(Reception.created_at.desc())
+
+    if status:
+        try:
+            query = query.where(Reception.status == ReceptionStatus(status))
+        except ValueError:
+            pass
+    if source_type:
+        try:
+            query = query.where(Reception.source_type == ReceptionSourceType(source_type))
+        except ValueError:
+            pass
+
+    receptions = db.execute(query).scalars().all()
+    return [serialize_reception(r, include_items=False) for r in receptions]
+
+
+@app.get("/api/v1/warehouse/receptions/{reception_id}")
+async def get_reception(
+    reception_id: str,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
+):
+    company   = get_current_company(current_user, db, x_company_id)
+    reception = _get_reception_or_404(db, reception_id, company.id)
+    return serialize_reception(reception)
+
+
+@app.patch("/api/v1/warehouse/receptions/{reception_id}")
+async def update_reception(
+    reception_id: str,
+    data:         UpdateReceptionRequest,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
+):
+    company   = get_current_company(current_user, db, x_company_id)
+    reception = _get_reception_or_404(db, reception_id, company.id)
+    if reception.status == ReceptionStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="La recepción ya está cerrada, no se puede editar")
+
+    if data.reference   is not None: reception.reference   = data.reference or None
+    if data.notes       is not None: reception.notes       = data.notes or None
+    if data.expected_at is not None:
+        reception.expected_at = datetime.fromisoformat(data.expected_at) if data.expected_at else None
+
+    db.commit()
+    db.refresh(reception)
+    return serialize_reception(reception)
+
+
+@app.post("/api/v1/warehouse/receptions/{reception_id}/items", status_code=201)
+async def add_reception_item(
+    reception_id: str,
+    data:         ReceptionItemInput,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
+):
+    company   = get_current_company(current_user, db, x_company_id)
+    reception = _get_reception_or_404(db, reception_id, company.id)
+    if reception.status == ReceptionStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="La recepción ya está cerrada, no se pueden agregar ítems")
+
+    item = ReceptionItem(
+        id=uuid.uuid4(),
+        reception_id=reception.id,
+        codigo_cliente=data.codigo_cliente or None,
+        descripcion=data.descripcion or None,
+        expected_quantity=data.expected_quantity,
+        peso_lbs_unit=data.peso_lbs_unit,
+        volumen_ft3_unit=data.volumen_ft3_unit,
+        notas=data.notas or None,
+        status=ReceptionItemStatus.PENDING,
+    )
+    db.add(item)
+    db.commit()
+    return serialize_reception_item(item)
+
+
+@app.delete("/api/v1/warehouse/receptions/{reception_id}/items/{item_id}", status_code=204)
+async def delete_reception_item(
+    reception_id: str,
+    item_id:      str,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
+):
+    company   = get_current_company(current_user, db, x_company_id)
+    reception = _get_reception_or_404(db, reception_id, company.id)
+    if reception.status == ReceptionStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="La recepción ya está cerrada")
+
+    item = db.get(ReceptionItem, uuid.UUID(item_id))
+    if not item or item.reception_id != reception.id:
+        raise HTTPException(status_code=404, detail="Ítem no encontrado")
+    if item.status != ReceptionItemStatus.PENDING:
+        raise HTTPException(status_code=400, detail="No se puede borrar un ítem que ya tuvo check-in")
+
+    db.delete(item)
+    db.commit()
+
+
+@app.patch("/api/v1/warehouse/receptions/{reception_id}/items/{item_id}/check-in")
+async def check_in_reception_item(
+    reception_id: str,
+    item_id:      str,
+    data:         CheckInReceptionItemRequest,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
+):
+    """
+    Marca el resultado físico del check-in de un ítem esperado:
+    - status='received' → se crea (o actualiza) el WarehouseInventoryItem
+      correspondiente, disponible (pending) para armar lotes de salida.
+    - status='damaged'  → queda registrado en la recepción, pero NO genera
+      inventario disponible (no se puede despachar mercancía dañada).
+    """
+    company   = get_current_company(current_user, db, x_company_id)
+    reception = _get_reception_or_404(db, reception_id, company.id)
+    if reception.status == ReceptionStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="La recepción ya está cerrada")
+
+    item = db.get(ReceptionItem, uuid.UUID(item_id))
+    if not item or item.reception_id != reception.id:
+        raise HTTPException(status_code=404, detail="Ítem no encontrado")
+
+    try:
+        new_status = ReceptionItemStatus(data.status)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="status debe ser 'received' o 'damaged'")
+    if new_status not in (ReceptionItemStatus.RECEIVED, ReceptionItemStatus.DAMAGED):
+        raise HTTPException(status_code=400, detail="status debe ser 'received' o 'damaged'")
+
+    item.received_quantity = data.received_quantity
+    item.status = new_status
+    if data.notas is not None:
+        item.notas = data.notas or None
+
+    if new_status == ReceptionItemStatus.RECEIVED and data.received_quantity > 0:
+        peso_unit = float(item.peso_lbs_unit)
+        vol_unit  = float(item.volumen_ft3_unit)
+        if item.inventory_item_id:
+            inv = db.get(WarehouseInventoryItem, item.inventory_item_id)
+            inv.quantity           = data.received_quantity
+            inv.peso_lbs_total     = peso_unit * data.received_quantity
+            inv.volumen_ft3_total  = vol_unit  * data.received_quantity
+        else:
+            inv = WarehouseInventoryItem(
+                id=uuid.uuid4(),
+                company_id=company.id,
+                raw_code=item.codigo_cliente or f"REC-{reception.reception_number}-{str(item.id)[:8]}",
+                codigo_cliente=item.codigo_cliente,
+                peso_lbs_unit=peso_unit,
+                volumen_ft3_unit=vol_unit,
+                notas=f"Recepción {reception.reception_number}",
+                quantity=data.received_quantity,
+                peso_lbs_total=peso_unit * data.received_quantity,
+                volumen_ft3_total=vol_unit * data.received_quantity,
+                status=InventoryItemStatus.PENDING,
+                scanned_by_id=current_user.id,
+            )
+            db.add(inv)
+            db.flush()
+            item.inventory_item_id = inv.id
+
+    if reception.status == ReceptionStatus.EXPECTED:
+        reception.status = ReceptionStatus.IN_PROGRESS
+
+    db.commit()
+    return serialize_reception_item(item)
+
+
+@app.post("/api/v1/warehouse/receptions/{reception_id}/complete")
+async def complete_reception(
+    reception_id: str,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
+):
+    """Cierra la recepción: cualquier ítem que siga 'pending' pasa a 'missing'."""
+    company   = get_current_company(current_user, db, x_company_id)
+    reception = _get_reception_or_404(db, reception_id, company.id)
+    if reception.status == ReceptionStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="La recepción ya está cerrada")
+
+    for item in reception.items:
+        if item.status == ReceptionItemStatus.PENDING:
+            item.status = ReceptionItemStatus.MISSING
+
+    reception.status      = ReceptionStatus.COMPLETED
+    reception.received_at = datetime.utcnow()
+    db.commit()
+    db.refresh(reception)
+    return serialize_reception(reception)
+
+
+# ─── Catálogo de mensajes ──────────────────────────────────────────────────────
+
+_TEMPLATE_VAR_RE = re.compile(r'\{(\w+)\}')
+
+
+def extract_template_variables(macro_text: str) -> list[str]:
+    """Devuelve, ordenados, los nombres de variable {var} detectados en la plantilla."""
+    return sorted(set(_TEMPLATE_VAR_RE.findall(macro_text or "")))
+
+
+def render_message_template(macro_text: str, context: dict) -> str:
+    """
+    Sustituye variables {nombre} de la plantilla con valores de `context`.
+    Una variable sin valor provisto se deja intacta (no rompe el render si
+    el llamador todavía no tiene todos los datos) en vez de lanzar KeyError.
+    """
+    def _sub(match: "re.Match") -> str:
+        key = match.group(1)
+        return str(context[key]) if key in context else match.group(0)
+    return _TEMPLATE_VAR_RE.sub(_sub, macro_text or "")
+
+
+def serialize_message_template(t: MessageTemplate) -> dict:
+    return {
+        "id":          str(t.id),
+        "code":        t.code,
+        "description": t.description,
+        "macro_text":  t.macro_text,
+        "variables":   extract_template_variables(t.macro_text),
+        "is_active":   t.is_active,
+        "created_at":  t.created_at.isoformat() if t.created_at else None,
+        "updated_at":  t.updated_at.isoformat() if t.updated_at else None,
+    }
+
+
+class MessageTemplateCreate(BaseModel):
+    code:        str  = Field(min_length=1, max_length=60)
+    description: str  = Field(min_length=1, max_length=255)
+    macro_text:  str  = Field(min_length=1)
+    is_active:   bool = True
+
+
+class MessageTemplateUpdate(BaseModel):
+    description: Optional[str]  = Field(None, min_length=1, max_length=255)
+    macro_text:  Optional[str]  = Field(None, min_length=1)
+    is_active:   Optional[bool] = None
+
+
+class RenderMessageRequest(BaseModel):
+    context: dict = {}
+
+
+@app.get("/api/v1/messages")
+async def list_message_templates(
+    all:          bool = False,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """Catálogo de mensajes — solo activos por default, all=true incluye inactivos."""
+    query = select(MessageTemplate)
+    if not all:
+        query = query.where(MessageTemplate.is_active == True)
+    templates = db.execute(query.order_by(MessageTemplate.code)).scalars().all()
+    return [serialize_message_template(t) for t in templates]
+
+
+@app.post("/api/v1/admin/messages", status_code=201)
+async def create_message_template(
+    data:         MessageTemplateCreate,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """Crea un mensaje estándar en el catálogo."""
+    existing = db.execute(
+        select(MessageTemplate).where(MessageTemplate.code == data.code)
+    ).scalar_one_or_none()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Ya existe un mensaje con código '{data.code}'")
+
+    t = MessageTemplate(
+        id=uuid.uuid4(), code=data.code, description=data.description,
+        macro_text=data.macro_text, is_active=data.is_active,
+    )
+    db.add(t)
+    db.commit()
+    return serialize_message_template(t)
+
+
+@app.patch("/api/v1/admin/messages/{message_id}")
+async def update_message_template(
+    message_id:   str,
+    data:         MessageTemplateUpdate,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """Actualiza un mensaje del catálogo (el código no se puede cambiar)."""
+    t = db.get(MessageTemplate, uuid.UUID(message_id))
+    if not t:
+        raise HTTPException(status_code=404, detail="Mensaje no encontrado")
+
+    if data.description is not None: t.description = data.description
+    if data.macro_text  is not None: t.macro_text  = data.macro_text
+    if data.is_active   is not None: t.is_active   = data.is_active
+
+    db.commit()
+    return serialize_message_template(t)
+
+
+@app.post("/api/v1/messages/{message_id}/render")
+async def render_message_template_endpoint(
+    message_id:   str,
+    data:         RenderMessageRequest,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """Devuelve el texto de un mensaje con sus variables sustituidas por `context`."""
+    t = db.get(MessageTemplate, uuid.UUID(message_id))
+    if not t:
+        raise HTTPException(status_code=404, detail="Mensaje no encontrado")
+    rendered = render_message_template(t.macro_text, data.context)
+    missing  = [v for v in extract_template_variables(t.macro_text) if v not in data.context]
+    return {"rendered": rendered, "missing_variables": missing}
+
+
+# ─── Negociación de precios por ruta ──────────────────────────────────────────
+
+def calculate_suggested_price(route: RouteHeader, svc: "ServiceType") -> float:
+    """
+    Sugiere el precio inicial de una ruta en base a distancia + peso + volumen:
+        precio = precio_servicio (base del tipo de servicio)
+               + precio_por_km  * total_km_estimated
+               + precio_por_lb  * total_weight_lbs
+               + precio_por_ft3 * total_volume_ft3
+    Acotado a [importe_minimo, importe_maximo] del tipo de servicio.
+
+    No incorpora demanda todavía — hoy no existe ninguna métrica de demanda
+    (disponibilidad de transportistas, histórico de aceptación, etc.) en el
+    sistema. Cuando exista, se suma acá como un factor multiplicativo más.
+    """
+    base = float(svc.precio_servicio or 0)
+    km   = float(route.total_km_estimated or 0)
+    lbs  = float(route.total_weight_lbs or 0)
+    ft3  = float(route.total_volume_ft3 or 0)
+
+    price = (
+        base
+        + float(svc.precio_por_km or 0)  * km
+        + float(svc.precio_por_lb or 0)  * lbs
+        + float(svc.precio_por_ft3 or 0) * ft3
+    )
+
+    price = max(price, float(svc.importe_minimo or 0))
+    if svc.importe_maximo is not None:
+        price = min(price, float(svc.importe_maximo))
+    return round(price, 2)
+
+
+def serialize_offer(o: RoutePriceOffer, db: Session) -> dict:
+    user = db.get(User, o.offered_by_user_id) if o.offered_by_user_id else None
+    return {
+        "id":          str(o.id),
+        "route_id":    str(o.route_header_id),
+        "offered_by":  o.offered_by.value if hasattr(o.offered_by,'value') else o.offered_by,
+        "user_name":   user.full_name if user else None,
+        "amount":      float(o.amount),
+        "note":        o.note,
+        "status":      o.status.value if hasattr(o.status,'value') else o.status,
+        "created_at":  o.created_at.isoformat() if o.created_at else None,
+    }
+
+
+def serialize_negotiation(route: RouteHeader, db: Session) -> dict:
+    offers = db.execute(
+        select(RoutePriceOffer)
+        .where(RoutePriceOffer.route_header_id == route.id)
+        .order_by(RoutePriceOffer.created_at.asc())
+    ).scalars().all()
+
+    svc = db.get(ServiceType, route.service_type_id) if route.service_type_id else None
+    system_suggested_price = calculate_suggested_price(route, svc) if svc else None
+
+    return {
+        "route_id":               str(route.id),
+        "route_number":           route.route_number,
+        "negotiation_status":     route.negotiation_status.value if hasattr(route.negotiation_status,'value') else route.negotiation_status,
+        "suggested_price":        float(route.suggested_price) if route.suggested_price else None,
+        "system_suggested_price": system_suggested_price,
+        "current_price":          float(route.gross_pay or 0),
+        "offers":                 [serialize_offer(o, db) for o in offers],
+    }
+
+
+class SuggestPriceRequest(BaseModel):
+    amount: float
+    note:   Optional[str] = None
+
+
+class CounterOfferRequest(BaseModel):
+    amount: float
+    note:   Optional[str] = None
+
+
+class RespondOfferRequest(BaseModel):
+    action: str  # "accept" | "counter" | "reject"
+    amount: Optional[float] = None   # requerido si action == "counter"
+    note:   Optional[str]   = None
+
+
+def _close_negotiation(route: RouteHeader, final_amount: float, db: Session):
+    """Cierra la negociación: fija el precio final y aplica la comisión Muevo del 5%."""
+    route.gross_pay             = final_amount
+    route.muevo_commission_pct  = 5.00
+    route.muevo_commission_amt  = round(final_amount * 0.05, 2)
+    route.net_pay_estimated     = round(final_amount * 0.95, 2)
+    route.negotiation_status    = NegotiationStatus.ACCEPTED
+
+    # Marcar todas las ofertas pendientes como superseded excepto la ganadora
+    pending = db.execute(
+        select(RoutePriceOffer).where(
+            RoutePriceOffer.route_header_id == route.id,
+            RoutePriceOffer.status == OfferStatus.PENDING,
+        )
+    ).scalars().all()
+    for p in pending:
+        p.status = OfferStatus.SUPERSEDED
+
+
+@app.get("/api/v1/warehouse/routes/{route_id}/negotiation")
+async def get_route_negotiation(
+    route_id:     str,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
+):
+    """Devuelve el historial completo de ofertas de una ruta."""
+    company = get_current_company(current_user, db, x_company_id)
+    route   = db.get(RouteHeader, uuid.UUID(route_id))
+    if not route or route.company_id != company.id:
+        raise HTTPException(status_code=404, detail="Ruta no encontrada")
+    return serialize_negotiation(route, db)
+
+
+@app.post("/api/v1/warehouse/routes/{route_id}/suggest-price")
+async def suggest_price(
+    route_id:     str,
+    data:         SuggestPriceRequest,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
+):
+    """El warehouse sugiere el precio inicial de la ruta, abriendo la negociación."""
+    company = get_current_company(current_user, db, x_company_id)
+    route   = db.get(RouteHeader, uuid.UUID(route_id))
+    if not route or route.company_id != company.id:
+        raise HTTPException(status_code=404, detail="Ruta no encontrada")
+
+    route.suggested_price    = data.amount
+    route.negotiation_status = NegotiationStatus.SUGGESTED
+
+    offer = RoutePriceOffer(
+        id=uuid.uuid4(), route_header_id=route.id,
+        offered_by=OfferSource.WAREHOUSE, offered_by_user_id=current_user.id,
+        amount=data.amount, note=data.note, status=OfferStatus.PENDING,
+    )
+    db.add(offer)
+    db.commit()
+    return serialize_negotiation(route, db)
+
+
+@app.post("/api/v1/transport/routes/{route_id}/counter-offer")
+async def transport_counter_offer(
+    route_id:     str,
+    data:         CounterOfferRequest,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """La empresa de transporte hace una contraoferta sobre el precio sugerido."""
+    tc    = get_current_transport_company(current_user, db)
+    route = db.get(RouteHeader, uuid.UUID(route_id))
+    if not route or route.transport_company_id != tc.id:
+        raise HTTPException(status_code=403, detail="Esta ruta no está asignada a tu empresa")
+
+    # Marcar ofertas pendientes previas como superseded
+    prev = db.execute(
+        select(RoutePriceOffer).where(
+            RoutePriceOffer.route_header_id == route.id,
+            RoutePriceOffer.status == OfferStatus.PENDING,
+        )
+    ).scalars().all()
+    for p in prev:
+        p.status = OfferStatus.SUPERSEDED
+
+    offer = RoutePriceOffer(
+        id=uuid.uuid4(), route_header_id=route.id,
+        offered_by=OfferSource.TRANSPORT, offered_by_user_id=current_user.id,
+        amount=data.amount, note=data.note, status=OfferStatus.PENDING,
+    )
+    db.add(offer)
+    route.negotiation_status = NegotiationStatus.COUNTERED
+    db.commit()
+    return serialize_negotiation(route, db)
+
+
+@app.post("/api/v1/transport/routes/{route_id}/accept-price")
+async def transport_accept_price(
+    route_id:     str,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """La empresa de transporte acepta el precio sugerido/actual del warehouse, cerrando la negociación."""
+    tc    = get_current_transport_company(current_user, db)
+    route = db.get(RouteHeader, uuid.UUID(route_id))
+    if not route or route.transport_company_id != tc.id:
+        raise HTTPException(status_code=403, detail="Esta ruta no está asignada a tu empresa")
+
+    final_amount = route.suggested_price or route.gross_pay
+    if not final_amount:
+        raise HTTPException(status_code=400, detail="No hay un precio para aceptar")
+
+    _close_negotiation(route, float(final_amount), db)
+
+    # Marcar la última oferta del warehouse como accepted
+    last_wh_offer = db.execute(
+        select(RoutePriceOffer).where(
+            RoutePriceOffer.route_header_id == route.id,
+            RoutePriceOffer.offered_by == OfferSource.WAREHOUSE,
+        ).order_by(RoutePriceOffer.created_at.desc()).limit(1)
+    ).scalar_one_or_none()
+    if last_wh_offer:
+        last_wh_offer.status = OfferStatus.ACCEPTED
+
+    db.commit()
+    return serialize_negotiation(route, db)
+
+
+@app.post("/api/v1/warehouse/routes/{route_id}/respond-offer")
+async def warehouse_respond_offer(
+    route_id:     str,
+    data:         RespondOfferRequest,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
+):
+    """
+    El warehouse responde a la contraoferta del transporte:
+    - accept: acepta el monto de la última contraoferta del transporte
+    - counter: propone un nuevo monto
+    - reject: rechaza y cierra la negociación sin acuerdo
+    """
+    company = get_current_company(current_user, db, x_company_id)
+    route   = db.get(RouteHeader, uuid.UUID(route_id))
+    if not route or route.company_id != company.id:
+        raise HTTPException(status_code=404, detail="Ruta no encontrada")
+
+    last_offer = db.execute(
+        select(RoutePriceOffer).where(
+            RoutePriceOffer.route_header_id == route.id,
+            RoutePriceOffer.status == OfferStatus.PENDING,
+        ).order_by(RoutePriceOffer.created_at.desc()).limit(1)
+    ).scalar_one_or_none()
+
+    if data.action == "accept":
+        if not last_offer:
+            raise HTTPException(status_code=400, detail="No hay oferta pendiente para aceptar")
+        _close_negotiation(route, float(last_offer.amount), db)
+        last_offer.status = OfferStatus.ACCEPTED
+
+    elif data.action == "counter":
+        if data.amount is None:
+            raise HTTPException(status_code=400, detail="Falta el monto de la contraoferta")
+        if last_offer:
+            last_offer.status = OfferStatus.SUPERSEDED
+        new_offer = RoutePriceOffer(
+            id=uuid.uuid4(), route_header_id=route.id,
+            offered_by=OfferSource.WAREHOUSE, offered_by_user_id=current_user.id,
+            amount=data.amount, note=data.note, status=OfferStatus.PENDING,
+        )
+        db.add(new_offer)
+        route.suggested_price    = data.amount
+        route.negotiation_status = NegotiationStatus.COUNTERED
+
+    elif data.action == "reject":
+        if last_offer:
+            last_offer.status = OfferStatus.REJECTED
+        route.negotiation_status = NegotiationStatus.NONE
+
+    else:
+        raise HTTPException(status_code=400, detail="Acción inválida — usa accept, counter o reject")
+
+    db.commit()
+    return serialize_negotiation(route, db)
+
+
 # ─── Dispatcher — agrupamiento automático de paradas ─────────────────────────
+
+HORA_PATTERN = r'^([01]\d|2[0-3]):[0-5]\d$'  # HH:MM, 00:00–23:59
+
+
+class StopItemInput(BaseModel):
+    """Un paquete individual dentro de una parada."""
+    package_code:   str   = ""
+    barcode:        str   = ""
+    qr_code:        str   = ""
+    weight_lbs:     float = Field(0, ge=0)
+    volume_ft3:     float = Field(0, ge=0)
+    declared_value: float = Field(0, ge=0)
+
 
 class StopInput(BaseModel):
     """Una parada individual ingresada via CSV o formulario manual."""
-    destino:         str
-    direccion:       str
-    lat:             float
-    lng:             float
-    peso_lbs:        float
-    volumen_ft3:     float
-    hora_limite:     str   = "23:59"   # HH:MM
+    destino:         str   = Field(min_length=1)
+    direccion:       str   = Field(min_length=1)
+    codigo_postal:   str   = ""
+    lat:             float = Field(ge=-90, le=90)
+    lng:             float = Field(ge=-180, le=180)
+    peso_lbs:        float = Field(ge=0)
+    volumen_ft3:     float = Field(ge=0)
+    hora_limite:     str   = Field(default="23:59", pattern=HORA_PATTERN)
     contacto:        str   = ""
     telefono:        str   = ""
     codigo_cliente:  str   = ""
@@ -2632,8 +3443,9 @@ class StopInput(BaseModel):
     codigo_barras:   str   = ""
     codigo_qr:       str   = ""
     notas:           str   = ""
-    valor_declarado: float = 0.0
+    valor_declarado: float = Field(0.0, ge=0)
     source:          str   = "csv"    # "csv" | "manual"
+    items:           list[StopItemInput] = []  # desglose de paquetes — vacío = un solo paquete (legacy)
 
 
 class DispatchPlanRequest(BaseModel):
@@ -2643,7 +3455,9 @@ class DispatchPlanRequest(BaseModel):
     peso_max_lbs:        float
     volumen_max_ft3:     float
     max_stops_per_route: int   = 12
-    paradas:             list[StopInput]
+    paradas:             list[StopInput] = Field(min_length=1)
+    # Sin max_length estático — el tope de filas es configurable por compañía
+    # (Company.max_csv_rows) y se valida dentro de plan_batch().
 
 
 class DispatchConfirmRequest(BaseModel):
@@ -2742,6 +3556,8 @@ async def warehouse_list_batches(
                     "service_type_code": r.service_type_rel.code if r.service_type_rel else (r.service_mode.value if hasattr(r.service_mode,'value') else r.service_mode),
                     "total_weight_lbs": float(r.total_weight_lbs or 0),
                     "total_volume_ft3": float(r.total_volume_ft3 or 0),
+                    "negotiation_status": r.negotiation_status.value if hasattr(r.negotiation_status,'value') else r.negotiation_status,
+                    "suggested_price":  float(r.suggested_price) if r.suggested_price else None,
                 })
 
         total_stops     = sum(r["total_stops"]     for r in routes)
@@ -2781,6 +3597,7 @@ async def plan_batch(
     data:         DispatchPlanRequest,
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
 ):
     """
     Recibe N paradas sueltas y devuelve las rutas agrupadas propuestas
@@ -2790,10 +3607,18 @@ async def plan_batch(
     if not data.paradas:
         raise HTTPException(status_code=400, detail="No se enviaron paradas")
 
+    company = get_current_company(current_user, db, x_company_id)
+    max_rows = company.max_csv_rows or DEFAULT_MAX_CSV_ROWS
+    if len(data.paradas) > max_rows:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Se enviaron {len(data.paradas)} paradas — el máximo permitido para {company.name} es {max_rows}.",
+        )
+
     # Convertir Pydantic → dataclass interna del dispatcher
     stops = [
         DispatchStop(
-            destino=p.destino, direccion=p.direccion,
+            destino=p.destino, direccion=p.direccion, codigo_postal=p.codigo_postal,
             lat=p.lat, lng=p.lng,
             peso_lbs=p.peso_lbs, volumen_ft3=p.volumen_ft3,
             hora_limite=p.hora_limite,
@@ -2801,6 +3626,7 @@ async def plan_batch(
             codigo_cliente=p.codigo_cliente, codigo_paquete=p.codigo_paquete, codigo_barras=p.codigo_barras,
             codigo_qr=p.codigo_qr, notas=p.notas,
             valor_declarado=p.valor_declarado, source=p.source,
+            items=p.items,
         )
         for p in data.paradas
     ]
@@ -2821,6 +3647,79 @@ async def plan_batch(
         "volumen_max_ft3": data.volumen_max_ft3,
         "rutas": [planned_route_to_dict(r) for r in planned],
     }
+
+
+def _create_route_detail(db: Session, route_header_id, seq: int, stop: dict, eta_scheduled: datetime = None) -> "RouteDetail":
+    """
+    Crea una parada (RouteDetail) + sus ShipmentItem(s) a partir de un dict con
+    la forma de StopInput (mismo shape que usa el dispatcher, el CSV y el alta
+    manual). Soporta varios paquetes por parada vía stop["items"]; si viene
+    vacío, cae al comportamiento legacy de un único ShipmentItem por parada.
+    Devuelve el RouteDetail ya creado (flushed, con id asignado). Los
+    agregados (packages_count/weight_lbs/etc. en RouteHeader/RouteDetail) los
+    recalculan solos los triggers de Postgres — no hace falta tocarlos acá.
+    """
+    items_data = stop.get("items") or []
+    packages_count = len(items_data) if items_data else 1
+    cargo_value = (
+        sum(float(it.get("declared_value") or 0) for it in items_data)
+        if items_data else stop.get("valor_declarado", 0)
+    )
+
+    detail = RouteDetail(
+        id=uuid.uuid4(),
+        route_header_id=route_header_id,
+        sequence_order=seq,
+        company_name=stop.get("destino", ""),
+        address_line1=stop.get("direccion", ""),
+        city="",
+        state="",
+        zip_code=stop.get("codigo_postal") or None,
+        codigo_cliente=stop.get("codigo_cliente") or None,
+        lat=stop.get("lat"),
+        lng=stop.get("lng"),
+        contact_name=stop.get("contacto", ""),
+        contact_phone=stop.get("telefono", ""),
+        weight_lbs=stop.get("peso_lbs", 0),
+        volume_ft3=stop.get("volumen_ft3", 0),
+        packages_count=packages_count,
+        cargo_value=cargo_value,
+        eta_scheduled=eta_scheduled,
+        access_notes=stop.get("notas", ""),
+        status=StopStatus.PENDING,
+    )
+    db.add(detail)
+    db.flush()
+
+    if items_data:
+        # Varios paquetes en esta parada — un ShipmentItem por item
+        for line_no, it in enumerate(items_data, start=1):
+            db.add(ShipmentItem(
+                id=uuid.uuid4(),
+                route_detail_id=detail.id,
+                line_number=line_no,
+                package_code=it.get("package_code") or f"PKG-{detail.id.hex[:6].upper()}-{line_no}",
+                barcode=it.get("barcode") or None,
+                qr_code=it.get("qr_code") or None,
+                declared_value=it.get("declared_value") or 0,
+                weight_lbs=it.get("weight_lbs") or 0,
+                volume_ft3=it.get("volume_ft3") or 0,
+            ))
+    else:
+        # Comportamiento legacy: un único ShipmentItem por parada
+        db.add(ShipmentItem(
+            id=uuid.uuid4(),
+            route_detail_id=detail.id,
+            line_number=1,
+            package_code=stop.get("codigo_paquete") or f"PKG-{detail.id.hex[:6].upper()}",
+            barcode=stop.get("codigo_barras") or None,
+            qr_code=stop.get("codigo_qr") or None,
+            declared_value=stop.get("valor_declarado", 0),
+            weight_lbs=stop.get("peso_lbs", 0),
+            volume_ft3=stop.get("volumen_ft3", 0),
+        ))
+
+    return detail
 
 
 @app.post("/api/v1/warehouse/batches/confirm", status_code=201)
@@ -2892,46 +3791,16 @@ async def confirm_batch(
             scheduled_end=sched_end,
             required_vehicle_type=data.vehicle_type,
             gross_pay=0.0,
+            muevo_commission_amt=0.0,
         )
         db.add(route)
         db.flush()
 
         # ── Crear RouteDetails + ShipmentItems ───────────────────────────────
+        stop_client_codes = []
         for seq, stop in enumerate(stops_data, start=1):
-            detail = RouteDetail(
-                id=uuid.uuid4(),
-                route_header_id=route.id,
-                sequence_order=seq,
-                company_name=stop.get("destino", ""),
-                address_line1=stop.get("direccion", ""),
-                city="",
-                state="",
-                codigo_cliente=stop.get("codigo_cliente") or None,
-                lat=stop.get("lat"),
-                lng=stop.get("lng"),
-                contact_name=stop.get("contacto", ""),
-                contact_phone=stop.get("telefono", ""),
-                weight_lbs=stop.get("peso_lbs", 0),
-                volume_ft3=stop.get("volumen_ft3", 0),
-                eta_scheduled=to_dt(stop.get("hora_limite", "23:59")),
-                access_notes=stop.get("notas", ""),
-                status=StopStatus.PENDING,
-            )
-            db.add(detail)
-            db.flush()
+            _create_route_detail(db, route.id, seq, stop, eta_scheduled=to_dt(stop.get("hora_limite", "23:59")))
             stop_client_codes.append(stop.get("codigo_cliente") or "")
-
-            # Un ShipmentItem por parada
-            item = ShipmentItem(
-                id=uuid.uuid4(),
-                route_detail_id=detail.id,
-                line_number=seq,
-                package_code=stop.get("codigo_paquete") or f"PKG-{detail.id.hex[:6].upper()}",
-                declared_value=stop.get("valor_declarado", 0),
-                weight_lbs=stop.get("peso_lbs", 0),
-                volume_ft3=stop.get("volumen_ft3", 0),
-            )
-            db.add(item)
 
         # Propagar client_code a la ruta si todas las paradas son del mismo cliente
         unique_clients = set(c for c in stop_client_codes if c)
@@ -2974,6 +3843,309 @@ async def confirm_batch(
         "routes":    len(created_routes),
         "route_ids": [str(r.id) for r in created_routes],
     }
+
+
+# ─── Agregar / editar / borrar rutas y paradas de un lote en borrador ────────
+#
+# Toda ruta pertenece a un lote sin excepción (regla de negocio existente),
+# así que "borrar una ruta del lote" es borrarla por completo, no desvincularla.
+# Todo esto solo se permite mientras el lote está en draft — una vez aprobado
+# ya se ofertó a transporte y queda fijo.
+
+def _require_draft_batch_access(db: Session, batch_id, current_user: User) -> "RouteBatch":
+    """Verifica que el usuario administre la company dueña del lote y que el lote esté en draft."""
+    company_admin = db.execute(
+        select(CompanyAdmin).where(CompanyAdmin.user_id == current_user.id)
+    ).scalar_one_or_none()
+    if not company_admin:
+        raise HTTPException(status_code=403, detail="Solo admins de empresa pueden modificar lotes")
+
+    batch = db.get(RouteBatch, batch_id)
+    if not batch or batch.company_id != company_admin.company_id:
+        raise HTTPException(status_code=404, detail="Lote no encontrado")
+
+    if batch.status != BatchStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Solo se pueden modificar lotes en borrador")
+
+    return batch
+
+
+def _get_route_in_draft_batch(db: Session, route_id, current_user: User) -> "RouteHeader":
+    """Resuelve una ruta y valida que el lote al que pertenece esté en draft y sea del usuario."""
+    route = db.get(RouteHeader, route_id)
+    if not route:
+        raise HTTPException(status_code=404, detail="Ruta no encontrada")
+
+    item = db.execute(
+        select(RouteBatchItem).where(RouteBatchItem.route_header_id == route.id)
+    ).scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="La ruta no pertenece a ningún lote")
+
+    _require_draft_batch_access(db, item.batch_id, current_user)
+    return route
+
+
+class AddRouteToBatchRequest(BaseModel):
+    title:                 str = Field(min_length=1)
+    service_mode:          str  # mensajeria | logistica | paqueteria | empleados
+    required_vehicle_type: Optional[str] = None
+    scheduled_date:        str  # ISO date YYYY-MM-DD
+    scheduled_start:       str = Field(pattern=HORA_PATTERN)
+    scheduled_end:         str = Field(pattern=HORA_PATTERN)
+    stops:                 list[StopInput] = Field(min_length=1)
+
+
+class UpdateRouteRequest(BaseModel):
+    title:                 Optional[str] = Field(None, min_length=1)
+    scheduled_date:        Optional[str] = None
+    scheduled_start:       Optional[str] = Field(None, pattern=HORA_PATTERN)
+    scheduled_end:         Optional[str] = Field(None, pattern=HORA_PATTERN)
+    required_vehicle_type: Optional[str] = None
+
+
+class UpdateStopRequest(BaseModel):
+    destino:        Optional[str] = Field(None, min_length=1)
+    direccion:      Optional[str] = Field(None, min_length=1)
+    codigo_postal:  Optional[str] = None
+    lat:            Optional[float] = Field(None, ge=-90, le=90)
+    lng:            Optional[float] = Field(None, ge=-180, le=180)
+    hora_limite:    Optional[str] = Field(None, pattern=HORA_PATTERN)
+    notas:          Optional[str] = None
+    codigo_cliente: Optional[str] = None
+    items:          Optional[list[StopItemInput]] = None
+
+
+@app.post("/api/v1/warehouse/batches/{batch_id}/routes", status_code=201)
+async def add_route_to_batch(
+    batch_id:     str,
+    data:         AddRouteToBatchRequest,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """Agrega una ruta nueva a un lote existente en draft."""
+    batch = _require_draft_batch_access(db, uuid.UUID(batch_id), current_user)
+
+    fecha = datetime.fromisoformat(data.scheduled_date).date()
+
+    def to_dt(hhmm: str) -> datetime:
+        h, m = hhmm.split(":")
+        return datetime.combine(fecha, __import__("datetime").time(int(h), int(m)))
+
+    warehouse = db.execute(
+        select(Warehouse).where(Warehouse.company_id == batch.company_id)
+    ).scalar_one_or_none()
+
+    svc_type = db.execute(
+        select(ServiceType).where(ServiceType.code == data.service_mode)
+    ).scalar_one_or_none()
+
+    route = RouteHeader(
+        id=uuid.uuid4(),
+        company_id=batch.company_id,
+        origin_warehouse_id=warehouse.id if warehouse else None,
+        contract_id=batch.contract_id,
+        route_number=f"ORL-{fecha.strftime('%Y%m%d')}-{uuid.uuid4().hex[:5].upper()}",
+        title=data.title,
+        service_mode=data.service_mode,
+        service_type_id=svc_type.id if svc_type else None,
+        status=RouteStatus.DRAFT,
+        scheduled_date=fecha,
+        scheduled_start=to_dt(data.scheduled_start),
+        scheduled_end=to_dt(data.scheduled_end),
+        required_vehicle_type=data.required_vehicle_type,
+        gross_pay=0.0,
+        muevo_commission_amt=0.0,
+    )
+    db.add(route)
+    db.flush()
+
+    stop_client_codes = []
+    for seq, stop in enumerate(data.stops, start=1):
+        _create_route_detail(db, route.id, seq, stop.model_dump(), eta_scheduled=to_dt(stop.hora_limite))
+        stop_client_codes.append(stop.codigo_cliente or "")
+    unique_clients = set(c for c in stop_client_codes if c)
+    route.client_code = unique_clients.pop() if len(unique_clients) == 1 else None
+
+    db.add(RouteBatchItem(
+        id=uuid.uuid4(), batch_id=batch.id, route_header_id=route.id,
+        status=BatchItemStatus.PENDING,
+    ))
+
+    db.commit()
+    db.refresh(route)
+    return serialize_route_header(route)
+
+
+@app.patch("/api/v1/warehouse/routes/{route_id}")
+async def update_route(
+    route_id:     str,
+    data:         UpdateRouteRequest,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """Edita datos generales de una ruta (título, horario, vehículo). Solo si su lote está en draft."""
+    route = _get_route_in_draft_batch(db, uuid.UUID(route_id), current_user)
+
+    if data.title is not None:
+        route.title = data.title
+    if data.required_vehicle_type is not None:
+        route.required_vehicle_type = data.required_vehicle_type
+
+    fecha = route.scheduled_date.date() if isinstance(route.scheduled_date, datetime) else route.scheduled_date
+    if data.scheduled_date is not None:
+        fecha = datetime.fromisoformat(data.scheduled_date).date()
+        route.scheduled_date = fecha
+    if data.scheduled_start is not None:
+        h, m = data.scheduled_start.split(":")
+        route.scheduled_start = datetime.combine(fecha, __import__("datetime").time(int(h), int(m)))
+    if data.scheduled_end is not None:
+        h, m = data.scheduled_end.split(":")
+        route.scheduled_end = datetime.combine(fecha, __import__("datetime").time(int(h), int(m)))
+
+    db.commit()
+    db.refresh(route)
+    return serialize_route_header(route)
+
+
+@app.delete("/api/v1/warehouse/batches/{batch_id}/routes/{route_id}", status_code=204)
+async def delete_route_from_batch(
+    batch_id:     str,
+    route_id:     str,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """Borra una ruta completa (y sus paradas/items) de un lote en draft."""
+    batch = _require_draft_batch_access(db, uuid.UUID(batch_id), current_user)
+
+    item = db.execute(
+        select(RouteBatchItem).where(
+            RouteBatchItem.batch_id == batch.id,
+            RouteBatchItem.route_header_id == uuid.UUID(route_id),
+        )
+    ).scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="La ruta no pertenece a este lote")
+
+    route = db.get(RouteHeader, uuid.UUID(route_id))
+
+    # route_batch_items.route_header_id no tiene ON DELETE CASCADE — hay que
+    # borrar el vínculo primero. route_headers sí cascadea a route_details
+    # y de ahí a shipment_items.
+    db.delete(item)
+    db.flush()
+    if route:
+        db.delete(route)
+
+    db.commit()
+
+
+@app.post("/api/v1/warehouse/routes/{route_id}/stops", status_code=201)
+async def add_stop_to_route(
+    route_id:     str,
+    data:         StopInput,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """Agrega una parada a una ruta existente en draft."""
+    route = _get_route_in_draft_batch(db, uuid.UUID(route_id), current_user)
+
+    max_seq = db.execute(
+        select(func.max(RouteDetail.sequence_order)).where(RouteDetail.route_header_id == route.id)
+    ).scalar() or 0
+
+    fecha = route.scheduled_date.date() if isinstance(route.scheduled_date, datetime) else route.scheduled_date
+    h, m = data.hora_limite.split(":")
+    eta = datetime.combine(fecha, __import__("datetime").time(int(h), int(m)))
+
+    detail = _create_route_detail(db, route.id, max_seq + 1, data.model_dump(), eta_scheduled=eta)
+    db.commit()
+    db.refresh(detail)
+    return serialize_route_detail(detail)
+
+
+@app.patch("/api/v1/warehouse/routes/{route_id}/stops/{detail_id}")
+async def update_stop(
+    route_id:     str,
+    detail_id:    str,
+    data:         UpdateStopRequest,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """Edita una parada existente. Si `data` trae 'items', reemplaza todos sus paquetes."""
+    route  = _get_route_in_draft_batch(db, uuid.UUID(route_id), current_user)
+    detail = db.get(RouteDetail, uuid.UUID(detail_id))
+    if not detail or detail.route_header_id != route.id:
+        raise HTTPException(status_code=404, detail="Parada no encontrada en esta ruta")
+
+    if data.destino is not None:
+        detail.company_name = data.destino
+    if data.direccion is not None:
+        detail.address_line1 = data.direccion
+    if data.codigo_postal is not None:
+        detail.zip_code = data.codigo_postal or None
+    if data.lat is not None:
+        detail.lat = data.lat
+    if data.lng is not None:
+        detail.lng = data.lng
+    if data.notas is not None:
+        detail.access_notes = data.notas
+    if data.codigo_cliente is not None:
+        detail.codigo_cliente = data.codigo_cliente or None
+    if data.hora_limite is not None:
+        h, m = data.hora_limite.split(":")
+        fecha = route.scheduled_date.date() if isinstance(route.scheduled_date, datetime) else route.scheduled_date
+        detail.eta_scheduled = datetime.combine(fecha, __import__("datetime").time(int(h), int(m)))
+
+    if data.items is not None:
+        old_items = db.execute(
+            select(ShipmentItem).where(ShipmentItem.route_detail_id == detail.id)
+        ).scalars().all()
+        for oi in old_items:
+            db.delete(oi)
+        db.flush()
+        for line_no, it in enumerate(data.items, start=1):
+            db.add(ShipmentItem(
+                id=uuid.uuid4(),
+                route_detail_id=detail.id,
+                line_number=line_no,
+                package_code=it.package_code or f"PKG-{detail.id.hex[:6].upper()}-{line_no}",
+                barcode=it.barcode or None,
+                qr_code=it.qr_code or None,
+                declared_value=it.declared_value,
+                weight_lbs=it.weight_lbs,
+                volume_ft3=it.volume_ft3,
+            ))
+
+    db.commit()
+    db.refresh(detail)
+    return serialize_route_detail(detail)
+
+
+@app.delete("/api/v1/warehouse/routes/{route_id}/stops/{detail_id}", status_code=204)
+async def delete_stop(
+    route_id:     str,
+    detail_id:    str,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """Borra una parada de una ruta en draft (cascada a sus ShipmentItem)."""
+    route  = _get_route_in_draft_batch(db, uuid.UUID(route_id), current_user)
+    detail = db.get(RouteDetail, uuid.UUID(detail_id))
+    if not detail or detail.route_header_id != route.id:
+        raise HTTPException(status_code=404, detail="Parada no encontrada en esta ruta")
+
+    remaining = db.execute(
+        select(func.count()).select_from(RouteDetail).where(RouteDetail.route_header_id == route.id)
+    ).scalar()
+    if remaining <= 1:
+        raise HTTPException(
+            status_code=400,
+            detail="La ruta necesita al menos una parada — borrala junto con la ruta si ya no hace falta",
+        )
+
+    db.delete(detail)
+    db.commit()
 
 
 # ─── Pydantic models — Batches & Incidents ────────────────────────────────────
@@ -3910,7 +5082,8 @@ def serialize_route_header(rh: "RouteHeader") -> dict:
         "requires_insurance":  rh.requires_insurance,
         # Financiero
         "gross_pay":           float(rh.gross_pay),
-        "net_pay":             float(rh.net_pay_estimated or 0),
+        "negotiation_status":  rh.negotiation_status.value if hasattr(rh.negotiation_status, 'value') else rh.negotiation_status,
+        "suggested_price":     float(rh.suggested_price) if rh.suggested_price else None,
         "margin_pct":          float(rh.margin_pct or 0),
         "company_name":        rh.company.name if rh.company else None,
         "origin_warehouse":    rh.origin_warehouse.name if rh.origin_warehouse else None,
@@ -3928,6 +5101,9 @@ def serialize_route_detail(rd: "RouteDetail") -> dict:
         "address":           rd.address_line1,
         "city":              rd.city,
         "state":             rd.state,
+        "zip_code":          rd.zip_code,
+        "lat":               float(rd.lat) if rd.lat is not None else None,
+        "lng":               float(rd.lng) if rd.lng is not None else None,
         "company_name":      rd.company_name,
         "contact_name":      rd.contact_name,
         "contact_phone":     rd.contact_phone,
@@ -4116,7 +5292,7 @@ async def seed_routes(db: Session = Depends(get_db)):
         service_mode="mensajeria", status="published", source="manual",
         scheduled_date=now, scheduled_start=now.replace(hour=10, minute=0),
         scheduled_end=now.replace(hour=13, minute=30),
-        gross_pay=87.50, muevo_commission_pct=12.00, muevo_commission_amt=10.50,
+        gross_pay=87.50, muevo_commission_pct=5.00, muevo_commission_amt=4.38,
         fuel_cost_estimated=5.20, wear_cost_estimated=3.68,
         net_pay_estimated=72.32, margin_pct=83,
         driver_notes="Sobres confidenciales. Requiere firma del receptor en cada parada.",
@@ -4170,7 +5346,7 @@ async def seed_routes(db: Session = Depends(get_db)):
         service_mode="empleados", status="published", source="manual",
         scheduled_date=now, scheduled_start=now.replace(hour=8, minute=0),
         scheduled_end=now.replace(hour=9, minute=30),
-        gross_pay=120.00, muevo_commission_pct=12.00, muevo_commission_amt=14.40,
+        gross_pay=120.00, muevo_commission_pct=5.00, muevo_commission_amt=6.00,
         fuel_cost_estimated=7.80, wear_cost_estimated=4.52,
         net_pay_estimated=95.48, margin_pct=80,
         driver_notes="Ruta puntual. Penalización por retraso en punto de control.",
@@ -4341,6 +5517,13 @@ async def warehouse_dashboard(
     completed   = [r for r in headers if r.status == RouteStatus.COMPLETED]
     total_net   = sum(float(r.net_pay_estimated or 0) for r in headers)
 
+    open_receptions = db.execute(
+        select(func.count(Reception.id)).where(
+            Reception.company_id == company.id,
+            Reception.status.in_([ReceptionStatus.EXPECTED, ReceptionStatus.IN_PROGRESS]),
+        )
+    ).scalar_one()
+
     return {
         "company_name":        company.name,
         "active_routes":       len(active),
@@ -4348,6 +5531,9 @@ async def warehouse_dashboard(
         "completed_routes":    len(completed),
         "total_net_this_period": round(total_net, 2),
         "recent_routes":       [serialize_route_header(r) for r in sorted(headers, key=lambda r: r.scheduled_start, reverse=True)[:10]],
+        "max_csv_rows":          company.max_csv_rows or DEFAULT_MAX_CSV_ROWS,
+        "max_csv_file_size_mb":  company.max_csv_file_size_mb or DEFAULT_MAX_CSV_FILE_SIZE_MB,
+        "open_receptions":       open_receptions,
     }
 
 
@@ -4374,6 +5560,7 @@ async def warehouse_get_route(
     route_id:     str,
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
 ):
     """Detalle completo de una ruta — solo si pertenece a la company del usuario."""
     company = get_current_company(current_user, db, x_company_id)
@@ -4824,7 +6011,7 @@ async def warehouse_bulk_import_routes(
 
     for route_data in data.routes:
         gross = route_data.gross_pay
-        commission_pct = 12.00
+        commission_pct = 5.00
         commission_amt = round(gross * commission_pct / 100, 2)
 
         # Generar route_number único

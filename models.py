@@ -599,6 +599,10 @@ class Company(Base):
     required_certs    = Column(ARRAY(String), nullable=False, default=list)
     # Certificaciones que deben tener los conductores asignados
 
+    # Límites de carga masiva (CSV) — NULL = usar el default global del sistema
+    max_csv_rows          = Column(Integer, nullable=True)
+    max_csv_file_size_mb  = Column(Integer, nullable=True)
+
     # Facturación
     billing_mode      = Column(String(20), default="inherit", nullable=False)
     # inherit | independent | consolidated
@@ -997,6 +1001,13 @@ class Stop(Base):
 
 # ─── ROUTE HEADERS — Encabezado de ruta (multi-holding/company/warehouse) ─────
 
+class NegotiationStatus(PyEnum):
+    NONE       = "none"        # sin negociación iniciada
+    SUGGESTED  = "suggested"   # warehouse sugirió precio inicial
+    COUNTERED  = "countered"   # hay una contraoferta pendiente de respuesta
+    ACCEPTED   = "accepted"    # ambas partes acordaron el precio final
+
+
 class RouteHeader(Base):
     """
     Encabezado de la ruta. Reemplaza/complementa a Route para soportar
@@ -1027,6 +1038,11 @@ class RouteHeader(Base):
     service_mode               = Column(Enum(ServiceMode, values_callable=lambda obj: [e.value for e in obj]), nullable=False)
     service_type_id            = Column(UUID(as_uuid=True), ForeignKey("service_types.id"), nullable=True)
     client_code                = Column(String(100), nullable=True)  # propagado desde paradas si todas son del mismo cliente
+    negotiation_status         = Column(
+        Enum(NegotiationStatus, values_callable=lambda o: [e.value for e in o]),
+        default=NegotiationStatus.NONE, nullable=False
+    )
+    suggested_price             = Column(Numeric(10, 2), nullable=True)  # precio inicial sugerido por el warehouse
     status                     = Column(Enum(RouteStatus, values_callable=lambda obj: [e.value for e in obj]), default=RouteStatus.DRAFT, nullable=False)
 
     # Programación
@@ -1485,10 +1501,15 @@ class ServiceType(Base):
     code              = Column(String(60),  unique=True, nullable=False)
     name              = Column(String(120), nullable=False)
     description       = Column(Text,        nullable=True)
-    porcentaje_muevo  = Column(Numeric(5,  2), default=12.00, nullable=False)
+    porcentaje_muevo  = Column(Numeric(5,  2), default=5.00, nullable=False)  # comisión Muevo estándar 5%
     importe_minimo    = Column(Numeric(10, 2), default=0.00,  nullable=False)
     importe_maximo    = Column(Numeric(10, 2), nullable=True)
-    precio_servicio   = Column(Numeric(10, 2), default=0.00,  nullable=False)
+    precio_servicio   = Column(Numeric(10, 2), default=0.00,  nullable=False)  # base fija
+    # Tarifas por unidad usadas para sugerir el precio inicial de una ruta
+    # (ver calculate_suggested_price() en main.py)
+    precio_por_km     = Column(Numeric(8, 2), default=0.00, nullable=False)
+    precio_por_lb     = Column(Numeric(8, 2), default=0.00, nullable=False)
+    precio_por_ft3    = Column(Numeric(8, 2), default=0.00, nullable=False)
     habilitado        = Column(Boolean, default=True, nullable=False)
     created_at        = Column(DateTime(timezone=True), server_default=func.now())
     updated_at        = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -1625,6 +1646,48 @@ class RouteBatchItem(Base):
         Index("ix_batch_items_status",              "status"),
     )
 
+# ─── NEGOCIACIÓN DE PRECIOS ────────────────────────────────────────────────────
+
+class OfferSource(PyEnum):
+    WAREHOUSE = "warehouse"
+    TRANSPORT = "transport"
+
+
+class OfferStatus(PyEnum):
+    PENDING    = "pending"     # esperando respuesta de la otra parte
+    ACCEPTED   = "accepted"    # esta oferta fue la que cerró la negociación
+    REJECTED   = "rejected"    # rechazada explícitamente
+    SUPERSEDED = "superseded"  # reemplazada por una oferta posterior
+
+
+class RoutePriceOffer(Base):
+    """
+    Cada fila es una oferta o contraoferta dentro de la negociación de precio
+    de una ruta. El historial completo queda registrado — nunca se borra,
+    solo se marca como superseded/rejected/accepted.
+    """
+    __tablename__ = "route_price_offers"
+
+    id                = uuid_pk()
+    route_header_id   = Column(UUID(as_uuid=True), ForeignKey("route_headers.id", ondelete="CASCADE"), nullable=False)
+    offered_by        = Column(Enum(OfferSource, values_callable=lambda o: [e.value for e in o]), nullable=False)
+    offered_by_user_id= Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    amount            = Column(Numeric(10, 2), nullable=False)
+    note              = Column(Text, nullable=True)
+    status            = Column(
+        Enum(OfferStatus, values_callable=lambda o: [e.value for e in o]),
+        default=OfferStatus.PENDING, nullable=False
+    )
+    created_at        = Column(DateTime(timezone=True), server_default=func.now())
+
+    route             = relationship("RouteHeader", foreign_keys=[route_header_id])
+    offered_by_user   = relationship("User", foreign_keys=[offered_by_user_id])
+
+    __table_args__ = (
+        Index("ix_rpo_route_header_id", "route_header_id"),
+        Index("ix_rpo_status",          "status"),
+    )
+
 # ─── WAREHOUSE INVENTORY ──────────────────────────────────────────────────────
 
 class InventoryItemStatus(PyEnum):
@@ -1688,6 +1751,125 @@ class WarehouseInventoryItem(Base):
         Index("ix_wii_batch_id",            "batch_id"),
         Index("ix_wii_codigo_cliente",      "codigo_cliente"),
         Index("ix_wii_company_code_status", "company_id", "raw_code", "status"),
+    )
+
+# ─── RECEPCIÓN DE MERCANCÍA (INBOUND) ─────────────────────────────────────────
+
+class ReceptionSourceType(str, PyEnum):
+    SUPPLIER = "supplier"  # mercancía entrante de un proveedor/cliente del warehouse
+    RETURN   = "return"    # devolución de paquetes de una ruta ya despachada
+
+
+class ReceptionStatus(str, PyEnum):
+    EXPECTED    = "expected"     # manifiesto creado, todavía no llegó nada físicamente
+    IN_PROGRESS = "in_progress"  # ya se hizo check-in de al menos un ítem
+    COMPLETED   = "completed"    # cerrada — los ítems que no llegaron quedan como missing
+
+
+class ReceptionItemStatus(str, PyEnum):
+    PENDING  = "pending"   # esperado, todavía no se hizo check-in
+    RECEIVED = "received"  # llegó en buen estado — genera inventario disponible
+    DAMAGED  = "damaged"   # llegó pero dañado — queda registrado, no pasa a inventario
+    MISSING  = "missing"   # la recepción se cerró y nunca llegó
+
+
+class Reception(Base):
+    """
+    Encabezado de una recepción de mercancía entrante al warehouse (inbound).
+    Cubre tanto mercancía nueva de proveedores/clientes como devoluciones de
+    rutas ya despachadas — mismo flujo: se define un manifiesto esperado
+    (ReceptionItem por línea) y luego se hace check-in físico ítem por ítem.
+    """
+    __tablename__ = "receptions"
+
+    id                = uuid_pk()
+    company_id        = Column(UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    reception_number  = Column(String(50), nullable=True, unique=True)  # ORL-REC-0001
+
+    source_type       = Column(Enum(ReceptionSourceType, values_callable=lambda o: [e.value for e in o]), nullable=False)
+    reference         = Column(String(255), nullable=True)  # nombre del proveedor/cliente, o motivo de la devolución
+    origin_route_id   = Column(UUID(as_uuid=True), ForeignKey("route_headers.id"), nullable=True)  # solo si source_type=return
+
+    status            = Column(
+        Enum(ReceptionStatus, values_callable=lambda o: [e.value for e in o]),
+        default=ReceptionStatus.EXPECTED, nullable=False
+    )
+    expected_at       = Column(DateTime(timezone=True), nullable=True)
+    received_at       = Column(DateTime(timezone=True), nullable=True)  # se completa al cerrar la recepción
+    notes             = Column(Text, nullable=True)
+
+    created_by_id     = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_at        = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at        = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    company           = relationship("Company",     foreign_keys=[company_id])
+    origin_route      = relationship("RouteHeader", foreign_keys=[origin_route_id])
+    created_by        = relationship("User",        foreign_keys=[created_by_id])
+    items             = relationship("ReceptionItem", back_populates="reception", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        Index("ix_receptions_company_id",   "company_id"),
+        Index("ix_receptions_status",       "status"),
+        Index("ix_receptions_source_type",  "source_type"),
+    )
+
+
+class ReceptionItem(Base):
+    """Línea del manifiesto de una recepción — un ítem/paquete esperado."""
+    __tablename__ = "reception_items"
+
+    id                 = uuid_pk()
+    reception_id       = Column(UUID(as_uuid=True), ForeignKey("receptions.id", ondelete="CASCADE"), nullable=False)
+
+    codigo_cliente     = Column(String(100), nullable=True)
+    descripcion        = Column(String(255), nullable=True)
+    expected_quantity  = Column(Integer, default=1, nullable=False)
+    received_quantity  = Column(Integer, default=0, nullable=False)
+    peso_lbs_unit      = Column(Numeric(10,2), default=0, nullable=False)
+    volumen_ft3_unit   = Column(Numeric(10,2), default=0, nullable=False)
+
+    status             = Column(
+        Enum(ReceptionItemStatus, values_callable=lambda o: [e.value for e in o]),
+        default=ReceptionItemStatus.PENDING, nullable=False
+    )
+    notas              = Column(Text, nullable=True)
+
+    # Ítem de inventario generado al hacer check-in en buen estado (received)
+    inventory_item_id  = Column(UUID(as_uuid=True), ForeignKey("warehouse_inventory_items.id"), nullable=True)
+
+    created_at         = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at         = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    reception          = relationship("Reception", back_populates="items")
+    inventory_item     = relationship("WarehouseInventoryItem", foreign_keys=[inventory_item_id])
+
+    __table_args__ = (
+        Index("ix_reception_items_reception_id", "reception_id"),
+        Index("ix_reception_items_status",       "status"),
+    )
+
+# ─── CATÁLOGO DE MENSAJES ──────────────────────────────────────────────────────
+
+class MessageTemplate(Base):
+    """
+    Catálogo global de mensajes estándar (código + descripción + macro).
+    La macro es una plantilla de texto con variables `{nombre}` que se
+    sustituyen en tiempo de uso (ver render_message_template() en main.py) —
+    catálogo de propósito general, todavía no atado a un flujo específico.
+    """
+    __tablename__ = "message_templates"
+
+    id          = uuid_pk()
+    code        = Column(String(60),  unique=True, nullable=False)
+    description = Column(String(255), nullable=False)
+    macro_text  = Column(Text,        nullable=False)
+    is_active   = Column(Boolean, default=True, nullable=False)
+    created_at  = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at  = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_message_templates_code",      "code"),
+        Index("ix_message_templates_is_active", "is_active"),
     )
 
 # ─── BATCH CLIENTS ────────────────────────────────────────────────────────────

@@ -122,7 +122,7 @@
   .logo-text { font-size: 15px; font-weight: 600; color: var(--white); letter-spacing: -.3px; }
   .logo-sub  { font-size: 10px; color: var(--orange); font-weight: 500; letter-spacing: .5px; }
 
-  .sidebar-nav { flex: 1; padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; }
+  .sidebar-nav { flex: 1; min-height: 0; overflow-y: auto; padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; }
 
   .nav-section-label {
     font-size: 10px; font-weight: 600; letter-spacing: 1px;
@@ -617,6 +617,15 @@
     <button class="nav-item" id="navIncidencias" onclick="showView('incidencias')">
       <span class="nav-icon">⚠️</span> Incidencias
     </button>
+    <button class="nav-item" id="navRecepcion" onclick="showView('recepcion')">
+      <span class="nav-icon">📥</span> Recepción
+    </button>
+    <button class="nav-item" id="navMensajes" onclick="showView('mensajes')">
+      <span class="nav-icon">💬</span> Mensajes
+    </button>
+    <button class="nav-item" id="navTarifas" onclick="showView('tarifas')">
+      <span class="nav-icon">💲</span> Tarifas
+    </button>
     <button class="nav-item" onclick="showView('reportes')">
       <span class="nav-icon">📈</span> Reportes
     </button>
@@ -788,6 +797,18 @@ async function apiPost(path, body) {
   return res.json();
 }
 
+async function apiDelete(path) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'DELETE',
+    headers: buildHeaders(),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`API error ${res.status}: ${errText}`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
 // ── Data ──────────────────────────────────────────────────────────────────
 
 // ── Mock data — lotes ────────────────────────────────────────────────────────
@@ -843,12 +864,12 @@ const BATCHES = [
           cargo_value:18500, insurance_required:true,
           special_instructions:'Palets en posición vertical. No apilar más de 3 cajas.'},
         stops:[
-          {order:1,company:'Almacén Central',address:'15-30 129th St, Queens',  eta:'7:30 AM', status:'done',code:'QS-3301',pod:'foto',   packages:12,weight_lbs:310,volume_ft3:46,dock:'Muelle 4',wait_min:20,notes:'Recoger paleta azul'},
-          {order:2,company:'Bodega Sur',     address:'90-15 Sutphin Blvd, NY', eta:'8:15 AM', status:'done',code:'QS-3302',pod:'qr',    packages:8, weight_lbs:205,volume_ft3:31,dock:'Puerta trasera',wait_min:10,notes:''},
-          {order:3,company:'Depot Norte',   address:'38-01 Queens Blvd, NY',   eta:'9:00 AM', status:'done',code:'QS-3303',pod:'firma', packages:6, weight_lbs:180,volume_ft3:27,dock:'',            wait_min:15,notes:''},
-          {order:4,company:'Centro Dist. A',address:'60-20 Woodhaven Blvd, NY',eta:'9:45 AM', status:'done',code:'QS-3304',pod:'foto',  packages:10,weight_lbs:260,volume_ft3:38,dock:'Muelle 1',    wait_min:25,notes:''},
-          {order:5,company:'Centro Dist. B',address:'101-09 Jamaica Ave, NY',  eta:'10:15 AM',status:'done',code:'QS-3305',pod:'qr',    packages:7, weight_lbs:175,volume_ft3:26,dock:'',            wait_min:10,notes:''},
-          {order:6,company:'Recogida Final',address:'88-11 Sutphin Blvd, NY',  eta:'10:45 AM',status:'done',code:'QS-3306',pod:'firma', packages:5, weight_lbs:110,volume_ft3:18,dock:'',            wait_min:5, notes:''},
+          {order:1,company:'Almacén Central',address:'15-30 129th St, Queens',  zip:'11356',lat:40.7885,lng:-73.8391, eta:'7:30 AM', status:'done',code:'QS-3301',pod:'foto',   packages:12,weight_lbs:310,volume_ft3:46,dock:'Muelle 4',wait_min:20,notes:'Recoger paleta azul'},
+          {order:2,company:'Bodega Sur',     address:'90-15 Sutphin Blvd, NY', zip:'11435',lat:40.7005,lng:-73.8080, eta:'8:15 AM', status:'done',code:'QS-3302',pod:'qr',    packages:8, weight_lbs:205,volume_ft3:31,dock:'Puerta trasera',wait_min:10,notes:''},
+          {order:3,company:'Depot Norte',   address:'38-01 Queens Blvd, NY',   zip:'11374',lat:40.7318,lng:-73.8670, eta:'9:00 AM', status:'done',code:'QS-3303',pod:'firma', packages:6, weight_lbs:180,volume_ft3:27,dock:'',            wait_min:15,notes:''},
+          {order:4,company:'Centro Dist. A',address:'60-20 Woodhaven Blvd, NY',zip:'11421',lat:40.7051,lng:-73.8574, eta:'9:45 AM', status:'done',code:'QS-3304',pod:'foto',  packages:10,weight_lbs:260,volume_ft3:38,dock:'Muelle 1',    wait_min:25,notes:''},
+          {order:5,company:'Centro Dist. B',address:'101-09 Jamaica Ave, NY',  zip:'11418',lat:40.6953,lng:-73.8461, eta:'10:15 AM',status:'done',code:'QS-3305',pod:'qr',    packages:7, weight_lbs:175,volume_ft3:26,dock:'',            wait_min:10,notes:''},
+          {order:6,company:'Recogida Final',address:'88-11 Sutphin Blvd, NY',  zip:'11435',lat:40.7044,lng:-73.8086, eta:'10:45 AM',status:'done',code:'QS-3306',pod:'firma', packages:5, weight_lbs:110,volume_ft3:18,dock:'',            wait_min:5, notes:''},
         ]
       },
       { id:'R-2024-004', num:'R-004', title:'Logística Almacén — Bronx', status:'draft',
@@ -935,10 +956,10 @@ const ROUTES = [
     vehicle: 'Furgoneta · NY-ABC-1234',
     driver: 'Carlos Mendez',
     stops: [
-      { order:1, company:'Sullivan & Cromwell LLP', address:'1221 6th Ave, Piso 38, NY', eta:'10:15 AM', status:'done', code:'LC-001847', pod:'firma' },
-      { order:2, company:'Skadden Arps',            address:'200 Park Ave, NY',          eta:'10:45 AM', status:'done', code:'LC-001848', pod:'firma+foto' },
-      { order:3, company:'Davis Polk & Wardwell',   address:'30 Rockefeller Plaza, NY',  eta:'11:20 AM', status:'active', code:'LC-001849', pod:'foto' },
-      { order:4, company:'Cravath Swaine & Moore',  address:'450 Lexington Ave, NY',     eta:'12:00 PM', status:'pending', code:'LC-001850', pod:'firma' },
+      { order:1, company:'Sullivan & Cromwell LLP', address:'1221 6th Ave, Piso 38, NY', zip:'10112', lat:40.7595, lng:-73.9825, eta:'10:15 AM', status:'done', code:'LC-001847', pod:'firma' },
+      { order:2, company:'Skadden Arps',            address:'200 Park Ave, NY',          zip:'10166', lat:40.7536, lng:-73.9766, eta:'10:45 AM', status:'done', code:'LC-001848', pod:'firma+foto' },
+      { order:3, company:'Davis Polk & Wardwell',   address:'30 Rockefeller Plaza, NY',  zip:'10020', lat:40.7591, lng:-73.9796, eta:'11:20 AM', status:'active', code:'LC-001849', pod:'foto' },
+      { order:4, company:'Cravath Swaine & Moore',  address:'450 Lexington Ave, NY',     zip:'10170', lat:40.7533, lng:-73.9754, eta:'12:00 PM', status:'pending', code:'LC-001850', pod:'firma' },
     ]
   },
   {
@@ -955,9 +976,9 @@ const ROUTES = [
     vehicle: 'Van · FL-XYZ-789',
     driver: 'Maria Gonzalez',
     stops: [
-      { order:1, company:'Pickup A — Atlantic Ave', address:'125 Atlantic Ave, Brooklyn', eta:'8:00 AM', status:'pending', code:'', pod:'check-in' },
-      { order:2, company:'Pickup B — Adams St',     address:'345 Adams St, Brooklyn',     eta:'8:15 AM', status:'pending', code:'', pod:'check-in' },
-      { order:3, company:'TechCorp HQ',             address:'55 Water St, New York',      eta:'9:00 AM', status:'pending', code:'', pod:'check-in' },
+      { order:1, company:'Pickup A — Atlantic Ave', address:'125 Atlantic Ave, Brooklyn', zip:'11201', lat:40.6908, lng:-73.9959, eta:'8:00 AM', status:'pending', code:'', pod:'check-in' },
+      { order:2, company:'Pickup B — Adams St',     address:'345 Adams St, Brooklyn',     zip:'11201', lat:40.6927, lng:-73.9886, eta:'8:15 AM', status:'pending', code:'', pod:'check-in' },
+      { order:3, company:'TechCorp HQ',             address:'55 Water St, New York',      zip:'10004', lat:40.7032, lng:-74.0091, eta:'9:00 AM', status:'pending', code:'', pod:'check-in' },
     ]
   },
   {
@@ -987,17 +1008,21 @@ const ROUTES = [
       insurance_required: true,
     },
     stops: [
-      { order:1, company:'Almacén Central',  address:'15-30 129th St, Queens',   eta:'7:30 AM', status:'done', code:'QS-3301', pod:'foto',
-        packages:12, weight_lbs:310, volume_ft3:46, dock:'Muelle 4', wait_min:20, notes:'Recoger paleta azul · Muelle 4' },
-      { order:2, company:'Bodega Sur',       address:'90-15 Sutphin Blvd, NY',   eta:'8:15 AM', status:'done', code:'QS-3302', pod:'qr',
+      { order:1, company:'Almacén Central',  address:'15-30 129th St, Queens',   zip:'11356', lat:40.7885, lng:-73.8391, eta:'7:30 AM', status:'done', code:'QS-3301', pod:'foto',
+        packages:12, weight_lbs:310, volume_ft3:46, dock:'Muelle 4', wait_min:20, notes:'Recoger paleta azul · Muelle 4',
+        items:[
+          {package_code:'QS-3301-A', description:'Reactivos de laboratorio', quantity:6, weight_lbs:150, volume_ft3:22, declared_value:800},
+          {package_code:'QS-3301-B', description:'Insumos médicos',          quantity:6, weight_lbs:160, volume_ft3:24, declared_value:650},
+        ] },
+      { order:2, company:'Bodega Sur',       address:'90-15 Sutphin Blvd, NY',   zip:'11435', lat:40.7005, lng:-73.8080, eta:'8:15 AM', status:'done', code:'QS-3302', pod:'qr',
         packages:8,  weight_lbs:205, volume_ft3:31, dock:'Puerta trasera', wait_min:10, notes:'Entregar solo a encargado de turno' },
-      { order:3, company:'Depot Norte',      address:'38-01 Queens Blvd, NY',    eta:'9:00 AM', status:'done', code:'QS-3303', pod:'firma',
+      { order:3, company:'Depot Norte',      address:'38-01 Queens Blvd, NY',    zip:'11374', lat:40.7318, lng:-73.8670, eta:'9:00 AM', status:'done', code:'QS-3303', pod:'firma',
         packages:6,  weight_lbs:180, volume_ft3:27, dock:'', wait_min:15, notes:'Pedir firma del supervisor' },
-      { order:4, company:'Centro Dist. A',   address:'60-20 Woodhaven Blvd, NY', eta:'9:45 AM', status:'done', code:'QS-3304', pod:'foto',
+      { order:4, company:'Centro Dist. A',   address:'60-20 Woodhaven Blvd, NY', zip:'11421', lat:40.7051, lng:-73.8574, eta:'9:45 AM', status:'done', code:'QS-3304', pod:'foto',
         packages:10, weight_lbs:260, volume_ft3:38, dock:'Muelle 1', wait_min:25, notes:'Carga sensible, no voltear' },
-      { order:5, company:'Centro Dist. B',   address:'101-09 Jamaica Ave, NY',   eta:'10:15 AM',status:'done', code:'QS-3305', pod:'qr',
+      { order:5, company:'Centro Dist. B',   address:'101-09 Jamaica Ave, NY',   zip:'11418', lat:40.6953, lng:-73.8461, eta:'10:15 AM',status:'done', code:'QS-3305', pod:'qr',
         packages:7,  weight_lbs:175, volume_ft3:26, dock:'', wait_min:10, notes:'' },
-      { order:6, company:'Recogida Final',   address:'88-11 Sutphin Blvd, NY',   eta:'10:45 AM',status:'done', code:'QS-3306', pod:'firma',
+      { order:6, company:'Recogida Final',   address:'88-11 Sutphin Blvd, NY',   zip:'11435', lat:40.7044, lng:-73.8086, eta:'10:45 AM',status:'done', code:'QS-3306', pod:'firma',
         packages:5,  weight_lbs:110, volume_ft3:18, dock:'', wait_min:5,  notes:'Confirmar recibo total del pedido' },
     ]
   },
@@ -1083,7 +1108,7 @@ let activeTab   = 'todas';
 function showView(view) {
   currentView = view;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  const idx = ['dashboard','rutas','upload','tracking','pod','transportistas','facturacion','clientes','incidencias','reportes'].indexOf(view);
+  const idx = ['dashboard','rutas','upload','tracking','pod','transportistas','facturacion','clientes','incidencias','recepcion','mensajes','tarifas','reportes'].indexOf(view);
   document.querySelectorAll('.nav-item')[idx]?.classList.add('active');
 
   const titles = {
@@ -1098,6 +1123,9 @@ function showView(view) {
     usuarios:       ['Usuarios del holding', 'Gestión de accesos y permisos por compañía'],
     clientes:       ['Clientes', 'Contactos externos y preferencias de notificación'],
     incidencias:    ['Incidencias', 'Gestión de incidencias y catálogo de tipos'],
+    recepcion:      ['Recepción', 'Ingreso de mercancía al warehouse — manifiestos y check-in'],
+    mensajes:       ['Mensajes', 'Catálogo de mensajes estándar — código, descripción y macro'],
+    tarifas:        ['Tarifas de servicio', 'Parámetros de precio por km, peso y volumen usados en la sugerencia automática'],
   };
   const [title, sub] = titles[view] || ['', ''];
   document.getElementById('topbarTitle').textContent = title;
@@ -1115,11 +1143,17 @@ function showView(view) {
     usuarios:       renderUsuarios,
     clientes:       renderClientes,
     incidencias:    renderIncidencias,
+    recepcion:      renderRecepcion,
+    mensajes:       renderMensajes,
+    tarifas:        renderTarifas,
   };
   document.getElementById('content').innerHTML = (renders[view] || (() => ''))();
   if (view === 'usuarios')    setTimeout(loadHoldingUsers, 0);
   if (view === 'clientes')    setTimeout(loadClientes, 0);
   if (view === 'incidencias') setTimeout(loadIncidencias, 0);
+  if (view === 'recepcion')   setTimeout(loadRecepciones, 0);
+  if (view === 'mensajes')    setTimeout(loadMensajes, 0);
+  if (view === 'tarifas')     setTimeout(loadTarifas, 0);
   csvStep = 0;
 
   if (view === 'tracking') {
@@ -1216,7 +1250,7 @@ function renderDashboard() {
       <!-- Bloque 4: Gráfico torta — estados de lotes -->
       <div class="kpi-card" style="padding:12px">
         <div class="kpi-label" style="margin-bottom:6px">Estados de lotes</div>
-        <canvas id="pieChartLotes" width="140" height="90"
+        <canvas id="pieChartLotes" width="140" height="100"
           style="display:block;margin:0 auto"></canvas>
         <div id="legendLotes" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 8px"></div>
       </div>
@@ -1224,7 +1258,7 @@ function renderDashboard() {
       <!-- Bloque 5: Gráfico barras — estados de rutas -->
       <div class="kpi-card" style="padding:12px">
         <div class="kpi-label" style="margin-bottom:6px">Estados de rutas</div>
-        <canvas id="barChartRutas" width="160" height="90"
+        <canvas id="barChartRutas" width="160" height="100"
           style="display:block;margin:0 auto"></canvas>
         <div id="legendRutas" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 8px"></div>
       </div>
@@ -1333,11 +1367,22 @@ function renderDashboard() {
   return html;
 }
 
+function shadeColor(hex, percent) {
+  // percent negativo oscurece, positivo aclara
+  const f = parseInt(hex.slice(1), 16);
+  const t = percent < 0 ? 0 : 255;
+  const p = Math.abs(percent);
+  const R = f >> 16, G = (f >> 8) & 0x00FF, B = f & 0x0000FF;
+  const nR = Math.round((t - R) * p) + R;
+  const nG = Math.round((t - G) * p) + G;
+  const nB = Math.round((t - B) * p) + B;
+  return `#${(0x1000000 + nR*0x10000 + nG*0x100 + nB).toString(16).slice(1)}`;
+}
+
 function renderDashboardCharts(batches) {
   const isDark      = document.documentElement.getAttribute('data-theme') !== 'light';
   const borderColor = isDark ? '#1C1C1C' : '#fff';
   const mutedColor  = isDark ? '#666' : '#aaa';
-  const labelColor  = isDark ? '#777' : '#666';
 
   const LOTE_STATES = [
     { key:'draft',               label:'Borrador',   color:'#888780' },
@@ -1364,75 +1409,252 @@ function renderDashboardCharts(batches) {
     count: batches.reduce((sum,b) => sum + (b.routes||[]).filter(r=>r.status===s.key).length, 0)
   })).filter(s => s.count > 0);
 
-  // ── Torta: estados de lotes ───────────────────────────────────────────────
   const pie = document.getElementById('pieChartLotes');
-  if (pie && LOTE_STATES.length > 0) {
-    const ctx = pie.getContext('2d');
-    const W = pie.width, H = pie.height;
-    const cx = W/2, cy = H/2;
-    const r  = Math.min(cx, cy) - 6;
-    const tot = LOTE_STATES.reduce((s,d)=>s+d.count,0);
+  if (pie && LOTE_STATES.length > 0) setupPieChart(pie, LOTE_STATES, borderColor, mutedColor, 'legendLotes');
+
+  const bar = document.getElementById('barChartRutas');
+  if (bar && RUTA_STATES.length > 0) setupBarChart(bar, RUTA_STATES, mutedColor, 'legendRutas');
+}
+
+// ── Torta interactiva: ilumina la porción bajo el cursor ─────────────────────
+function setupPieChart(canvas, DATA, borderColor, mutedColor, legendId) {
+  const W = canvas.width, H = canvas.height;
+  const cx = W/2, cy = H/2;
+  const rx = Math.min(W/2, H/2) - 8;
+  const ry = rx * 0.55;
+  const tot = DATA.reduce((s,d)=>s+d.count,0);
+
+  let a0 = -Math.PI/2;
+  const slices = DATA.map(d => {
+    const a1 = a0 + (d.count/tot)*2*Math.PI;
+    const seg = { ...d, a0, a1 };
+    a0 = a1;
+    return seg;
+  });
+
+  function draw(hoverIdx) {
+    const ctx = canvas.getContext('2d');
     ctx.clearRect(0,0,W,H);
-    let angle = -Math.PI/2;
-    LOTE_STATES.forEach(d => {
-      const slice = (d.count/tot)*2*Math.PI;
-      ctx.beginPath(); ctx.moveTo(cx,cy);
-      ctx.arc(cx,cy,r,angle,angle+slice);
+
+    // Disco plano (sin extrusión) — solo la tapa con gradiente de iluminación
+    slices.forEach((s, i) => {
+      const isHover = hoverIdx === i;
+      const dim = hoverIdx !== null && !isHover;
+      // Explode sutil hacia afuera al hacer hover
+      let ox = 0, oy = 0;
+      if (isHover) {
+        const mid = (s.a0 + s.a1) / 2;
+        ox = Math.cos(mid) * 4;
+        oy = Math.sin(mid) * 2;
+      }
+      ctx.save();
+      ctx.translate(ox, oy);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.ellipse(cx, cy, rx, ry, 0, s.a0, s.a1);
       ctx.closePath();
-      ctx.fillStyle=d.color; ctx.fill();
-      ctx.strokeStyle=borderColor; ctx.lineWidth=2; ctx.stroke();
-      angle+=slice;
+
+      if (isHover) {
+        ctx.shadowColor = s.color;
+        ctx.shadowBlur = 14;
+      }
+      const grad = ctx.createRadialGradient(cx - rx*0.3, cy - ry*0.3, 2, cx, cy, rx);
+      grad.addColorStop(0, shadeColor(s.color, dim ? 0.05 : (isHover ? 0.4 : 0.25)));
+      grad.addColorStop(1, dim ? shadeColor(s.color, -0.15) : s.color);
+      ctx.fillStyle = grad;
+      ctx.globalAlpha = dim ? 0.55 : 1;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = isHover ? '#fff' : borderColor;
+      ctx.lineWidth = isHover ? 2 : 1.5;
+      ctx.stroke();
+      ctx.restore();
     });
-    // HTML legend
-    const legEl = document.getElementById('legendLotes');
-    if (legEl) {
-      legEl.innerHTML = LOTE_STATES.map(d => `
-        <span style="display:flex;align-items:center;gap:3px;font-size:10px;color:${mutedColor}">
-          <span style="width:8px;height:8px;border-radius:2px;background:${d.color};flex-shrink:0;display:inline-block"></span>
-          ${d.label} <b style="color:${d.color}">${d.count}</b>
-        </span>`).join('');
-    }
   }
 
-  // ── Barras: estados de rutas ──────────────────────────────────────────────
-  const bar = document.getElementById('barChartRutas');
-  if (bar && RUTA_STATES.length > 0) {
-    const ctx=bar.getContext('2d');
-    const W=bar.width, H=bar.height;
-    ctx.clearRect(0,0,W,H);
-    const maxVal=Math.max(...RUTA_STATES.map(d=>d.count),1);
-    const padL=4,padB=22,padT=10,padR=4;
-    const chartH=H-padB-padT, chartW=W-padL-padR;
-    const n=RUTA_STATES.length;
-    const barW=Math.max(8,Math.floor(chartW/n)-4);
-    const spacing=(chartW-barW*n)/(n+1);
-    ctx.strokeStyle='#333'; ctx.lineWidth=0.5;
-    ctx.beginPath(); ctx.moveTo(padL,H-padB); ctx.lineTo(W-padR,H-padB); ctx.stroke();
-    RUTA_STATES.forEach((d,i) => {
-      const bH=(d.count/maxVal)*chartH;
-      const bX=padL+spacing+i*(barW+spacing);
-      const bY=padT+chartH-bH;
-      const rad=2;
-      ctx.fillStyle=d.color;
-      ctx.beginPath();
-      ctx.moveTo(bX+rad,bY); ctx.lineTo(bX+barW-rad,bY);
-      ctx.quadraticCurveTo(bX+barW,bY,bX+barW,bY+rad);
-      ctx.lineTo(bX+barW,H-padB); ctx.lineTo(bX,H-padB);
-      ctx.lineTo(bX,bY+rad); ctx.quadraticCurveTo(bX,bY,bX+rad,bY);
-      ctx.closePath(); ctx.fill();
-      ctx.fillStyle=mutedColor; ctx.font='9px system-ui'; ctx.textAlign='center';
-      if(d.count>0) ctx.fillText(d.count,bX+barW/2,bY-2);
-    });
-    // HTML legend
-    const legEl = document.getElementById('legendRutas');
-    if (legEl) {
-      legEl.innerHTML = RUTA_STATES.map(d => `
-        <span style="display:flex;align-items:center;gap:3px;font-size:10px;color:${mutedColor}">
-          <span style="width:8px;height:8px;border-radius:2px;background:${d.color};flex-shrink:0;display:inline-block"></span>
-          ${d.label} <b style="color:${d.color}">${d.count}</b>
-        </span>`).join('');
-    }
+  function updateLegend(hoverIdx) {
+    const legEl = document.getElementById(legendId);
+    if (!legEl) return;
+    legEl.innerHTML = slices.map((d, i) => `
+      <span style="display:flex;align-items:center;gap:3px;font-size:10px;color:${hoverIdx===i?d.color:mutedColor};
+                   font-weight:${hoverIdx===i?'700':'400'};transition:color .1s">
+        <span style="width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,${shadeColor(d.color,0.2)},${d.color});
+                     flex-shrink:0;display:inline-block;box-shadow:0 1px 2px rgba(0,0,0,.3)"></span>
+        ${d.label} <b style="color:${d.color}">${d.count}</b>
+      </span>`).join('');
   }
+
+  function hitTest(mx, my) {
+    const dx = (mx - cx) / rx, dy = (my - cy) / ry;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist > 1.15) return null;
+    let ang = Math.atan2(my - cy, mx - cx);
+    for (const s of slices) {
+      let a0 = s.a0, a1 = s.a1, a = ang;
+      while (a < a0) a += 2*Math.PI;
+      while (a1 < a0) a1 += 2*Math.PI;
+      if (a >= a0 && a <= a1) return slices.indexOf(s);
+    }
+    return null;
+  }
+
+  let currentHover = null;
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const my = (e.clientY - rect.top)  * scaleY;
+    const idx = hitTest(mx, my);
+    if (idx !== currentHover) {
+      currentHover = idx;
+      canvas.style.cursor = idx !== null ? 'pointer' : 'default';
+      draw(currentHover);
+      updateLegend(currentHover);
+    }
+  });
+  canvas.addEventListener('mouseleave', () => {
+    if (currentHover !== null) {
+      currentHover = null;
+      canvas.style.cursor = 'default';
+      draw(null);
+      updateLegend(null);
+    }
+  });
+
+  draw(null);
+  updateLegend(null);
+}
+
+// ── Barras interactivas: ilumina la barra bajo el cursor ─────────────────────
+function setupBarChart(canvas, DATA, mutedColor, legendId) {
+  const W = canvas.width, H = canvas.height;
+  const depth  = 6;
+  const maxVal = Math.max(...DATA.map(d=>d.count), 1);
+  const padL=6, padB=20, padT=14, padR=10;
+  const chartH = H - padB - padT;
+  const chartW = W - padL - padR - depth;
+  const n = DATA.length;
+  const barW = Math.max(8, Math.floor(chartW/n) - 6);
+  const spacing = (chartW - barW*n) / (n+1);
+
+  const bars = DATA.map((d, i) => {
+    const bH = (d.count/maxVal) * chartH;
+    const bX = padL + spacing + i*(barW+spacing);
+    const bY = padT + chartH - bH;
+    return { ...d, bX, bY, barW, bH };
+  });
+
+  function draw(hoverIdx) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle = 'rgba(128,128,128,.3)'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(padL, H-padB); ctx.lineTo(W-padR, H-padB); ctx.stroke();
+
+    bars.forEach((b, i) => {
+      const isHover = hoverIdx === i;
+      const dim = hoverIdx !== null && !isHover;
+      const lift = isHover ? 3 : 0;               // eleva la barra al hacer hover
+      const bY = b.bY - lift;
+      const top   = shadeColor(b.color, dim ? 0.05 : (isHover ? 0.42 : 0.28));
+      const front = dim ? shadeColor(b.color, -0.1) : b.color;
+      const side  = shadeColor(b.color, dim ? -0.45 : (isHover ? -0.15 : -0.30));
+
+      ctx.globalAlpha = dim ? 0.45 : 1;
+
+      // Sombra en el piso
+      ctx.fillStyle = 'rgba(0,0,0,.15)';
+      ctx.beginPath();
+      ctx.ellipse(b.bX+barW/2+depth/2, H-padB+2, barW/2+2, 2.5, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      if (isHover) { ctx.shadowColor = b.color; ctx.shadowBlur = 12; }
+
+      // Cara lateral
+      ctx.fillStyle = side;
+      ctx.beginPath();
+      ctx.moveTo(b.bX+barW, bY);
+      ctx.lineTo(b.bX+barW+depth, bY-depth);
+      ctx.lineTo(b.bX+barW+depth, H-padB-depth);
+      ctx.lineTo(b.bX+barW, H-padB);
+      ctx.closePath(); ctx.fill();
+
+      // Cara frontal
+      const grad = ctx.createLinearGradient(0, bY, 0, H-padB);
+      grad.addColorStop(0, shadeColor(front, isHover ? 0.2 : 0.12));
+      grad.addColorStop(1, shadeColor(front, -0.08));
+      ctx.fillStyle = grad;
+      ctx.fillRect(b.bX, bY, barW, H-padB-bY);
+
+      // Cara superior
+      ctx.fillStyle = top;
+      ctx.beginPath();
+      ctx.moveTo(b.bX, bY);
+      ctx.lineTo(b.bX+depth, bY-depth);
+      ctx.lineTo(b.bX+barW+depth, bY-depth);
+      ctx.lineTo(b.bX+barW, bY);
+      ctx.closePath(); ctx.fill();
+
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = isHover ? 'rgba(255,255,255,.6)' : 'rgba(255,255,255,.25)';
+      ctx.lineWidth = isHover ? 1.3 : 0.8;
+      ctx.beginPath(); ctx.moveTo(b.bX, bY); ctx.lineTo(b.bX+depth, bY-depth); ctx.stroke();
+
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = isHover ? '#fff' : mutedColor;
+      ctx.font = isHover ? 'bold 10px system-ui' : 'bold 9px system-ui';
+      ctx.textAlign = 'center';
+      if (b.count > 0) ctx.fillText(b.count, b.bX+barW/2+depth/2, bY-depth-3);
+    });
+  }
+
+  function updateLegend(hoverIdx) {
+    const legEl = document.getElementById(legendId);
+    if (!legEl) return;
+    legEl.innerHTML = bars.map((d, i) => `
+      <span style="display:flex;align-items:center;gap:3px;font-size:10px;color:${hoverIdx===i?d.color:mutedColor};
+                   font-weight:${hoverIdx===i?'700':'400'};transition:color .1s">
+        <span style="width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,${shadeColor(d.color,0.2)},${d.color});
+                     flex-shrink:0;display:inline-block;box-shadow:0 1px 2px rgba(0,0,0,.3)"></span>
+        ${d.label} <b style="color:${d.color}">${d.count}</b>
+      </span>`).join('');
+  }
+
+  function hitTest(mx, my) {
+    for (let i = 0; i < bars.length; i++) {
+      const b = bars[i];
+      if (mx >= b.bX - 2 && mx <= b.bX + barW + depth + 2 && my >= padT - 10 && my <= H - padB + 4) {
+        return i;
+      }
+    }
+    return null;
+  }
+
+  let currentHover = null;
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const my = (e.clientY - rect.top)  * scaleY;
+    const idx = hitTest(mx, my);
+    if (idx !== currentHover) {
+      currentHover = idx;
+      canvas.style.cursor = idx !== null ? 'pointer' : 'default';
+      draw(currentHover);
+      updateLegend(currentHover);
+    }
+  });
+  canvas.addEventListener('mouseleave', () => {
+    if (currentHover !== null) {
+      currentHover = null;
+      canvas.style.cursor = 'default';
+      draw(null);
+      updateLegend(null);
+    }
+  });
+
+  draw(null);
+  updateLegend(null);
 }
 
 // ── Dashboard interno del lote ─────────────────────────────────────────────
@@ -1476,6 +1698,8 @@ function openBatch(batchId) {
       ${batch.client_code ? `<span class="badge badge-blue" style="font-size:12px">👤 ${batch.client_code}</span>` : ''}
       ${batchStatusBadge(batch.status)}
       ${batch.status === 'draft' ? `
+        <button class="btn btn-ghost" style="font-size:13px;padding:6px 14px"
+          onclick="openAddRouteModal('${batch.id}')">+ Agregar ruta</button>
         <button class="btn btn-primary" style="font-size:13px;padding:6px 14px"
           onclick="changeBatchStatus('${batch.id}','approved')">✓ Aprobar lote</button>
       ` : ''}
@@ -1486,7 +1710,7 @@ function openBatch(batchId) {
       <button class="btn btn-ghost" onclick="showToast('Exportando lote...','success')" style="font-size:12px">↓ Exportar</button>
     </div>
 
-    <!-- Sub-header: tipo servicio / tipo vehículo -->
+    <!-- Sub-header: tipo servicio / tipo vehículo / fecha estimada -->
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;padding:10px 14px;background:var(--card2);border-radius:8px;font-size:12px">
       <div><span style="color:var(--muted)">Tipo de servicio:</span> <b style="color:var(--white)">${
         { mensajeria:'📨 Mensajería', logistica:'📦 Logística', paqueteria:'🛍 Paquetería', empleados:'👥 Empleados', mixto:'🔀 Mixto' }[batch.service_type] || batch.service_type || '—'
@@ -1494,6 +1718,10 @@ function openBatch(batchId) {
       <div><span style="color:var(--muted)">Tipo de vehículo:</span> <b style="color:var(--white)">${
         { moto:'🏍 Moto', sedan:'🚗 Sedán', furgoneta:'🚐 Furgoneta', furgon:'🚚 Furgón' }[batch.vehicle_type] || batch.vehicle_type || '—'
       }</b></div>
+      <div><span style="color:var(--muted)">Fecha estimada de entrega:</span> <b style="color:var(--white)">${(() => {
+        const dates = routes.map(r => r.scheduled_date || r.scheduled_end).filter(Boolean).sort();
+        return dates.length > 0 ? dates[dates.length-1].split('T')[0] : '—';
+      })()}</b></div>
     </div>
 
     <!-- Bloques de resumen -->
@@ -1546,10 +1774,10 @@ function openBatch(batchId) {
         </div>
       </div>
 
-      <!-- Bloque 4: Gráfico de barras por estado -->
+      <!-- Bloque 4: Gráfico de torta por estado -->
       <div class="kpi-card" style="padding:12px">
         <div class="kpi-label" style="margin-bottom:4px">Rutas por estado</div>
-        <canvas id="barChartBatchDetail" width="160" height="70" style="display:block;margin:0 auto"></canvas>
+        <canvas id="barChartBatchDetail" width="140" height="100" style="display:block;margin:0 auto"></canvas>
         <div id="legendBatchDetail" style="margin-top:4px;display:flex;flex-wrap:wrap;gap:3px 8px;justify-content:center"></div>
       </div>
 
@@ -1607,7 +1835,13 @@ function openBatch(batchId) {
                         : `<span style="font-size:14px;color:var(--muted)">0</span>`}
                     </td>
                     <td style="text-align:right;font-weight:600;color:var(--orange)">${fmt$(r.gross || 0)}</td>
-                    <td style="font-size:12px;color:var(--orange)">Ver ruta →</td>
+                    <td style="font-size:12px;color:var(--orange);white-space:nowrap">
+                      Ver ruta →
+                      ${batch.status === 'draft' ? `
+                        <button title="Eliminar ruta" onclick="event.stopPropagation();deleteRouteFromBatch('${batch.id}','${r.id}')"
+                          style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;margin-left:8px">🗑</button>
+                      ` : ''}
+                    </td>
                   </tr>
                 `;
               }).join('')}
@@ -1639,47 +1873,10 @@ function renderBatchDetailChart(routes) {
     count: routes.filter(r => r.status === s.key).length
   })).filter(s => s.count > 0);
 
-  const bar = document.getElementById('barChartBatchDetail');
-  if (!bar || RUTA_STATES.length === 0) return;
+  const pie = document.getElementById('barChartBatchDetail');
+  if (!pie || RUTA_STATES.length === 0) return;
 
-  const ctx = bar.getContext('2d');
-  const W = bar.width, H = bar.height;
-  ctx.clearRect(0, 0, W, H);
-  const maxVal = Math.max(...RUTA_STATES.map(d => d.count), 1);
-  const padL=4, padB=6, padT=8, padR=4;
-  const chartH = H - padB - padT;
-  const chartW = W - padL - padR;
-  const n = RUTA_STATES.length;
-  const barW = Math.max(8, Math.floor(chartW / n) - 4);
-  const spacing = (chartW - barW * n) / (n + 1);
-
-  ctx.strokeStyle = '#333'; ctx.lineWidth = 0.5;
-  ctx.beginPath(); ctx.moveTo(padL, H - padB); ctx.lineTo(W - padR, H - padB); ctx.stroke();
-
-  RUTA_STATES.forEach((d, i) => {
-    const bH = (d.count / maxVal) * chartH;
-    const bX = padL + spacing + i * (barW + spacing);
-    const bY = padT + chartH - bH;
-    const rad = 2;
-    ctx.fillStyle = d.color;
-    ctx.beginPath();
-    ctx.moveTo(bX+rad, bY); ctx.lineTo(bX+barW-rad, bY);
-    ctx.quadraticCurveTo(bX+barW, bY, bX+barW, bY+rad);
-    ctx.lineTo(bX+barW, H-padB); ctx.lineTo(bX, H-padB);
-    ctx.lineTo(bX, bY+rad); ctx.quadraticCurveTo(bX, bY, bX+rad, bY);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = mutedColor; ctx.font = '9px system-ui'; ctx.textAlign = 'center';
-    if (d.count > 0) ctx.fillText(d.count, bX+barW/2, bY-2);
-  });
-
-  const legEl = document.getElementById('legendBatchDetail');
-  if (legEl) {
-    legEl.innerHTML = RUTA_STATES.map(d => `
-      <span style="display:flex;align-items:center;gap:3px;font-size:9px;color:${mutedColor}">
-        <span style="width:7px;height:7px;border-radius:2px;background:${d.color};flex-shrink:0;display:inline-block"></span>
-        ${d.label} <b style="color:${d.color}">${d.count}</b>
-      </span>`).join('');
-  }
+  setupPieChart(pie, RUTA_STATES, borderColor, mutedColor, 'legendBatchDetail');
 }
 
 function initBatchMap(batch, routeColors) {
@@ -1830,10 +2027,10 @@ function renderUpload() {
 
 // ── Service types helpers ─────────────────────────────────────────────────────
 const DEMO_SERVICE_TYPES = [
-  { id:'st1', code:'mensajeria', name:'📦 Mensajería', porcentaje_muevo:12, importe_minimo:15, importe_maximo:500, precio_servicio:25, habilitado:true },
-  { id:'st2', code:'logistica',  name:'🏭 Logística',  porcentaje_muevo:10, importe_minimo:50, importe_maximo:5000,precio_servicio:80, habilitado:true },
-  { id:'st3', code:'paqueteria', name:'📬 Paquetería', porcentaje_muevo:11, importe_minimo:20, importe_maximo:1000,precio_servicio:35, habilitado:true },
-  { id:'st4', code:'personas',   name:'👥 Personas',   porcentaje_muevo:12, importe_minimo:30, importe_maximo:2000,precio_servicio:45, habilitado:true },
+  { id:'st1', code:'mensajeria', name:'📦 Mensajería', porcentaje_muevo:12, importe_minimo:15, importe_maximo:500, precio_servicio:25, precio_por_km:0.50, precio_por_lb:0.05, precio_por_ft3:0.30, habilitado:true },
+  { id:'st2', code:'logistica',  name:'🏭 Logística',  porcentaje_muevo:10, importe_minimo:50, importe_maximo:5000,precio_servicio:80, precio_por_km:1.20, precio_por_lb:0.03, precio_por_ft3:0.20, habilitado:true },
+  { id:'st3', code:'paqueteria', name:'📬 Paquetería', porcentaje_muevo:11, importe_minimo:20, importe_maximo:1000,precio_servicio:35, precio_por_km:0.70, precio_por_lb:0.06, precio_por_ft3:0.35, habilitado:true },
+  { id:'st4', code:'personas',   name:'👥 Personas',   porcentaje_muevo:12, importe_minimo:30, importe_maximo:2000,precio_servicio:45, precio_por_km:0.90, precio_por_lb:0.00, precio_por_ft3:0.00, habilitado:true },
 ];
 
 function getServiceTypes() {
@@ -1865,6 +2062,8 @@ let batchStep   = 0;   // 0=config, 1=paradas, 2=preview, 3=confirmar
 let batchConfig = { nombre:'', fecha:'', vehicle_type:'furgoneta', service_type:'mensajeria', client_id:'', peso_max:1800, vol_max:200, max_stops:10 };
 let batchStops  = [];  // lista de StopInput
 let batchPlan   = null; // respuesta de /plan (puede ser ajustada por el usuario)
+let currentStopItems = []; // paquetes ya agregados a la parada manual en curso (antes de "+ Agregar parada")
+let csvImportErrors = []; // filas del último CSV importado que no pasaron validación
 
 // VEHICLE_DEFAULTS — kept for backward compat; prefer getVehicleTypes()
 const VEHICLE_DEFAULTS = {
@@ -2081,11 +2280,15 @@ function batchStep1() {
           <div style="font-size:11px;color:var(--muted);margin-bottom:8px">Columnas esperadas:</div>
           <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);background:var(--card2);
                padding:8px;border-radius:6px;line-height:1.8">
-            destino, direccion, lat, lng, peso_lbs, volumen_ft3, hora_limite,<br>
+            destino, direccion, codigo_postal, lat, lng, peso_lbs, volumen_ft3, hora_limite,<br>
             codigo_cliente, contacto, telefono, codigo_paquete, codigo_barras, codigo_qr, notas, valor_declarado
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5">
+            💡 ¿Un mismo destino recibe varios paquetes? Repetí la fila con el mismo <code style="font-family:var(--font-mono)">destino</code> + <code style="font-family:var(--font-mono)">direccion</code> y cambiá solo los datos del paquete (código, peso, volumen, valor) — se agrupan automáticamente en una sola parada.
           </div>
           <button class="btn btn-ghost" style="width:100%;margin-top:10px;font-size:12px"
             onclick="downloadCsvTemplate()">↓ Descargar plantilla CSV</button>
+          <div id="csvErrorBox">${renderCsvErrorBox()}</div>
         </div>
 
         <!-- Manual tab -->
@@ -2102,6 +2305,10 @@ function batchStep1() {
             <div>
               <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Dirección *</label>
               <input id="mDireccion" placeholder="200 Park Ave, NY" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Código postal</label>
+              <input id="mZip" placeholder="10166" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
             </div>
             <div>
               <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Lat *</label>
@@ -2142,7 +2349,15 @@ function batchStep1() {
             <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Notas especiales</label>
             <input id="mNotas" placeholder="Pedir firma del supervisor..." style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
           </div>
-          <button class="btn btn-primary" style="width:100%" onclick="addManualStop()">+ Agregar parada</button>
+
+          <div id="currentStopItemsList">${renderCurrentStopItemsHtml()}</div>
+
+          <button class="btn btn-ghost" style="width:100%;margin-bottom:8px;font-size:13px" onclick="addItemToCurrentStop()">
+            + Agregar otro paquete a esta parada
+          </button>
+          <button id="addManualStopBtn" class="btn btn-primary" style="width:100%" onclick="addManualStop()">
+            + Agregar parada${currentStopItems.length > 0 ? ` (${currentStopItems.length + 1} paquetes)` : ''}
+          </button>
         </div>
       </div>
 
@@ -2237,70 +2452,296 @@ function switchStopTab(tab) {
   if (tab === 'scan') setTimeout(() => document.getElementById('scanInput')?.focus(), 100);
 }
 
+// Mismas reglas que StopInput en el backend (main.py) — para avisar en el
+// momento en vez de que la fila se pierda en silencio o reviente más tarde.
+const HORA_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function validateStopFields({ destino, direccion, lat, lng, peso, vol, valor, hora }) {
+  const errors = [];
+  if (!destino || !String(destino).trim()) errors.push('destino vacío');
+  if (!direccion || !String(direccion).trim()) errors.push('dirección vacía');
+
+  const isBlank = v => v === undefined || v === null || v === '';
+  const latNum = parseFloat(lat), lngNum = parseFloat(lng);
+  if (isBlank(lat) || isNaN(latNum) || latNum < -90 || latNum > 90) {
+    errors.push(`lat inválida${isBlank(lat) ? ' (vacía)' : ` ("${lat}")`}`);
+  }
+  if (isBlank(lng) || isNaN(lngNum) || lngNum < -180 || lngNum > 180) {
+    errors.push(`lng inválida${isBlank(lng) ? ' (vacía)' : ` ("${lng}")`}`);
+  }
+  if (!isBlank(peso) && (isNaN(parseFloat(peso)) || parseFloat(peso) < 0)) {
+    errors.push(`peso_lbs inválido ("${peso}")`);
+  }
+  if (!isBlank(vol) && (isNaN(parseFloat(vol)) || parseFloat(vol) < 0)) {
+    errors.push(`volumen_ft3 inválido ("${vol}")`);
+  }
+  if (!isBlank(valor) && (isNaN(parseFloat(valor)) || parseFloat(valor) < 0)) {
+    errors.push(`valor_declarado inválido ("${valor}")`);
+  }
+  if (!isBlank(hora) && !HORA_PATTERN.test(hora)) {
+    errors.push(`hora_limite inválida ("${hora}")`);
+  }
+  return errors;
+}
+
+function renderCsvErrorBox() {
+  if (csvImportErrors.length === 0) return '';
+  return `
+    <div style="margin-top:10px;padding:10px 12px;background:rgba(216,90,48,0.08);border:1px solid rgba(216,90,48,0.3);border-radius:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <div style="font-size:12px;font-weight:600;color:var(--red,#D85A30)">
+          ⚠ ${csvImportErrors.length} fila${csvImportErrors.length===1?'':'s'} con errores — no se importaron
+        </div>
+        <button onclick="csvImportErrors=[];document.getElementById('csvErrorBox').innerHTML=''" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px">✕</button>
+      </div>
+      <div style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:3px">
+        ${csvImportErrors.map(e => `
+          <div style="font-size:11px;color:var(--muted)">
+            Fila ${e.row}: <span style="color:var(--red,#D85A30)">${e.errors.join(', ')}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// Defaults globales — se sobreescriben con el límite configurado para la
+// compañía (Company.max_csv_rows/max_csv_file_size_mb) al cargar datos reales.
+let MAX_CSV_FILE_SIZE_MB = 5;
+let MAX_CSV_ROWS         = 2000;
+
 function parseCsvFile(input) {
   const file = input.files[0];
   if (!file) return;
+
+  const maxBytes = MAX_CSV_FILE_SIZE_MB * 1024 * 1024;
+  if (file.size > maxBytes) {
+    showToast(
+      `El archivo pesa ${(file.size / 1024 / 1024).toFixed(1)} MB — el máximo permitido es ${MAX_CSV_FILE_SIZE_MB} MB. Dividilo en archivos más chicos.`,
+      'warn'
+    );
+    input.value = '';
+    return;
+  }
+
   const reader = new FileReader();
   reader.onload = (e) => {
     const lines = e.target.result.trim().split('\n');
+
+    const dataRowCount = lines.length - 1; // sin contar el header
+    if (dataRowCount > MAX_CSV_ROWS) {
+      showToast(
+        `El CSV tiene ${dataRowCount} filas — el máximo permitido es ${MAX_CSV_ROWS}. Dividilo en archivos más chicos.`,
+        'warn'
+      );
+      input.value = '';
+      return;
+    }
+
     const header = lines[0].split(',').map(h => h.trim().toLowerCase());
     const col = (name) => header.indexOf(name);
-    let added = 0;
+
+    // Filas con el mismo destino+dirección son paquetes distintos de la MISMA
+    // parada — se agrupan en un único stop con varios items en vez de crear
+    // una parada por fila.
+    const stopsByKey = new Map();
+    const rowErrors  = [];
+    let validRowCount = 0;
+
     for (let i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue; // línea en blanco
       const vals = lines[i].split(',');
       const get = (name) => (vals[col(name)] || '').trim();
-      if (!get('destino') || !get('lat') || !get('lng')) continue;
-      batchStops.push({
-        destino: get('destino'), direccion: get('direccion'),
-        lat: parseFloat(get('lat')) || 0, lng: parseFloat(get('lng')) || 0,
-        peso_lbs: parseFloat(get('peso_lbs')) || 0,
-        volumen_ft3: parseFloat(get('volumen_ft3')) || 0,
-        hora_limite: get('hora_limite') || '17:00',
-        contacto: get('contacto'), telefono: get('telefono'),
-        codigo_cliente: get('codigo_cliente'),
-        codigo_paquete: get('codigo_paquete'),
-        codigo_barras: get('codigo_barras'),
-        codigo_qr: get('codigo_qr'),
-        notas: get('notas'),
-        valor_declarado: parseFloat(get('valor_declarado')) || 0,
-        source: 'csv',
+
+      const destino   = get('destino');
+      const direccion = get('direccion');
+      const latStr    = get('lat');
+      const lngStr    = get('lng');
+      const pesoStr   = get('peso_lbs');
+      const volStr    = get('volumen_ft3');
+      const valorStr  = get('valor_declarado');
+      const horaStr   = get('hora_limite');
+
+      const errors = validateStopFields({
+        destino, direccion, lat: latStr, lng: lngStr,
+        peso: pesoStr, vol: volStr, valor: valorStr, hora: horaStr,
       });
-      added++;
+      if (errors.length > 0) {
+        rowErrors.push({ row: i + 1, errors });
+        continue;
+      }
+
+      const peso  = parseFloat(pesoStr) || 0;
+      const vol   = parseFloat(volStr) || 0;
+      const valor = parseFloat(valorStr) || 0;
+      const item = {
+        package_code:   get('codigo_paquete'),
+        barcode:        get('codigo_barras'),
+        qr_code:        get('codigo_qr'),
+        weight_lbs:     peso,
+        volume_ft3:     vol,
+        declared_value: valor,
+      };
+
+      const key = `${destino.toLowerCase()}|${direccion.toLowerCase()}`;
+      const existing = stopsByKey.get(key);
+      if (existing) {
+        existing.items.push(item);
+        existing.peso_lbs += peso;
+        existing.volumen_ft3 += vol;
+        existing.valor_declarado += valor;
+      } else {
+        stopsByKey.set(key, {
+          destino, direccion,
+          codigo_postal: get('codigo_postal'),
+          lat: parseFloat(latStr), lng: parseFloat(lngStr),
+          peso_lbs: peso, volumen_ft3: vol,
+          hora_limite: horaStr || '17:00',
+          contacto: get('contacto'), telefono: get('telefono'),
+          codigo_cliente: get('codigo_cliente'),
+          codigo_paquete: get('codigo_paquete'),
+          codigo_barras: get('codigo_barras'),
+          codigo_qr: get('codigo_qr'),
+          notas: get('notas'),
+          valor_declarado: valor,
+          source: 'csv',
+          items: [item],
+        });
+      }
+      validRowCount++;
     }
-    showToast(`${added} paradas importadas del CSV`, 'success');
+
+    stopsByKey.forEach(stop => batchStops.push(stop));
+    csvImportErrors = rowErrors;
+
+    const stopCount = stopsByKey.size;
+    if (rowErrors.length === 0) {
+      showToast(
+        validRowCount === stopCount
+          ? `${stopCount} parada${stopCount===1?'':'s'} importada${stopCount===1?'':'s'} del CSV`
+          : `${validRowCount} paquetes agrupados en ${stopCount} parada${stopCount===1?'':'s'} del CSV`,
+        'success'
+      );
+    } else {
+      showToast(`${stopCount} parada${stopCount===1?'':'s'} importada${stopCount===1?'':'s'}, ${rowErrors.length} fila${rowErrors.length===1?'':'s'} con errores — mirá el detalle`, 'warn');
+    }
     document.getElementById('content').innerHTML = renderBatchPlanner();
   };
   reader.readAsText(file);
 }
 
+function addItemToCurrentStop() {
+  const peso   = parseFloat(document.getElementById('mPeso').value) || 0;
+  const vol    = parseFloat(document.getElementById('mVol').value) || 0;
+  const codigo = document.getElementById('mCodigo').value.trim();
+  if (!peso && !vol && !codigo) {
+    showToast('Completá al menos código, peso o volumen del paquete', 'warn'); return;
+  }
+  currentStopItems.push({
+    package_code:   codigo,
+    barcode:        document.getElementById('mBarcode')?.value.trim() || '',
+    qr_code:        document.getElementById('mQR')?.value.trim() || '',
+    weight_lbs:     peso,
+    volume_ft3:     vol,
+    declared_value: 0,
+  });
+  ['mPeso','mVol','mCodigo','mBarcode','mQR'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  refreshCurrentStopItems();
+  showToast(`Paquete agregado a la parada (${currentStopItems.length} en total)`, 'success');
+}
+
+function removeCurrentStopItem(i) {
+  currentStopItems.splice(i, 1);
+  refreshCurrentStopItems();
+}
+
+function renderCurrentStopItemsHtml() {
+  if (currentStopItems.length === 0) return '';
+  const totalPeso = currentStopItems.reduce((s,it) => s + it.weight_lbs, 0);
+  return `
+    <div style="font-size:11px;color:var(--muted);margin-bottom:4px">
+      ${currentStopItems.length} paquete${currentStopItems.length===1?'':'s'} ya agregados a esta parada · ${totalPeso.toFixed(1)} lbs
+    </div>
+    <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
+      ${currentStopItems.map((it,i) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:11px">
+          <span style="color:var(--white);font-family:var(--font-mono)">${it.package_code || '(sin código)'}</span>
+          <span style="color:var(--muted)">${it.weight_lbs} lbs · ${it.volume_ft3} ft³</span>
+          <button onclick="removeCurrentStopItem(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px">✕</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function refreshCurrentStopItems() {
+  const el = document.getElementById('currentStopItemsList');
+  if (el) el.innerHTML = renderCurrentStopItemsHtml();
+  const addBtn = document.getElementById('addManualStopBtn');
+  if (addBtn) addBtn.textContent = `+ Agregar parada${currentStopItems.length > 0 ? ` (${currentStopItems.length + 1} paquetes)` : ''}`;
+}
+
 function addManualStop() {
   const codigoCliente = document.getElementById('mCodigoCliente').value.trim();
-  const destino = document.getElementById('mDestino').value.trim();
-  const lat     = parseFloat(document.getElementById('mLat').value);
-  const lng     = parseFloat(document.getElementById('mLng').value);
-  const peso    = parseFloat(document.getElementById('mPeso').value);
-  const vol     = parseFloat(document.getElementById('mVol').value);
+  const destino   = document.getElementById('mDestino').value.trim();
+  const direccion = document.getElementById('mDireccion').value.trim();
+  const latVal    = document.getElementById('mLat').value;
+  const lngVal    = document.getElementById('mLng').value;
+  const lat     = parseFloat(latVal);
+  const lng     = parseFloat(lngVal);
+  const peso    = parseFloat(document.getElementById('mPeso').value) || 0;
+  const vol     = parseFloat(document.getElementById('mVol').value) || 0;
+  const codigo  = document.getElementById('mCodigo').value.trim();
   if (!codigoCliente) {
     showToast('El código de cliente es obligatorio', 'warn'); return;
   }
-  if (!destino || !lat || !lng || !peso || !vol) {
-    showToast('Completá destino, lat, lng, peso y volumen', 'warn'); return;
+  const fieldErrors = validateStopFields({ destino, direccion, lat: latVal, lng: lngVal });
+  if (fieldErrors.length > 0) {
+    showToast(fieldErrors.join(' · '), 'warn'); return;
   }
+
+  // El paquete cargado ahora mismo en el formulario (si tiene datos) se suma
+  // a los que ya se agregaron con "+ Agregar otro paquete a esta parada"
+  const items = [...currentStopItems];
+  if (peso > 0 || vol > 0 || codigo) {
+    items.push({
+      package_code:   codigo,
+      barcode:        document.getElementById('mBarcode')?.value.trim() || '',
+      qr_code:        document.getElementById('mQR')?.value.trim() || '',
+      weight_lbs:     peso,
+      volume_ft3:     vol,
+      declared_value: 0,
+    });
+  }
+  if (items.length === 0) {
+    showToast('Completá peso y volumen del paquete', 'warn'); return;
+  }
+
+  const totalPeso = items.reduce((s,it) => s + it.weight_lbs, 0);
+  const totalVol  = items.reduce((s,it) => s + it.volume_ft3, 0);
+
   batchStops.push({
     destino, direccion: document.getElementById('mDireccion').value.trim(),
-    lat, lng, peso_lbs: peso, volumen_ft3: vol,
+    codigo_postal: document.getElementById('mZip').value.trim(),
+    lat, lng, peso_lbs: totalPeso, volumen_ft3: totalVol,
     hora_limite: document.getElementById('mHora').value || '17:00',
     contacto: '', telefono: '',
     codigo_cliente: codigoCliente,
-    codigo_paquete: document.getElementById('mCodigo').value.trim(),
-    codigo_barras:  document.getElementById('mBarcode')?.value.trim() || '',
-    codigo_qr:      document.getElementById('mQR')?.value.trim() || '',
+    codigo_paquete: items[0].package_code || '',
+    codigo_barras:  items[0].barcode || '',
+    codigo_qr:      items[0].qr_code || '',
     notas: document.getElementById('mNotas').value.trim(),
     valor_declarado: 0, source: 'manual',
+    items,
   });
 
+  currentStopItems = [];
+
   // Limpiar solo los campos del formulario — NO re-renderizar todo
-  ['mCodigoCliente','mDestino','mDireccion','mLat','mLng','mPeso','mVol',
+  ['mCodigoCliente','mDestino','mDireccion','mZip','mLat','mLng','mPeso','mVol',
    'mCodigo','mBarcode','mQR','mNotas'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.value = '';
@@ -2308,9 +2749,10 @@ function addManualStop() {
   const horaEl = document.getElementById('mHora');
   if (horaEl) horaEl.value = '17:00';
 
+  refreshCurrentStopItems();
   // Actualizar solo el panel derecho de la tabla de paradas
   refreshStopsList();
-  showToast('Parada agregada', 'success');
+  showToast(`Parada agregada${items.length > 1 ? ` con ${items.length} paquetes` : ''}`, 'success');
 }
 
 function refreshStopsList() {
@@ -2396,9 +2838,15 @@ function clearAllStops() {
 }
 
 function downloadCsvTemplate() {
-  const header = 'destino,direccion,lat,lng,peso_lbs,volumen_ft3,hora_limite,codigo_cliente,contacto,telefono,codigo_paquete,codigo_barras,codigo_qr,notas,valor_declarado';
-  const row    = 'Sullivan & Cromwell LLP,1221 6th Ave New York NY,40.7589,-73.9851,45.5,6.2,13:30,James R.,212-555-0100,LC-001847,Pedir firma del supervisor,2500.00';
-  const blob   = new Blob([header + '\n' + row], { type: 'text/csv' });
+  const header = 'destino,direccion,codigo_postal,lat,lng,peso_lbs,volumen_ft3,hora_limite,codigo_cliente,contacto,telefono,codigo_paquete,codigo_barras,codigo_qr,notas,valor_declarado';
+  // Fila 1 y 2 comparten destino+direccion a propósito: son 2 paquetes de la
+  // MISMA parada y se agrupan automáticamente al importar.
+  const rows = [
+    'Sullivan & Cromwell LLP,1221 6th Ave New York NY,10020,40.7589,-73.9851,45.5,6.2,13:30,CLI-001,James R.,212-555-0100,LC-001847,,,Pedir firma del supervisor,2500.00',
+    'Sullivan & Cromwell LLP,1221 6th Ave New York NY,10020,40.7589,-73.9851,12.0,1.5,13:30,CLI-001,James R.,212-555-0100,LC-001848,,,Pedir firma del supervisor,350.00',
+    'Skadden Arps,200 Park Ave New York NY,10166,40.7527,-73.9772,20.0,3.0,14:00,CLI-002,María T.,212-555-0101,LC-001900,,,,900.00',
+  ];
+  const blob = new Blob([header + '\n' + rows.join('\n')], { type: 'text/csv' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = 'plantilla_paradas_muevo.csv';
@@ -2962,36 +3410,49 @@ function openRoute(id, fromBatchId) {
   const pendingCost  = costPerStop * (stopsPending + stopsActive);
 
   document.getElementById('content').innerHTML = `
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
+    <!-- Header con breadcrumb y acciones -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
       <button class="btn btn-ghost" onclick="${backAction}" style="padding:6px 12px">← Volver</button>
       <div>
         <div style="font-size:18px;font-weight:600;color:var(--white)">${r.num} — ${r.title}</div>
-        <div style="font-size:13px;color:var(--muted)">${r.transportista}</div>
       </div>
-      <div style="margin-left:auto;display:flex;gap:6px">
-        ${statusBadge(r.status)} ${modeBadge(r.mode)}
-      </div>
+      <div style="flex:1"></div>
+      ${statusBadge(r.status)} ${modeBadge(r.mode)}
+      <button class="btn btn-ghost" style="font-size:12px" onclick="openNegotiationPanel('${r.id}')">💬 ${negotiationBadgeLabel(r.negotiation_status)}</button>
+      <button class="btn btn-ghost" style="font-size:12px" onclick="showToast('Descargando factura PDF...','success')">↓ Factura PDF</button>
+      ${r.status==='draft' ? `<button class="btn btn-ghost" style="font-size:12px" onclick="openEditRouteModal('${r.id}')">✏️ Editar ruta</button>` : ''}
+      ${r.status==='draft' && fromBatchId
+        ? `<button class="btn btn-ghost" style="font-size:12px;color:var(--red)" onclick="deleteRouteFromBatch('${fromBatchId}','${r.id}')">✕ Eliminar ruta</button>`
+        : r.status!=='completed' ? `<button class="btn btn-ghost" style="font-size:12px;color:var(--red)" onclick="showToast('Contactá soporte para cancelar','info')">✕ Cancelar ruta</button>` : ''}
     </div>
 
-    <!-- Bloques de resumen -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+    <!-- Franja de datos rápidos -->
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:20px;padding:10px 14px;background:var(--card2);border-radius:8px;font-size:12px">
+      <div><span style="color:var(--muted)">Fecha:</span> <b style="color:var(--white)">📅 ${r.date}</b></div>
+      <div><span style="color:var(--muted)">Horario:</span> <b style="color:var(--white)">🕐 ${r.time}</b></div>
+      <div><span style="color:var(--muted)">Transportista:</span> <b style="color:var(--white)">🚐 ${r.transportista}</b> <span style="color:var(--muted)">(${r.vehicle} · ${r.driver})</span></div>
+      <div><span style="color:var(--muted)">Rating:</span> <b style="color:var(--orange)">★ ${r.transportista_rating}</b></div>
+    </div>
 
-      <!-- Bloque 1: Estados de las paradas -->
+    <!-- Cards de resumen — una sola fila -->
+    <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Resumen</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-bottom:16px">
+
+      <!-- Progreso general -->
       <div class="kpi-card">
-        <div class="kpi-label">Estado de las paradas</div>
-        <div style="display:flex;align-items:baseline;gap:8px;margin:6px 0">
-          <div class="kpi-value">${totalStops}</div>
-          <div style="font-size:12px;color:var(--muted)">parada${totalStops!==1?'s':''} en total</div>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:6px">
-          ${stopsPending > 0   ? `<span style="font-size:11px;color:var(--muted)">${stopsPending} pendiente${stopsPending!==1?'s':''}</span>` : ''}
-          ${stopsActive > 0    ? `<span style="font-size:11px;color:var(--orange)">${stopsActive} en curso</span>` : ''}
-          ${stopsCompleted > 0 ? `<span style="font-size:11px;color:var(--green)">${stopsCompleted} entregada${stopsCompleted!==1?'s':''}</span>` : ''}
-          ${stopsFailed > 0    ? `<span style="font-size:11px;color:var(--red,#D85A30)">${stopsFailed} fallida${stopsFailed!==1?'s':''}</span>` : ''}
+        <div class="kpi-label">Progreso general</div>
+        <div class="prog-wrap" style="margin:8px 0 0">
+          <div class="prog-label">
+            <span style="font-size:12px;color:var(--muted)">${r.stops_done}/${r.stops_total} paradas</span>
+            <span style="color:var(--orange)">${pctDone}%</span>
+          </div>
+          <div class="prog-track">
+            <div class="prog-fill ${r.status==='completed'?'green':''}" style="width:${pctDone}%"></div>
+          </div>
         </div>
       </div>
 
-      <!-- Bloque 2: Resumen financiero -->
+      <!-- Resumen financiero -->
       <div class="kpi-card">
         <div class="kpi-label">Resumen financiero</div>
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin:6px 0">
@@ -3001,93 +3462,62 @@ function openRoute(id, fromBatchId) {
           </div>
           <div style="text-align:right">
             <div style="font-size:18px;font-weight:700;color:var(--muted)">${fmt$(pendingCost)}</div>
-            <div style="font-size:11px;color:var(--muted)">Paradas pendientes</div>
+            <div style="font-size:11px;color:var(--muted)">Pendiente</div>
           </div>
         </div>
       </div>
 
+      ${r.shipment ? `
+      <!-- Paradas + Paquetes + Libras + ft³ volumen, fusionados en una sola card -->
+      <div class="kpi-card">
+        <div class="kpi-label">Detalle de carga</div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px">
+          <div style="text-align:center">
+            <div style="font-size:18px;font-weight:600;color:var(--white)">${totalStops}</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">Paradas</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:18px;font-weight:600;color:var(--orange)">${r.shipment.total_packages}</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">Paquetes</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:18px;font-weight:600;color:var(--white)">${r.shipment.total_weight_lbs.toLocaleString()}</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">Libras</div>
+          </div>
+          <div style="text-align:center">
+            <div style="font-size:18px;font-weight:600;color:var(--white)">${r.shipment.total_volume_ft3}</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px">ft³ vol.</div>
+          </div>
+        </div>
+      </div>` : ''}
+
     </div>
 
-    <div class="grid2" style="margin-bottom:16px">
-      <!-- Columna izquierda: progreso + transportista -->
-      <div>
-        <div style="margin-bottom:12px;display:flex;gap:6px;flex-wrap:wrap">
-          ${statusBadge(r.status)} ${modeBadge(r.mode)}
-          <span class="badge badge-muted">📅 ${r.date}</span>
-          <span class="badge badge-muted">🕐 ${r.time}</span>
-        </div>
-
-        <div class="prog-wrap" style="margin-bottom:16px">
-          <div class="prog-label">
-            <span>Progreso general</span>
-            <span style="color:var(--orange)">${r.stops_done}/${r.stops_total} paradas · ${pctDone}%</span>
+    <!-- Matriz de paradas + mapa chico al lado -->
+    <div style="display:grid;grid-template-columns:1fr 300px;gap:16px;align-items:start">
+      <div style="min-width:0">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px">
+            ${r.stops.length} PARADA${r.stops.length !== 1 ? 'S' : ''}
           </div>
-          <div class="prog-track">
-            <div class="prog-fill ${r.status==='completed'?'green':''}" style="width:${pctDone}%"></div>
-          </div>
+          ${r.status==='draft' ? `<button class="btn btn-ghost" style="font-size:12px" onclick="openAddStopModal('${r.id}')">+ Agregar parada</button>` : ''}
         </div>
-
-        <div class="card" style="margin-bottom:12px">
-          <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">Transportista asignado</div>
-          <div style="display:flex;align-items:center;gap:10px">
-            <div style="width:36px;height:36px;border-radius:10px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:16px">🚐</div>
-            <div style="flex:1">
-              <div style="font-size:13px;font-weight:500;color:var(--white)">${r.transportista}</div>
-              <div style="font-size:11px;color:var(--muted)">${r.vehicle} · ${r.driver}</div>
-            </div>
-            <div style="font-size:14px;font-weight:600;color:var(--orange)">★ ${r.transportista_rating}</div>
-          </div>
-        </div>
-
-        ${r.shipment ? `
-        <div class="card" style="border-color:var(--orange-bdr);cursor:pointer" onclick="openShipmentModal('${r.id}')">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-            <div style="font-size:11px;font-weight:600;color:var(--orange);text-transform:uppercase;letter-spacing:.8px">📦 Detalle del envío</div>
-            <span style="font-size:11px;color:var(--orange)">Ver completo →</span>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
-            <div class="cost-row"><span class="cost-label">Paquetes</span><span class="cost-value">${r.shipment.total_packages} u.</span></div>
-            <div class="cost-row"><span class="cost-label">Peso</span><span class="cost-value">${r.shipment.total_weight_lbs.toLocaleString()} lbs</span></div>
-          </div>
-        </div>` : ''}
-      </div>
-
-      <!-- Columna derecha: mapa + financiero + acciones -->
-      <div>
-        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px">Mapa de ruta</div>
-        <div id="routeMapDetail_${r.id}" style="height:240px;border-radius:10px;overflow:hidden;border:1px solid var(--border);margin-bottom:12px;background:var(--card2);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px">
-          <div style="font-size:28px">🗺</div>
-          <div style="font-size:12px;color:var(--muted)">Cargando mapa...</div>
-        </div>
-
-        <div class="card" style="margin-bottom:12px">
-          <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">Desglose financiero</div>
-          <div class="cost-row"><span class="cost-label">Tarifa de la ruta</span><span class="cost-value orange">${fmt$(r.gross)}</span></div>
-        </div>
-
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-ghost" style="flex:1" onclick="showToast('Descargando factura PDF...','success')">↓ Factura PDF</button>
-          ${r.status!=='completed' ? `<button class="btn btn-ghost" style="flex:1;color:var(--red)" onclick="showToast('Contactá soporte para cancelar','info')">Cancelar ruta</button>` : ''}
-        </div>
-      </div>
-    </div>
-
-    <!-- Paradas — ancho completo -->
-    <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">
-      ${r.stops.length} PARADA${r.stops.length !== 1 ? 'S' : ''}
-    </div>
-    <div style="overflow-x:auto">
-      <table style="width:100%;font-size:13px;border-collapse:collapse;min-width:700px">
-        <thead>
+        <div style="overflow-x:auto">
+          <table style="width:100%;font-size:13px;border-collapse:collapse;min-width:1150px">
+            <thead>
           <tr>
             <th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted);width:36px">#</th>
-            <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Destinatario</th>
+            <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Cliente</th>
             <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Dirección</th>
-            <th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">ETA</th>
-            <th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Bultos / Peso</th>
-            <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Código</th>
-            <th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">PoD</th>
-            <th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Estado</th>
+            <th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Hora estimada</th>
+            <th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Fecha entregada</th>
+            <th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Hora entrega</th>
+            <th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Volumen</th>
+            <th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Peso</th>
+            <th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Cant. productos</th>
+            <th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Foto</th>
+            <th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Estatus</th>
+            ${r.status==='draft' ? '<th style="text-align:center;padding:8px;border-bottom:1px solid var(--border);color:var(--muted)">Acciones</th>' : ''}
           </tr>
         </thead>
         <tbody>
@@ -3099,11 +3529,12 @@ function openRoute(id, fromBatchId) {
               failed:    { label:'✕ Fallido',    color:'var(--red)'    },
               completed: { label:'✓ Entregado',  color:'var(--green)'  },
             }[s.status] || { label: s.status || 'Pendiente', color:'var(--muted)' };
+            const isDone = s.status==='done' || s.status==='completed';
             return `
               <tr style="border-bottom:1px solid var(--border);cursor:pointer"
                   onclick="openStopModal('${r.id}','${s.order}')"
-                  onmouseover="this.style.background='rgba(128,128,128,0.05)'"
-                  onmouseout="this.style.background=''">
+                  onmouseover="this.style.background='rgba(128,128,128,0.05)';highlightRouteStop('${s.order}')"
+                  onmouseout="this.style.background='';unhighlightRouteStop('${s.order}')">
                 <td style="text-align:center;padding:10px 8px">
                   <div style="width:24px;height:24px;border-radius:50%;
                     background:${s.status==='done'||s.status==='completed'?'var(--green)':s.status==='active'||s.status==='in_progress'?'var(--orange)':'var(--card2)'};
@@ -3116,26 +3547,40 @@ function openRoute(id, fromBatchId) {
                   <div style="font-weight:600;color:var(--white)">${s.company}</div>
                   ${s.notes ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">ℹ ${s.notes.substring(0,40)}${s.notes.length>40?'…':''}</div>` : ''}
                 </td>
-                <td style="padding:10px 8px;font-size:12px;color:var(--muted)">${s.address}</td>
+                <td style="padding:10px 8px;font-size:12px;color:var(--muted)">${s.address}${s.zip ? ', ' + s.zip : ''}</td>
                 <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">${s.eta || '—'}</td>
-                <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">
-                  ${s.packages ? `${s.packages} pkg<br>${s.weight_lbs} lbs` : '—'}
-                </td>
-                <td style="padding:10px 8px">
-                  ${s.code    ? `<div style="font-size:11px;font-family:var(--font-mono);color:var(--orange)">📦 ${s.code}</div>`    : ''}
-                  ${s.barcode ? `<div style="font-size:11px;font-family:var(--font-mono);color:var(--muted)">▮▮ ${s.barcode}</div>` : ''}
-                  ${s.qr_code ? `<div style="font-size:11px;color:var(--muted)">⬛ QR</div>` : ''}
-                  ${!s.code && !s.barcode && !s.qr_code ? '<span style="color:var(--muted)">—</span>' : ''}
-                </td>
-                <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">${s.pod || '—'}</td>
+                <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">${isDone ? r.date : '—'}</td>
+                <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">—</td>
+                <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">${s.volume_ft3 ? s.volume_ft3+' ft³' : '—'}</td>
+                <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">${s.weight_lbs ? s.weight_lbs+' lbs' : '—'}</td>
+                <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">${(s.items && s.items.length) || s.packages || '—'}</td>
+                <td style="text-align:center;padding:10px 8px;font-size:14px">${(s.pod||'').includes('foto') ? '📷' : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
                 <td style="text-align:center;padding:10px 8px">
                   <span style="font-size:12px;font-weight:600;color:${statusCfg.color}">${statusCfg.label}</span>
                 </td>
+                ${r.status==='draft' ? `
+                <td style="text-align:center;padding:10px 8px;white-space:nowrap">
+                  <button title="Editar parada" onclick="event.stopPropagation();openEditStopModal('${r.id}','${s.order}')"
+                    style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px">✏️</button>
+                  <button title="Eliminar parada" onclick="event.stopPropagation();deleteStopFromRoute('${r.id}','${s.order}')"
+                    style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px">🗑</button>
+                </td>` : ''}
               </tr>
             `;
           }).join('')}
         </tbody>
-      </table>
+          </table>
+        </div>
+      </div>
+
+      <!-- Mapa de ruta — panel chico al lado de la matriz -->
+      <div>
+        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">Mapa de ruta</div>
+        <div id="routeMapDetail_${r.id}" style="position:relative;z-index:0;height:220px;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--card2);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px">
+          <div style="font-size:28px">🗺</div>
+          <div style="font-size:12px;color:var(--muted)">Cargando mapa...</div>
+        </div>
+      </div>
     </div>
 
   `;
@@ -3152,6 +3597,8 @@ function initRouteDetailMap(r) {
   const containerId = `routeMapDetail_${r.id}`;
   const container   = document.getElementById(containerId);
   if (!container) return;
+
+  window._routeDetailMarkers = {};
 
   // Filtrar paradas con coordenadas válidas
   const stopsWithCoords = (r.stops || []).filter(s => s.lat && s.lng);
@@ -3186,17 +3633,11 @@ function initRouteDetailMap(r) {
       const ll = [s.lat, s.lng];
       latLngs.push(ll);
 
-      const icon = L.divIcon({
-        className: '',
-        html: `<div style="background:${color};color:#111;width:22px;height:22px;border-radius:50%;
-                display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;
-                border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)">${idx + 1}</div>`,
-        iconSize: [22, 22], iconAnchor: [11, 11],
-      });
-
-      L.marker(ll, { icon })
+      const marker = L.marker(ll, { icon: routeStopIcon(idx + 1, color, false) })
         .addTo(map)
         .bindPopup(`<b>#${idx + 1} — ${s.company || ''}</b><br>${s.address || ''}`);
+
+      window._routeDetailMarkers[s.order] = { marker, num: idx + 1, color };
     });
 
     // Dibujar línea de ruta
@@ -3212,6 +3653,35 @@ function initRouteDetailMap(r) {
   }
 }
 
+function routeStopIcon(num, color, highlighted) {
+  const size = highlighted ? 32 : 22;
+  return L.divIcon({
+    className: '',
+    html: `<div style="background:${highlighted ? '#F47B20' : color};color:#111;width:${size}px;height:${size}px;border-radius:50%;
+            display:flex;align-items:center;justify-content:center;font-size:${highlighted ? 12 : 10}px;font-weight:700;
+            border:2px solid #fff;
+            box-shadow:${highlighted ? '0 0 0 5px rgba(244,123,32,.35), 0 2px 8px rgba(0,0,0,.5)' : '0 1px 4px rgba(0,0,0,.4)'}">${num}</div>`,
+    iconSize: [size, size], iconAnchor: [size / 2, size / 2],
+  });
+}
+
+// Resalta la parada en el mapa cuando se pasa el mouse sobre su fila en la matriz
+function highlightRouteStop(order) {
+  const entry = window._routeDetailMarkers && window._routeDetailMarkers[order];
+  if (!entry) return;
+  entry.marker.setIcon(routeStopIcon(entry.num, entry.color, true));
+  entry.marker.setZIndexOffset(1000);
+  entry.marker.openPopup();
+}
+
+function unhighlightRouteStop(order) {
+  const entry = window._routeDetailMarkers && window._routeDetailMarkers[order];
+  if (!entry) return;
+  entry.marker.setIcon(routeStopIcon(entry.num, entry.color, false));
+  entry.marker.setZIndexOffset(0);
+  entry.marker.closePopup();
+}
+
 // ── Shipment summary modal ───────────────────────────────────────────────
 function openShipmentModal(routeId) {
   const r = getActiveRoutes().find(x => x.id === routeId);
@@ -3219,12 +3689,6 @@ function openShipmentModal(routeId) {
 
   document.getElementById('shipmentModalSub').textContent = `${r.num} — ${r.title}`;
   document.getElementById('shipmentModalBody').innerHTML = `
-    <div class="metric-row" style="margin-bottom:16px">
-      <div class="metric"><div class="metric-val" style="color:var(--orange)">${r.shipment.total_packages}</div><div class="metric-lbl">Paquetes</div></div>
-      <div class="metric"><div class="metric-val">${r.shipment.total_weight_lbs.toLocaleString()}</div><div class="metric-lbl">Libras (lbs)</div></div>
-      <div class="metric"><div class="metric-val">${r.shipment.total_volume_ft3}</div><div class="metric-lbl">ft³ volumen</div></div>
-      <div class="metric"><div class="metric-val" style="color:var(--orange)">$${r.shipment.cargo_value.toLocaleString()}</div><div class="metric-lbl">Valor carga</div></div>
-    </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
       ${r.shipment.stackable ? '<span class="badge badge-muted">⬆ Apilable</span>' : '<span class="badge badge-red">✗ No apilar</span>'}
       ${r.shipment.fragile ? '<span class="badge badge-yellow">⚠ Frágil</span>' : ''}
@@ -3270,7 +3734,7 @@ function openStopModal(routeId, stopOrder) {
   if (!s) return;
 
   document.getElementById('stopModalTitle').textContent = `Parada ${s.order} — ${s.company}`;
-  document.getElementById('stopModalSub').textContent = s.address;
+  document.getElementById('stopModalSub').textContent = s.address + (s.zip ? `, ${s.zip}` : '');
 
   const itemsHtml = (s.items && s.items.length > 0) ? `
     <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin:16px 0 10px">
@@ -3634,6 +4098,430 @@ async function changeBatchStatus(batchId, newStatus) {
     );
     await loadRealData();
     document.getElementById('content').innerHTML = renderDashboard();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'warn');
+  }
+}
+
+// ── Agregar / eliminar rutas de un lote en borrador ─────────────────────────
+let addRouteState = { batchId: null, stops: [] };
+
+function openAddRouteModal(batchId) {
+  addRouteState = { batchId, stops: [] };
+  document.getElementById('stopModalTitle').textContent = '+ Agregar ruta al lote';
+  document.getElementById('stopModalSub').textContent   = 'Se agrega en estado borrador, igual que las demás rutas del lote';
+  document.getElementById('stopModalBody').innerHTML = renderAddRouteForm();
+  document.getElementById('stopModalOverlay').style.display = 'block';
+  document.getElementById('stopModal').style.display = 'block';
+}
+
+function renderAddRouteForm() {
+  const today = new Date().toISOString().split('T')[0];
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Título *</label>
+        <input id="arTitle" placeholder="Ej: Entregas zona sur" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Tipo de servicio</label>
+        <select id="arServiceMode" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+          ${getServiceTypes().map(st => `<option value="${st.code}">${st.name}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Fecha *</label>
+        <input id="arFecha" type="date" value="${today}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Tipo de vehículo</label>
+        <select id="arVehicleType" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+          ${getVehicleTypes().map(vt => `<option value="${vt.code}">${vt.name}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Hora inicio</label>
+        <input id="arStart" type="time" value="08:00" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Hora fin</label>
+        <input id="arEnd" type="time" value="17:00" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+    </div>
+
+    <div style="border-top:1px solid var(--border);margin:12px 0;padding-top:10px">
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Paradas de la ruta</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <input id="arDestino" placeholder="Destino" style="padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="arDireccion" placeholder="Dirección" style="padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="arLat" type="number" step="0.000001" placeholder="Lat" style="padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="arLng" type="number" step="0.000001" placeholder="Lng" style="padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="arPeso" type="number" placeholder="Peso (lbs)" style="padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="arVol" type="number" placeholder="Volumen (ft³)" style="padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      <button class="btn btn-ghost" style="width:100%;font-size:13px;margin-bottom:10px" onclick="addStopToAddRouteList()">+ Agregar parada a la lista</button>
+      <div id="arStopsList">${renderAddRouteStopsList()}</div>
+    </div>
+
+    <div id="arError" style="color:var(--red,#D85A30);font-size:13px;display:none;margin-bottom:8px"></div>
+    <button id="arSubmitBtn" class="btn btn-primary" style="width:100%" onclick="submitAddRoute()">Crear ruta</button>
+  `;
+}
+
+function renderAddRouteStopsList() {
+  if (addRouteState.stops.length === 0) {
+    return `<div style="text-align:center;padding:16px;color:var(--muted);font-size:12px">Todavía no agregaste ninguna parada</div>`;
+  }
+  return `
+    <div style="display:flex;flex-direction:column;gap:4px">
+      ${addRouteState.stops.map((s,i) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px">
+          <span style="color:var(--white)">${s.destino}</span>
+          <span style="color:var(--muted)">${s.peso_lbs} lbs · ${s.volumen_ft3} ft³</span>
+          <button onclick="removeAddRouteStop(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer">✕</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function addStopToAddRouteList() {
+  const destino   = document.getElementById('arDestino').value.trim();
+  const direccion = document.getElementById('arDireccion').value.trim();
+  const latVal    = document.getElementById('arLat').value;
+  const lngVal    = document.getElementById('arLng').value;
+  const lat       = parseFloat(latVal);
+  const lng       = parseFloat(lngVal);
+  const peso      = parseFloat(document.getElementById('arPeso').value) || 0;
+  const vol       = parseFloat(document.getElementById('arVol').value) || 0;
+  const fieldErrors = validateStopFields({ destino, direccion, lat: latVal, lng: lngVal });
+  if (fieldErrors.length > 0) {
+    showToast(fieldErrors.join(' · '), 'warn'); return;
+  }
+  addRouteState.stops.push({ destino, direccion, lat, lng, peso_lbs: peso, volumen_ft3: vol, hora_limite: '17:00', source: 'manual' });
+  ['arDestino','arDireccion','arLat','arLng','arPeso','arVol'].forEach(id => { document.getElementById(id).value = ''; });
+  document.getElementById('arStopsList').innerHTML = renderAddRouteStopsList();
+}
+
+function removeAddRouteStop(i) {
+  addRouteState.stops.splice(i, 1);
+  document.getElementById('arStopsList').innerHTML = renderAddRouteStopsList();
+}
+
+async function submitAddRoute() {
+  if (!useRealData) {
+    showToast('Agregar rutas requiere estar conectado a datos reales', 'info');
+    closeStopModal();
+    return;
+  }
+
+  const title = document.getElementById('arTitle').value.trim();
+  const fecha = document.getElementById('arFecha').value;
+  const errEl = document.getElementById('arError');
+  errEl.style.display = 'none';
+
+  if (!title || !fecha) {
+    errEl.textContent = 'Completá el título y la fecha'; errEl.style.display = 'block'; return;
+  }
+  if (addRouteState.stops.length === 0) {
+    errEl.textContent = 'Agregá al menos una parada'; errEl.style.display = 'block'; return;
+  }
+
+  const btn = document.getElementById('arSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Creando...';
+  try {
+    await apiPost(`/warehouse/batches/${addRouteState.batchId}/routes`, {
+      title,
+      service_mode: document.getElementById('arServiceMode').value,
+      required_vehicle_type: document.getElementById('arVehicleType').value,
+      scheduled_date: fecha,
+      scheduled_start: document.getElementById('arStart').value,
+      scheduled_end: document.getElementById('arEnd').value,
+      stops: addRouteState.stops,
+    });
+    closeStopModal();
+    showToast('Ruta agregada al lote', 'success');
+    await loadRealData();
+    openBatch(addRouteState.batchId);
+  } catch (e) {
+    errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Crear ruta';
+  }
+}
+
+async function deleteRouteFromBatch(batchId, routeId) {
+  if (!useRealData) {
+    showToast('Eliminar rutas requiere estar conectado a datos reales', 'info');
+    return;
+  }
+  if (!confirm('¿Eliminar esta ruta del lote? Esta acción no se puede deshacer.')) return;
+  try {
+    await apiDelete(`/warehouse/batches/${batchId}/routes/${routeId}`);
+    showToast('Ruta eliminada', 'success');
+    await loadRealData();
+    openBatch(batchId);
+  } catch (e) {
+    showToast('Error: ' + e.message, 'warn');
+  }
+}
+
+// ── Editar datos generales de una ruta en borrador ──────────────────────────
+let editRouteState = null;
+
+async function openEditRouteModal(routeId) {
+  document.getElementById('stopModalTitle').textContent = '✏️ Editar ruta';
+  document.getElementById('stopModalSub').textContent   = '';
+  document.getElementById('stopModalBody').innerHTML = `
+    <div style="text-align:center;padding:24px;color:var(--muted)">⏳ Cargando...</div>
+  `;
+  document.getElementById('stopModalOverlay').style.display = 'block';
+  document.getElementById('stopModal').style.display = 'block';
+
+  let route;
+  if (useRealData) {
+    try {
+      route = await apiGet(`/warehouse/routes/${routeId}`);
+    } catch (e) {
+      document.getElementById('stopModalBody').innerHTML = `<div style="color:var(--red,#D85A30)">Error: ${e.message}</div>`;
+      return;
+    }
+  } else {
+    const r = getActiveRoutes().find(x => x.id === routeId);
+    route = { id: routeId, title: r?.title || '', scheduled_date: null, scheduled_start: null, scheduled_end: null, required_vehicle_type: '' };
+  }
+  editRouteState = route;
+  document.getElementById('stopModalBody').innerHTML = renderEditRouteForm(route);
+}
+
+function renderEditRouteForm(route) {
+  const dateVal  = route.scheduled_date  ? route.scheduled_date.substring(0, 10)  : '';
+  const startVal = route.scheduled_start ? route.scheduled_start.substring(11, 16) : '';
+  const endVal   = route.scheduled_end   ? route.scheduled_end.substring(11, 16)   : '';
+  return `
+    <div style="margin-bottom:8px">
+      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Título</label>
+      <input id="erTitle" value="${(route.title || '').replace(/"/g, '&quot;')}"
+        style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Fecha</label>
+        <input id="erFecha" type="date" value="${dateVal}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Hora inicio</label>
+        <input id="erStart" type="time" value="${startVal}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Hora fin</label>
+        <input id="erEnd" type="time" value="${endVal}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+    </div>
+    <div style="margin-bottom:12px">
+      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Tipo de vehículo</label>
+      <select id="erVehicleType" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        ${getVehicleTypes().map(vt => `<option value="${vt.code}" ${vt.code===route.required_vehicle_type?'selected':''}>${vt.name}</option>`).join('')}
+      </select>
+    </div>
+    <div id="erError" style="color:var(--red,#D85A30);font-size:13px;display:none;margin-bottom:8px"></div>
+    <button id="erSubmitBtn" class="btn btn-primary" style="width:100%" onclick="submitEditRoute()">Guardar cambios</button>
+  `;
+}
+
+async function submitEditRoute() {
+  if (!useRealData) {
+    showToast('Editar rutas requiere estar conectado a datos reales', 'info');
+    closeStopModal();
+    return;
+  }
+  const btn = document.getElementById('erSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  try {
+    await apiPatch(`/warehouse/routes/${editRouteState.id}`, {
+      title: document.getElementById('erTitle').value.trim(),
+      scheduled_date: document.getElementById('erFecha').value || null,
+      scheduled_start: document.getElementById('erStart').value || null,
+      scheduled_end: document.getElementById('erEnd').value || null,
+      required_vehicle_type: document.getElementById('erVehicleType').value,
+    });
+    const routeId = editRouteState.id;
+    closeStopModal();
+    showToast('Ruta actualizada', 'success');
+    await loadRealData();
+    openRoute(routeId);
+  } catch (e) {
+    document.getElementById('erError').textContent = 'Error: ' + e.message;
+    document.getElementById('erError').style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Guardar cambios';
+  }
+}
+
+// ── Agregar / editar / eliminar paradas de una ruta en borrador ─────────────
+async function openAddStopModal(routeId) {
+  document.getElementById('stopModalTitle').textContent = '+ Agregar parada';
+  document.getElementById('stopModalSub').textContent   = '';
+  document.getElementById('stopModalBody').innerHTML = renderStopForm(routeId, null);
+  document.getElementById('stopModalOverlay').style.display = 'block';
+  document.getElementById('stopModal').style.display = 'block';
+}
+
+function openEditStopModal(routeId, stopOrder) {
+  const r = getActiveRoutes().find(x => x.id === routeId);
+  const stop = r?.stops.find(s => String(s.order) === String(stopOrder));
+  if (!stop) return;
+  document.getElementById('stopModalTitle').textContent = '✏️ Editar parada';
+  document.getElementById('stopModalSub').textContent   = stop.company || '';
+  document.getElementById('stopModalBody').innerHTML = renderStopForm(routeId, stop);
+  document.getElementById('stopModalOverlay').style.display = 'block';
+  document.getElementById('stopModal').style.display = 'block';
+}
+
+function renderStopForm(routeId, stop) {
+  const isEdit = !!stop;
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Destino *</label>
+        <input id="stDestino" value="${isEdit ? (stop.company||'').replace(/"/g,'&quot;') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Dirección *</label>
+        <input id="stDireccion" value="${isEdit ? (stop.address||'').replace(/"/g,'&quot;') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Código postal</label>
+        <input id="stZip" value="${isEdit ? (stop.zip||'') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Hora límite</label>
+        <input id="stHora" type="time" value="17:00" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Lat ${isEdit?'':'*'}</label>
+        <input id="stLat" type="number" step="0.000001" value="${isEdit ? (stop.lat??'') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Lng ${isEdit?'':'*'}</label>
+        <input id="stLng" type="number" step="0.000001" value="${isEdit ? (stop.lng??'') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      ${!isEdit ? `
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Peso (lbs) *</label>
+        <input id="stPeso" type="number" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Volumen (ft³) *</label>
+        <input id="stVol" type="number" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Código paquete</label>
+        <input id="stCodigo" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>` : ''}
+    </div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Notas</label>
+      <input id="stNotas" value="${isEdit ? (stop.notes||'').replace(/"/g,'&quot;') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+    </div>
+    ${isEdit ? `<div style="font-size:11px;color:var(--muted);margin-bottom:10px">ℹ Los paquetes de esta parada no se editan acá — borrala y agregala de nuevo si necesitás cambiarlos.</div>` : ''}
+    <div id="stError" style="color:var(--red,#D85A30);font-size:13px;display:none;margin-bottom:8px"></div>
+    <button id="stSubmitBtn" class="btn btn-primary" style="width:100%"
+      onclick="${isEdit ? `submitEditStop('${routeId}','${stop.order}')` : `submitAddStop('${routeId}')`}">
+      ${isEdit ? 'Guardar cambios' : 'Agregar parada'}
+    </button>
+  `;
+}
+
+async function submitAddStop(routeId) {
+  if (!useRealData) {
+    showToast('Agregar paradas requiere estar conectado a datos reales', 'info');
+    closeStopModal();
+    return;
+  }
+  const destino   = document.getElementById('stDestino').value.trim();
+  const direccion = document.getElementById('stDireccion').value.trim();
+  const latVal    = document.getElementById('stLat').value;
+  const lngVal    = document.getElementById('stLng').value;
+  const lat       = parseFloat(latVal);
+  const lng       = parseFloat(lngVal);
+  const peso      = parseFloat(document.getElementById('stPeso').value) || 0;
+  const vol       = parseFloat(document.getElementById('stVol').value) || 0;
+  const errEl     = document.getElementById('stError');
+  errEl.style.display = 'none';
+  const fieldErrors = validateStopFields({ destino, direccion, lat: latVal, lng: lngVal, peso, vol });
+  if (fieldErrors.length > 0) {
+    errEl.textContent = fieldErrors.join(' · '); errEl.style.display = 'block'; return;
+  }
+  const btn = document.getElementById('stSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Agregando...';
+  try {
+    await apiPost(`/warehouse/routes/${routeId}/stops`, {
+      destino, direccion, lat, lng, peso_lbs: peso, volumen_ft3: vol,
+      codigo_postal: document.getElementById('stZip').value.trim(),
+      hora_limite: document.getElementById('stHora').value || '17:00',
+      codigo_paquete: document.getElementById('stCodigo').value.trim(),
+      notas: document.getElementById('stNotas').value.trim(),
+    });
+    closeStopModal();
+    showToast('Parada agregada', 'success');
+    await loadRealData();
+    openRoute(routeId);
+  } catch (e) {
+    errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Agregar parada';
+  }
+}
+
+async function submitEditStop(routeId, stopOrder) {
+  if (!useRealData) {
+    showToast('Editar paradas requiere estar conectado a datos reales', 'info');
+    closeStopModal();
+    return;
+  }
+  const r = getActiveRoutes().find(x => x.id === routeId);
+  const stop = r?.stops.find(s => String(s.order) === String(stopOrder));
+  if (!stop) { closeStopModal(); return; }
+
+  const btn = document.getElementById('stSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  try {
+    await apiPatch(`/warehouse/routes/${routeId}/stops/${stop.id}`, {
+      destino: document.getElementById('stDestino').value.trim(),
+      direccion: document.getElementById('stDireccion').value.trim(),
+      codigo_postal: document.getElementById('stZip').value.trim(),
+      lat: parseFloat(document.getElementById('stLat').value) || null,
+      lng: parseFloat(document.getElementById('stLng').value) || null,
+      hora_limite: document.getElementById('stHora').value || null,
+      notas: document.getElementById('stNotas').value.trim(),
+    });
+    closeStopModal();
+    showToast('Parada actualizada', 'success');
+    await loadRealData();
+    openRoute(routeId);
+  } catch (e) {
+    document.getElementById('stError').textContent = 'Error: ' + e.message;
+    document.getElementById('stError').style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Guardar cambios';
+  }
+}
+
+async function deleteStopFromRoute(routeId, stopOrder) {
+  if (!useRealData) {
+    showToast('Eliminar paradas requiere estar conectado a datos reales', 'info');
+    return;
+  }
+  const r = getActiveRoutes().find(x => x.id === routeId);
+  const stop = r?.stops.find(s => String(s.order) === String(stopOrder));
+  if (!stop) return;
+  if (!confirm('¿Eliminar esta parada?')) return;
+  try {
+    await apiDelete(`/warehouse/routes/${routeId}/stops/${stop.id}`);
+    showToast('Parada eliminada', 'success');
+    await loadRealData();
+    openRoute(routeId);
   } catch (e) {
     showToast('Error: ' + e.message, 'warn');
   }
@@ -4899,6 +5787,1167 @@ async function toggleTipo(id, activate) {
   } catch(e) { showToast('Error: '+e.message, 'warn'); }
 }
 
+// ── Recepción de mercancía (inbound) ───────────────────────────────────────────
+let recepcionesList   = [];
+let recepcionFilter   = 'todos';   // todos | expected | in_progress | completed
+let newRecepcionState = { source_type: 'supplier', origin_route_id: '', reference: '', items: [] };
+let recepcionDetailId = null;
+
+const REC_STATUS_CFG = {
+  expected:    { label: '📋 Esperada',   color: 'var(--muted)'  },
+  in_progress: { label: '🔄 En proceso', color: 'var(--orange)' },
+  completed:   { label: '✅ Cerrada',    color: 'var(--green)'  },
+};
+
+const REC_ITEM_STATUS_CFG = {
+  pending:  { label: 'Pendiente', color: 'var(--muted)' },
+  received: { label: 'Recibido',  color: 'var(--green)' },
+  damaged:  { label: 'Dañado',    color: 'var(--red,#D85A30)' },
+  missing:  { label: 'Faltante',  color: 'var(--red,#D85A30)' },
+};
+
+function renderRecepcion() {
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="section-title">Recepción de mercancía</div>
+        <div class="section-sub">Manifiestos de entrada — proveedores/clientes y devoluciones de rutas</div>
+      </div>
+      <button class="btn btn-primary" onclick="openNewRecepcionModal()">+ Nueva recepción</button>
+    </div>
+    <div id="recepcionBody">
+      <div style="text-align:center;padding:48px;color:var(--muted)">
+        <div style="font-size:32px;margin-bottom:8px">⏳</div>
+        <div>Cargando...</div>
+      </div>
+    </div>
+  `;
+}
+
+async function loadRecepciones() {
+  if (!useRealData) {
+    recepcionesList = [
+      { id: 'rec1', reception_number: 'ORL-REC-0001', source_type: 'supplier', reference: 'Distribuidora ABC',
+        origin_route_id: null, status: 'expected', expected_at: '2026-08-16T09:00:00', received_at: null,
+        notes: '', created_at: '2026-08-14T10:00:00',
+        summary: { expected_items: 3, expected_qty: 12, received: 0, damaged: 0, missing: 0, pending: 3 } },
+      { id: 'rec2', reception_number: 'ORL-REC-0002', source_type: 'return', reference: 'Devolución ORL-2024-002',
+        origin_route_id: 'R-2024-002', status: 'in_progress', expected_at: '2026-08-13T14:00:00', received_at: null,
+        notes: '', created_at: '2026-08-13T08:00:00',
+        summary: { expected_items: 2, expected_qty: 2, received: 1, damaged: 0, missing: 0, pending: 1 } },
+      { id: 'rec3', reception_number: 'ORL-REC-0003', source_type: 'supplier', reference: 'Papelería Central',
+        origin_route_id: null, status: 'completed', expected_at: '2026-08-10T09:00:00', received_at: '2026-08-10T11:30:00',
+        notes: '', created_at: '2026-08-09T10:00:00',
+        summary: { expected_items: 4, expected_qty: 20, received: 3, damaged: 1, missing: 0, pending: 0 } },
+    ];
+  } else {
+    try {
+      recepcionesList = await apiGet('/warehouse/receptions');
+    } catch (e) { showToast('Error cargando recepciones: ' + e.message, 'warn'); return; }
+  }
+  renderRecepcionBody();
+}
+
+function renderRecepcionBody() {
+  const body = document.getElementById('recepcionBody');
+  if (!body) return;
+
+  const STATUS_FILTERS = [
+    { key: 'todos',       label: 'Todas' },
+    { key: 'expected',    label: 'Esperadas' },
+    { key: 'in_progress', label: 'En proceso' },
+    { key: 'completed',   label: 'Cerradas' },
+  ];
+
+  const filtered = recepcionFilter === 'todos' ? recepcionesList
+    : recepcionesList.filter(r => r.status === recepcionFilter);
+
+  body.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+      ${[
+        { key: 'expected',    label: 'Esperadas',  color: 'var(--muted)'  },
+        { key: 'in_progress', label: 'En proceso', color: 'var(--orange)' },
+        { key: 'completed',   label: 'Cerradas',   color: 'var(--green)'  },
+      ].map(k => `
+        <div class="card" style="padding:12px;text-align:center;cursor:pointer" onclick="recepcionFilter='${k.key}';renderRecepcionBody()">
+          <div style="font-size:22px;font-weight:700;color:${k.color}">${recepcionesList.filter(r=>r.status===k.key).length}</div>
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:2px">${k.label}</div>
+        </div>
+      `).join('')}
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+      ${STATUS_FILTERS.map(f => `
+        <button onclick="recepcionFilter='${f.key}';renderRecepcionBody()"
+          class="btn ${recepcionFilter===f.key?'btn-primary':'btn-ghost'}" style="font-size:12px;padding:5px 12px">
+          ${f.label} (${f.key==='todos'?recepcionesList.length:recepcionesList.filter(r=>r.status===f.key).length})
+        </button>
+      `).join('')}
+    </div>
+
+    ${filtered.length === 0 ? `
+      <div class="card" style="text-align:center;padding:48px;color:var(--muted)">
+        <div style="font-size:40px;margin-bottom:12px">📥</div>
+        <div>${recepcionFilter!=='todos' ? 'Sin resultados para este filtro' : 'Sin recepciones registradas'}</div>
+      </div>
+    ` : `
+      <div class="table-wrap" style="overflow-x:auto">
+        <table style="min-width:820px">
+          <thead>
+            <tr>
+              <th>N° Recepción</th>
+              <th>Origen</th>
+              <th>Referencia</th>
+              <th style="text-align:center">Ítems</th>
+              <th>Esperada</th>
+              <th style="text-align:center">Estado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filtered.map(r => {
+              const st = REC_STATUS_CFG[r.status] || { label: r.status, color: 'var(--muted)' };
+              const s  = r.summary || {};
+              return `
+                <tr style="cursor:pointer;border-bottom:1px solid var(--border)"
+                  onclick="openRecepcionDetail('${r.id}')"
+                  onmouseover="this.style.background='rgba(128,128,128,0.05)'"
+                  onmouseout="this.style.background=''">
+                  <td style="padding:10px 8px;font-family:var(--font-mono);color:var(--orange);font-size:13px">${r.reception_number || '—'}</td>
+                  <td style="padding:10px 8px;font-size:13px">${r.source_type === 'return' ? '↩ Devolución' : '📦 Proveedor'}</td>
+                  <td style="padding:10px 8px;font-size:13px">${r.reference || '—'}</td>
+                  <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">
+                    ${s.received||0}✓ / ${s.damaged||0}⚠ / ${s.missing||0}✕ / ${s.pending||0} pend.
+                  </td>
+                  <td style="padding:10px 8px;font-size:12px;color:var(--muted)">${r.expected_at?.split('T')[0] || '—'}</td>
+                  <td style="text-align:center;padding:10px 8px">
+                    <span style="font-size:12px;font-weight:600;color:${st.color}">${st.label}</span>
+                  </td>
+                  <td style="padding:10px 8px">
+                    <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px"
+                      onclick="event.stopPropagation();openRecepcionDetail('${r.id}')">Ver →</button>
+                  </td>
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">${filtered.length} recepción${filtered.length!==1?'es':''} mostradas</div>
+    `}
+  `;
+}
+
+// ── Nueva recepción ──────────────────────────────────────────────────────────
+function openNewRecepcionModal() {
+  newRecepcionState = { source_type: 'supplier', origin_route_id: '', reference: '', items: [] };
+  document.getElementById('stopModalTitle').textContent = '+ Nueva recepción';
+  document.getElementById('stopModalSub').textContent   = 'Manifiesto de mercancía esperada';
+  document.getElementById('stopModalBody').innerHTML = renderNewRecepcionForm();
+  document.getElementById('stopModalOverlay').style.display = 'block';
+  document.getElementById('stopModal').style.display = 'block';
+}
+
+function renderNewRecepcionForm() {
+  const routes = getActiveRoutes();
+  const today  = new Date().toISOString().split('T')[0];
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Origen *</label>
+        <select id="nrSourceType"
+          onchange="newRecepcionState.source_type=this.value;document.getElementById('stopModalBody').innerHTML=renderNewRecepcionForm()"
+          style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+          <option value="supplier" ${newRecepcionState.source_type==='supplier'?'selected':''}>📦 Mercancía de proveedor/cliente</option>
+          <option value="return" ${newRecepcionState.source_type==='return'?'selected':''}>↩ Devolución de una ruta</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Fecha esperada</label>
+        <input id="nrExpectedAt" type="date" value="${today}"
+          style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+    </div>
+
+    ${newRecepcionState.source_type === 'return' ? `
+      <div style="margin-bottom:8px">
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Ruta de origen</label>
+        <div style="display:flex;gap:6px">
+          <select id="nrOriginRoute" style="flex:1;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+            <option value="">— Sin vincular a una ruta —</option>
+            ${routes.map(r => `<option value="${r.id}">${r.num} — ${r.title}</option>`).join('')}
+          </select>
+          <button class="btn btn-ghost" style="font-size:12px;white-space:nowrap" onclick="loadUndeliveredStopsForReturn()">↻ Cargar paradas</button>
+        </div>
+      </div>
+      <div style="margin-bottom:8px">
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Motivo de la devolución</label>
+        <input id="nrReference" placeholder="Ej: Dirección incorrecta, cliente ausente..." value="${(newRecepcionState.reference||'').replace(/"/g,'&quot;')}"
+          style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+    ` : `
+      <div style="margin-bottom:8px">
+        <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Proveedor / cliente</label>
+        <input id="nrReference" placeholder="Nombre del proveedor o cliente" value="${(newRecepcionState.reference||'').replace(/"/g,'&quot;')}"
+          style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+    `}
+
+    <div style="border-top:1px solid var(--border);margin:12px 0;padding-top:10px">
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Ítems esperados</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <input id="nrCodigo" placeholder="Código / referencia" style="padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="nrDescripcion" placeholder="Descripción" style="padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="nrCantidad" type="number" min="1" value="1" placeholder="Cantidad" style="padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="nrPeso" type="number" step="0.01" min="0" placeholder="Peso unit. (lbs)" style="padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      </div>
+      <button class="btn btn-ghost" style="width:100%;font-size:13px;margin-bottom:10px" onclick="addItemToNewRecepcion()">+ Agregar ítem a la lista</button>
+      <div id="nrItemsList">${renderNewRecepcionItemsList()}</div>
+    </div>
+
+    <div id="nrError" style="color:var(--red,#D85A30);font-size:13px;display:none;margin-bottom:8px"></div>
+    <button id="nrSubmitBtn" class="btn btn-primary" style="width:100%" onclick="submitNewRecepcion()">Crear recepción</button>
+  `;
+}
+
+function renderNewRecepcionItemsList() {
+  if (newRecepcionState.items.length === 0) {
+    return `<div style="text-align:center;padding:16px;color:var(--muted);font-size:12px">Todavía no agregaste ningún ítem esperado</div>`;
+  }
+  return `
+    <div style="display:flex;flex-direction:column;gap:4px">
+      ${newRecepcionState.items.map((it,i) => `
+        <div style="display:flex;justify-content:space-between;align-items:center;background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px">
+          <span style="color:var(--white)">${it.descripcion || it.codigo_cliente || 'Ítem sin descripción'}</span>
+          <span style="color:var(--muted)">x${it.expected_quantity} · ${it.peso_lbs_unit} lbs</span>
+          <button onclick="removeNewRecepcionItem(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer">✕</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function addItemToNewRecepcion() {
+  const codigo      = document.getElementById('nrCodigo').value.trim();
+  const descripcion = document.getElementById('nrDescripcion').value.trim();
+  const cantidad    = parseInt(document.getElementById('nrCantidad').value) || 0;
+  const peso        = parseFloat(document.getElementById('nrPeso').value) || 0;
+
+  if (!codigo && !descripcion) { showToast('Ingresá al menos un código o descripción', 'warn'); return; }
+  if (cantidad < 1)             { showToast('La cantidad debe ser al menos 1', 'warn'); return; }
+
+  newRecepcionState.items.push({
+    codigo_cliente: codigo, descripcion, expected_quantity: cantidad,
+    peso_lbs_unit: peso, volumen_ft3_unit: 0,
+  });
+  ['nrCodigo','nrDescripcion'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('nrCantidad').value = 1;
+  document.getElementById('nrPeso').value = '';
+  document.getElementById('nrItemsList').innerHTML = renderNewRecepcionItemsList();
+}
+
+function removeNewRecepcionItem(i) {
+  newRecepcionState.items.splice(i, 1);
+  document.getElementById('nrItemsList').innerHTML = renderNewRecepcionItemsList();
+}
+
+async function loadUndeliveredStopsForReturn() {
+  const routeId = document.getElementById('nrOriginRoute')?.value;
+  if (!routeId) { showToast('Elegí una ruta primero', 'warn'); return; }
+  if (!useRealData) { showToast('Cargar paradas requiere estar conectado a datos reales', 'info'); return; }
+
+  try {
+    const route = await apiGet(`/warehouse/routes/${routeId}`);
+    const undelivered = (route.stops || []).filter(s => s.status !== 'completed');
+    if (undelivered.length === 0) {
+      showToast('Esta ruta no tiene paradas pendientes/no entregadas', 'info'); return;
+    }
+    undelivered.forEach(s => {
+      const firstItem = (s.items && s.items[0]) || {};
+      newRecepcionState.items.push({
+        codigo_cliente: firstItem.package_code || '',
+        descripcion: s.company_name || s.address || `Parada #${s.sequence_order}`,
+        expected_quantity: s.packages_count || 1,
+        peso_lbs_unit: s.weight_lbs || 0,
+        volumen_ft3_unit: s.volume_ft3 || 0,
+      });
+    });
+    document.getElementById('nrItemsList').innerHTML = renderNewRecepcionItemsList();
+    showToast(`${undelivered.length} parada${undelivered.length!==1?'s':''} agregada${undelivered.length!==1?'s':''} como ítems esperados`, 'success');
+  } catch (e) { showToast('Error: ' + e.message, 'warn'); }
+}
+
+async function submitNewRecepcion() {
+  const errEl = document.getElementById('nrError');
+  errEl.style.display = 'none';
+
+  const sourceType    = document.getElementById('nrSourceType').value;
+  const reference      = document.getElementById('nrReference')?.value.trim() || '';
+  const expectedAt     = document.getElementById('nrExpectedAt').value;
+  const originRouteId  = sourceType === 'return' ? (document.getElementById('nrOriginRoute')?.value || null) : null;
+
+  if (newRecepcionState.items.length === 0) {
+    errEl.textContent = 'Agregá al menos un ítem esperado'; errEl.style.display = 'block'; return;
+  }
+
+  if (!useRealData) {
+    showToast('Crear recepciones requiere estar conectado a datos reales', 'info');
+    closeStopModal(); return;
+  }
+
+  const btn = document.getElementById('nrSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Creando...';
+  try {
+    await apiPost('/warehouse/receptions', {
+      source_type: sourceType,
+      reference,
+      origin_route_id: originRouteId,
+      expected_at: expectedAt ? `${expectedAt}T00:00:00` : null,
+      items: newRecepcionState.items,
+    });
+    closeStopModal();
+    showToast('Recepción creada', 'success');
+    await loadRecepciones();
+  } catch (e) {
+    errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Crear recepción';
+  }
+}
+
+// ── Detalle de recepción / check-in ──────────────────────────────────────────
+async function openRecepcionDetail(id) {
+  recepcionDetailId = id;
+  document.getElementById('stopModalTitle').textContent = 'Recepción';
+  document.getElementById('stopModalSub').textContent   = '';
+  document.getElementById('stopModalBody').innerHTML = `<div style="text-align:center;padding:24px;color:var(--muted)">⏳ Cargando...</div>`;
+  document.getElementById('stopModalOverlay').style.display = 'block';
+  document.getElementById('stopModal').style.display = 'block';
+
+  let reception;
+  if (useRealData) {
+    try {
+      reception = await apiGet(`/warehouse/receptions/${id}`);
+    } catch (e) {
+      document.getElementById('stopModalBody').innerHTML = `<div style="color:var(--red,#D85A30)">Error: ${e.message}</div>`;
+      return;
+    }
+  } else {
+    const base = recepcionesList.find(r => r.id === id);
+    reception = base ? { ...base, items: Array.from({ length: base.summary.expected_items }, (_,i) => ({
+      id: `${id}-item${i}`, codigo_cliente: `DEMO-${i+1}`, descripcion: `Ítem demo ${i+1}`,
+      expected_quantity: 1, received_quantity: i < base.summary.received ? 1 : 0,
+      peso_lbs_unit: 1, volumen_ft3_unit: 0.2,
+      status: i < base.summary.received ? 'received'
+            : i < base.summary.received + base.summary.damaged ? 'damaged'
+            : i < base.summary.received + base.summary.damaged + base.summary.missing ? 'missing'
+            : 'pending',
+      inventory_item_id: null, notas: null,
+    })) } : null;
+  }
+  renderRecepcionDetailModal(reception);
+}
+
+function renderRecepcionDetailModal(r) {
+  if (!r) { document.getElementById('stopModalBody').innerHTML = `<div style="color:var(--muted)">Recepción no encontrada</div>`; return; }
+  const st = REC_STATUS_CFG[r.status] || { label: r.status, color: 'var(--muted)' };
+
+  document.getElementById('stopModalTitle').textContent = `📥 ${r.reception_number}`;
+  document.getElementById('stopModalSub').textContent   = r.reference || (r.source_type==='return' ? 'Devolución' : 'Recepción de proveedor');
+
+  document.getElementById('stopModalBody').innerHTML = `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
+      <span style="font-size:12px;font-weight:600;color:${st.color}">${st.label}</span>
+      <span style="font-size:12px;color:var(--muted)">${r.source_type === 'return' ? '↩ Devolución' : '📦 Proveedor'}</span>
+      ${r.expected_at ? `<span style="font-size:12px;color:var(--muted)">Esperada: ${r.expected_at.split('T')[0]}</span>` : ''}
+    </div>
+
+    <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Ítems del manifiesto</div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+      ${(r.items||[]).map(it => renderRecepcionItemRow(r, it)).join('')}
+    </div>
+
+    ${r.status !== 'completed' ? `
+      <button class="btn btn-primary" style="width:100%" onclick="confirmCompleteRecepcion('${r.id}')">
+        ✓ Cerrar recepción${r.summary?.pending ? ` (${r.summary.pending} ítem${r.summary.pending!==1?'s':''} sin llegar quedará${r.summary.pending!==1?'n':''} como faltante)` : ''}
+      </button>
+    ` : `
+      <div style="text-align:center;padding:8px;color:var(--muted);font-size:12px">Recepción cerrada${r.received_at ? ' el ' + r.received_at.split('T')[0] : ''}</div>
+    `}
+  `;
+}
+
+function renderRecepcionItemRow(r, it) {
+  const cfg = REC_ITEM_STATUS_CFG[it.status] || { label: it.status, color: 'var(--muted)' };
+  const canCheckIn = r.status !== 'completed' && it.status === 'pending';
+  return `
+    <div style="background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:${canCheckIn?'8px':'0'}">
+        <div>
+          <div style="font-size:13px;font-weight:600">${it.descripcion || it.codigo_cliente || 'Ítem sin descripción'}</div>
+          <div style="font-size:11px;color:var(--muted)">${it.codigo_cliente ? it.codigo_cliente+' · ' : ''}esperado x${it.expected_quantity} · ${it.peso_lbs_unit} lbs</div>
+        </div>
+        <span style="font-size:12px;font-weight:600;color:${cfg.color};white-space:nowrap">${cfg.label}${it.status!=='pending' ? ` (x${it.received_quantity})` : ''}</span>
+      </div>
+      ${canCheckIn ? `
+        <div style="display:flex;gap:6px;align-items:center">
+          <input id="ci-qty-${it.id}" type="number" min="0" value="${it.expected_quantity}"
+            style="width:70px;padding:5px 7px;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:12px">
+          <button class="btn btn-ghost" style="flex:1;font-size:12px;color:var(--green,#4CAF50)" onclick="checkInRecepcionItem('${r.id}','${it.id}','received')">✓ Recibido OK</button>
+          <button class="btn btn-ghost" style="flex:1;font-size:12px;color:var(--red,#D85A30)" onclick="checkInRecepcionItem('${r.id}','${it.id}','damaged')">⚠ Dañado</button>
+        </div>
+      ` : it.notas ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">Nota: ${it.notas}</div>` : ''}
+    </div>
+  `;
+}
+
+async function checkInRecepcionItem(receptionId, itemId, status) {
+  const qtyEl = document.getElementById(`ci-qty-${itemId}`);
+  const qty = parseInt(qtyEl?.value);
+  if (isNaN(qty) || qty < 0) { showToast('Cantidad inválida', 'warn'); return; }
+
+  if (!useRealData) { showToast('El check-in requiere estar conectado a datos reales', 'info'); return; }
+
+  try {
+    await apiPatch(`/warehouse/receptions/${receptionId}/items/${itemId}/check-in`, { received_quantity: qty, status });
+    const reception = await apiGet(`/warehouse/receptions/${receptionId}`);
+    const idx = recepcionesList.findIndex(x => x.id === receptionId);
+    if (idx !== -1) recepcionesList[idx] = reception;
+    renderRecepcionDetailModal(reception);
+    showToast(status === 'received' ? 'Ítem recibido — sumado al inventario disponible' : 'Ítem marcado como dañado', 'success');
+  } catch (e) { showToast('Error: ' + e.message, 'warn'); }
+}
+
+async function confirmCompleteRecepcion(id) {
+  if (!confirm('¿Cerrar esta recepción? Los ítems que no llegaron quedarán marcados como faltantes. Esta acción no se puede deshacer.')) return;
+  if (!useRealData) { showToast('Cerrar recepciones requiere estar conectado a datos reales', 'info'); return; }
+
+  try {
+    const reception = await apiPost(`/warehouse/receptions/${id}/complete`, {});
+    renderRecepcionDetailModal(reception);
+    await loadRecepciones();
+    showToast('Recepción cerrada', 'success');
+  } catch (e) { showToast('Error: ' + e.message, 'warn'); }
+}
+
+// ── Catálogo de mensajes ─────────────────────────────────────────────────────
+let mensajesList    = [];
+let mensajeSearch   = '';
+let mensajeFilter   = 'activos';   // activos | todos
+let editMensajeState = null;
+
+function extractTemplateVariables(text) {
+  const matches = (text || '').match(/\{(\w+)\}/g) || [];
+  return [...new Set(matches.map(m => m.slice(1, -1)))].sort();
+}
+
+function renderMacroPreview(macroText, values) {
+  return (macroText || '').replace(/\{(\w+)\}/g, (full, key) =>
+    (values[key] !== undefined && values[key] !== '') ? values[key] : full
+  );
+}
+
+function renderMensajes() {
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="section-title">Catálogo de mensajes</div>
+        <div class="section-sub">Mensajes estándar — código, descripción y macro con variables</div>
+      </div>
+      <button class="btn btn-primary" onclick="openNewMensajeModal()">+ Nuevo mensaje</button>
+    </div>
+    <div id="mensajesBody">
+      <div style="text-align:center;padding:48px;color:var(--muted)">
+        <div style="font-size:32px;margin-bottom:8px">⏳</div>
+        <div>Cargando...</div>
+      </div>
+    </div>
+  `;
+}
+
+async function loadMensajes() {
+  if (!useRealData) {
+    mensajesList = [
+      { id: 'm1', code: 'BATCH_APPROVED', description: 'Lote aprobado',
+        macro_text: 'Hola {cliente}, tu lote {numero_lote} fue aprobado y saldrá pronto.',
+        variables: ['cliente','numero_lote'], is_active: true },
+      { id: 'm2', code: 'DELIVERY_CONFIRMED', description: 'Entrega confirmada',
+        macro_text: 'Tu pedido {codigo_cliente} fue entregado a las {hora}.',
+        variables: ['codigo_cliente','hora'], is_active: true },
+      { id: 'm3', code: 'INCIDENT_REPORTED', description: 'Incidencia reportada (borrador)',
+        macro_text: 'Se reportó una incidencia en la ruta {numero_ruta}: {titulo}.',
+        variables: ['numero_ruta','titulo'], is_active: false },
+    ];
+  } else {
+    try {
+      mensajesList = await apiGet('/messages?all=true');
+    } catch (e) { showToast('Error cargando mensajes: ' + e.message, 'warn'); return; }
+  }
+  renderMensajesBody();
+}
+
+function renderMensajesBody() {
+  const body = document.getElementById('mensajesBody');
+  if (!body) return;
+
+  let filtered = mensajeFilter === 'activos' ? mensajesList.filter(m => m.is_active) : mensajesList;
+  const q = mensajeSearch.toLowerCase();
+  if (q) filtered = filtered.filter(m =>
+    m.code.toLowerCase().includes(q) || m.description.toLowerCase().includes(q)
+  );
+
+  body.innerHTML = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+      <button onclick="mensajeFilter='activos';renderMensajesBody()"
+        class="btn ${mensajeFilter==='activos'?'btn-primary':'btn-ghost'}" style="font-size:12px;padding:5px 12px">
+        Activos (${mensajesList.filter(m=>m.is_active).length})
+      </button>
+      <button onclick="mensajeFilter='todos';renderMensajesBody()"
+        class="btn ${mensajeFilter==='todos'?'btn-primary':'btn-ghost'}" style="font-size:12px;padding:5px 12px">
+        Todos (${mensajesList.length})
+      </button>
+      <input type="text" placeholder="Buscar por código o descripción..." value="${mensajeSearch}"
+        oninput="mensajeSearch=this.value;renderMensajesBody()"
+        style="margin-left:auto;padding:6px 12px;background:var(--card2);border:1px solid var(--border);
+               border-radius:8px;color:var(--white);font-size:13px;width:260px">
+    </div>
+
+    ${filtered.length === 0 ? `
+      <div class="card" style="text-align:center;padding:48px;color:var(--muted)">
+        <div style="font-size:40px;margin-bottom:12px">💬</div>
+        <div>${q || mensajeFilter!=='todos' ? 'Sin resultados para este filtro' : 'Sin mensajes registrados'}</div>
+      </div>
+    ` : `
+      <div class="table-wrap" style="overflow-x:auto">
+        <table style="min-width:860px">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Descripción</th>
+              <th>Macro</th>
+              <th>Variables</th>
+              <th style="text-align:center">Estado</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filtered.map(m => `
+              <tr style="border-bottom:1px solid var(--border)">
+                <td style="padding:10px 8px;font-family:var(--font-mono);color:var(--orange);font-size:13px">${m.code}</td>
+                <td style="padding:10px 8px;font-size:13px">${m.description}</td>
+                <td style="padding:10px 8px;font-size:12px;color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.macro_text}</td>
+                <td style="padding:10px 8px;font-size:11px;color:var(--muted)">
+                  ${(m.variables||[]).map(v => `<span style="background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:1px 7px;margin-right:3px;white-space:nowrap;display:inline-block;margin-bottom:2px">${v}</span>`).join('') || '—'}
+                </td>
+                <td style="text-align:center;padding:10px 8px">
+                  <span style="font-size:12px;font-weight:600;color:${m.is_active?'var(--green)':'var(--muted)'}">${m.is_active?'Activo':'Inactivo'}</span>
+                </td>
+                <td style="padding:10px 8px;white-space:nowrap">
+                  <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="openEditMensajeModal('${m.id}')">✏️</button>
+                  <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="toggleMensajeActive('${m.id}', ${!m.is_active})">${m.is_active?'Desactivar':'Activar'}</button>
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">${filtered.length} mensaje${filtered.length!==1?'s':''} mostrado${filtered.length!==1?'s':''}</div>
+    `}
+  `;
+}
+
+// ── Alta / edición de mensaje ─────────────────────────────────────────────────
+function openNewMensajeModal() {
+  editMensajeState = { id: null, code: '', description: '', macro_text: '', is_active: true, previewValues: {} };
+  document.getElementById('stopModalTitle').textContent = '+ Nuevo mensaje';
+  document.getElementById('stopModalSub').textContent   = 'Código, descripción y macro estándar';
+  document.getElementById('stopModalBody').innerHTML = renderMensajeForm();
+  document.getElementById('stopModalOverlay').style.display = 'block';
+  document.getElementById('stopModal').style.display = 'block';
+}
+
+function openEditMensajeModal(id) {
+  const m = mensajesList.find(x => x.id === id);
+  if (!m) return;
+  editMensajeState = { id: m.id, code: m.code, description: m.description, macro_text: m.macro_text, is_active: m.is_active, previewValues: {} };
+  document.getElementById('stopModalTitle').textContent = `✏️ ${m.code}`;
+  document.getElementById('stopModalSub').textContent   = 'Editar mensaje del catálogo';
+  document.getElementById('stopModalBody').innerHTML = renderMensajeForm();
+  document.getElementById('stopModalOverlay').style.display = 'block';
+  document.getElementById('stopModal').style.display = 'block';
+}
+
+function renderMensajeForm() {
+  const isEdit = !!editMensajeState.id;
+  return `
+    <div style="margin-bottom:8px">
+      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Código *</label>
+      <input id="msgCode" value="${(editMensajeState.code||'').replace(/"/g,'&quot;')}" ${isEdit?'disabled':''}
+        placeholder="Ej: BATCH_APPROVED"
+        style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;
+               color:${isEdit?'var(--muted)':'var(--white)'};font-size:13px;box-sizing:border-box;text-transform:uppercase">
+    </div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Descripción *</label>
+      <input id="msgDescription" value="${(editMensajeState.description||'').replace(/"/g,'&quot;')}"
+        placeholder="Etiqueta corta y legible"
+        style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+    </div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Macro estándar * — usá <code>{variable}</code> para valores que se rellenan solos</label>
+      <textarea id="msgMacroText" oninput="onMensajeMacroInput()"
+        style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;resize:vertical;min-height:70px;box-sizing:border-box">${(editMensajeState.macro_text||'').replace(/</g,'&lt;')}</textarea>
+    </div>
+
+    <div style="border-top:1px solid var(--border);margin:12px 0;padding-top:10px">
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Probar macro</div>
+      ${renderMensajeVarInputs()}
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Vista previa</div>
+      <div id="msgPreview" style="background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.5;white-space:pre-wrap">${renderMacroPreview(editMensajeState.macro_text, editMensajeState.previewValues) || '—'}</div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin:12px 0">
+      <input id="msgIsActive" type="checkbox" ${editMensajeState.is_active?'checked':''} style="width:16px;height:16px">
+      <label for="msgIsActive" style="font-size:13px">Activo</label>
+    </div>
+
+    <div id="msgError" style="color:var(--red,#D85A30);font-size:13px;display:none;margin-bottom:8px"></div>
+    <button id="msgSubmitBtn" class="btn btn-primary" style="width:100%" onclick="submitMensaje()">${isEdit ? 'Guardar cambios' : 'Crear mensaje'}</button>
+  `;
+}
+
+function renderMensajeVarInputs() {
+  const vars = extractTemplateVariables(editMensajeState.macro_text);
+  return `
+    <div id="msgVarInputs" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
+      ${vars.length === 0 ? `<div style="font-size:12px;color:var(--muted)">Esta plantilla no tiene variables</div>` : vars.map(v => `
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="font-size:12px;color:var(--muted);width:120px;flex-shrink:0;font-family:var(--font-mono)">{${v}}</label>
+          <input oninput="editMensajeState.previewValues['${v}']=this.value;updateMensajePreview()" value="${(editMensajeState.previewValues[v]||'').replace(/"/g,'&quot;')}"
+            style="flex:1;padding:5px 8px;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:12px">
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function onMensajeMacroInput() {
+  editMensajeState.macro_text = document.getElementById('msgMacroText').value;
+  document.getElementById('msgVarInputs').outerHTML = renderMensajeVarInputs();
+  updateMensajePreview();
+}
+
+function updateMensajePreview() {
+  const el = document.getElementById('msgPreview');
+  if (el) el.textContent = renderMacroPreview(editMensajeState.macro_text, editMensajeState.previewValues) || '—';
+}
+
+async function submitMensaje() {
+  const errEl = document.getElementById('msgError');
+  errEl.style.display = 'none';
+
+  const isEdit      = !!editMensajeState.id;
+  const code        = document.getElementById('msgCode').value.trim().toUpperCase();
+  const description = document.getElementById('msgDescription').value.trim();
+  const macroText   = document.getElementById('msgMacroText').value.trim();
+  const isActive    = document.getElementById('msgIsActive').checked;
+
+  if (!isEdit && !code) { errEl.textContent = 'El código es obligatorio'; errEl.style.display = 'block'; return; }
+  if (!description)     { errEl.textContent = 'La descripción es obligatoria'; errEl.style.display = 'block'; return; }
+  if (!macroText)        { errEl.textContent = 'La macro estándar es obligatoria'; errEl.style.display = 'block'; return; }
+
+  if (!useRealData) {
+    showToast('Crear/editar mensajes requiere estar conectado a datos reales', 'info');
+    closeStopModal(); return;
+  }
+
+  const btn = document.getElementById('msgSubmitBtn');
+  btn.disabled = true; btn.textContent = isEdit ? 'Guardando...' : 'Creando...';
+  try {
+    if (isEdit) {
+      await apiPatch(`/admin/messages/${editMensajeState.id}`, { description, macro_text: macroText, is_active: isActive });
+    } else {
+      await apiPost('/admin/messages', { code, description, macro_text: macroText, is_active: isActive });
+    }
+    closeStopModal();
+    showToast(isEdit ? 'Mensaje actualizado' : 'Mensaje creado', 'success');
+    await loadMensajes();
+  } catch (e) {
+    errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = isEdit ? 'Guardar cambios' : 'Crear mensaje';
+  }
+}
+
+async function toggleMensajeActive(id, newActive) {
+  if (!useRealData) {
+    const m = mensajesList.find(x => x.id === id);
+    if (m) m.is_active = newActive;
+    renderMensajesBody(); return;
+  }
+  try {
+    await apiPatch(`/admin/messages/${id}`, { is_active: newActive });
+    showToast(newActive ? 'Mensaje activado' : 'Mensaje desactivado', 'success');
+    await loadMensajes();
+  } catch (e) { showToast('Error: ' + e.message, 'warn'); }
+}
+
+// ── Tarifas de servicio (parámetros del precio sugerido) ────────────────────────
+let tarifasList = [];
+
+function renderTarifas() {
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div class="section-title">Tarifas de servicio</div>
+        <div class="section-sub">Parámetros que usa el sistema para sugerir el precio inicial de cada ruta</div>
+      </div>
+      <button class="btn btn-primary" onclick="openNewTarifaModal()">+ Nuevo tipo de servicio</button>
+    </div>
+    <div class="card" style="padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--muted);line-height:1.5">
+      💡 El precio sugerido de una ruta se calcula como:
+      <strong style="color:var(--white)">Precio base + ($/km × km) + ($/lb × peso) + ($/ft³ × volumen)</strong>,
+      acotado al rango mínimo/máximo del tipo de servicio.
+    </div>
+    <div id="tarifasBody">
+      <div style="text-align:center;padding:48px;color:var(--muted)">
+        <div style="font-size:32px;margin-bottom:8px">⏳</div>
+        <div>Cargando...</div>
+      </div>
+    </div>
+  `;
+}
+
+async function loadTarifas() {
+  if (!useRealData) {
+    tarifasList = DEMO_SERVICE_TYPES.map(st => ({ ...st }));
+  } else {
+    try {
+      tarifasList = await apiGet('/service-types');
+    } catch (e) { showToast('Error cargando tarifas: ' + e.message, 'warn'); return; }
+  }
+  renderTarifasBody();
+}
+
+function renderTarifasBody() {
+  const body = document.getElementById('tarifasBody');
+  if (!body) return;
+  body.innerHTML = `
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${tarifasList.length} tipo${tarifasList.length!==1?'s':''} de servicio registrado${tarifasList.length!==1?'s':''}</div>
+    <div class="table-wrap" style="overflow-x:auto">
+      <table style="min-width:980px">
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Nombre</th>
+            <th style="text-align:right">Base</th>
+            <th style="text-align:right">$/km</th>
+            <th style="text-align:right">$/lb</th>
+            <th style="text-align:right">$/ft³</th>
+            <th style="text-align:right">% Muevo</th>
+            <th>Rango</th>
+            <th style="text-align:center">Estado</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tarifasList.map(st => `
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:10px 8px;font-family:var(--font-mono);font-size:12px;color:var(--orange)">${st.code}</td>
+              <td style="padding:10px 8px;font-weight:500">${st.name}</td>
+              <td style="text-align:right;padding:10px 8px;font-size:13px">$${Number(st.precio_servicio).toFixed(2)}</td>
+              <td style="text-align:right;padding:10px 8px;font-size:13px">$${Number(st.precio_por_km||0).toFixed(2)}</td>
+              <td style="text-align:right;padding:10px 8px;font-size:13px">$${Number(st.precio_por_lb||0).toFixed(2)}</td>
+              <td style="text-align:right;padding:10px 8px;font-size:13px">$${Number(st.precio_por_ft3||0).toFixed(2)}</td>
+              <td style="text-align:right;padding:10px 8px;font-size:13px">${st.porcentaje_muevo}%</td>
+              <td style="padding:10px 8px;font-size:12px;color:var(--muted)">$${st.importe_minimo} – ${st.importe_maximo ? '$'+st.importe_maximo : '∞'}</td>
+              <td style="text-align:center;padding:10px 8px">
+                ${st.habilitado
+                  ? '<span class="badge badge-green">● Activo</span>'
+                  : '<span class="badge badge-muted">○ Inactivo</span>'}
+              </td>
+              <td style="padding:10px 8px">
+                <div style="display:flex;gap:6px">
+                  <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="openEditTarifaModal('${st.id}')">Editar</button>
+                  <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;color:${st.habilitado?'var(--red)':'var(--green)'}"
+                    onclick="toggleTarifa('${st.id}',${!st.habilitado})">
+                    ${st.habilitado ? 'Desactivar' : 'Activar'}
+                  </button>
+                </div>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function tarifaFormHTML(t) {
+  const isNew = !t;
+  const inpNum = (id, val, ph) => `<input id="${id}" type="number" step="0.01" min="0" value="${val ?? ''}" placeholder="${ph}"
+    style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">`;
+  return `
+    <div style="display:flex;flex-direction:column;gap:10px">
+      ${isNew ? `<div><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Código *</label>
+        <input id="tarCode" placeholder="mensajeria" style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box"></div>` : ''}
+      <div><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Nombre *</label>
+        <input id="tarName" value="${(t?.name||'').replace(/"/g,'&quot;')}" placeholder="📦 Mensajería"
+          style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box"></div>
+
+      <div style="border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Precio sugerido — parámetros de cálculo</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Precio base ($)</label>${inpNum('tarPrecioServicio', t?.precio_servicio ?? 0, '25')}</div>
+          <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">$ por km</label>${inpNum('tarPorKm', t?.precio_por_km ?? 0, '0.50')}</div>
+          <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">$ por lb</label>${inpNum('tarPorLb', t?.precio_por_lb ?? 0, '0.05')}</div>
+          <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">$ por ft³</label>${inpNum('tarPorFt3', t?.precio_por_ft3 ?? 0, '0.30')}</div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px">Sugerencia = base + ($/km × km) + ($/lb × peso) + ($/ft³ × volumen), acotado al rango de abajo.</div>
+      </div>
+
+      <div style="border-top:1px solid var(--border);padding-top:10px">
+        <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Comisión y rango</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+          <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">% Muevo</label>${inpNum('tarPct', t?.porcentaje_muevo ?? 5, '5')}</div>
+          <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Mínimo ($)</label>${inpNum('tarMin', t?.importe_minimo ?? 0, '15')}</div>
+          <div><label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Máximo ($, opcional)</label>${inpNum('tarMax', t?.importe_maximo ?? '', '500')}</div>
+        </div>
+      </div>
+
+      <div id="tarError" style="color:var(--red,#D85A30);font-size:13px;display:none"></div>
+      <button class="btn btn-primary" style="width:100%"
+        onclick="${isNew ? 'submitNewTarifa()' : `submitEditTarifa('${t?.id}')`}">
+        ${isNew ? 'Crear tipo de servicio' : 'Guardar cambios'}
+      </button>
+    </div>
+  `;
+}
+
+function openNewTarifaModal() {
+  document.getElementById('stopModalTitle').textContent = 'Nuevo tipo de servicio';
+  document.getElementById('stopModalSub').textContent   = 'Agregar al catálogo';
+  document.getElementById('stopModalBody').innerHTML    = tarifaFormHTML(null);
+  document.getElementById('stopModalOverlay').style.display = 'block';
+  document.getElementById('stopModal').style.display = 'block';
+}
+
+function openEditTarifaModal(id) {
+  const t = tarifasList.find(x => x.id === id);
+  if (!t) return;
+  document.getElementById('stopModalTitle').textContent = 'Editar tarifa';
+  document.getElementById('stopModalSub').textContent   = t.code;
+  document.getElementById('stopModalBody').innerHTML    = tarifaFormHTML(t);
+  document.getElementById('stopModalOverlay').style.display = 'block';
+  document.getElementById('stopModal').style.display = 'block';
+}
+
+function collectTarifaData(isNew) {
+  const data = {
+    name:             document.getElementById('tarName')?.value.trim(),
+    precio_servicio:  parseFloat(document.getElementById('tarPrecioServicio')?.value) || 0,
+    precio_por_km:    parseFloat(document.getElementById('tarPorKm')?.value) || 0,
+    precio_por_lb:    parseFloat(document.getElementById('tarPorLb')?.value) || 0,
+    precio_por_ft3:   parseFloat(document.getElementById('tarPorFt3')?.value) || 0,
+    porcentaje_muevo: parseFloat(document.getElementById('tarPct')?.value) || 0,
+    importe_minimo:   parseFloat(document.getElementById('tarMin')?.value) || 0,
+  };
+  const maxVal = document.getElementById('tarMax')?.value;
+  data.importe_maximo = (maxVal !== '' && maxVal != null) ? parseFloat(maxVal) : null;
+  if (isNew) data.code = document.getElementById('tarCode')?.value.trim();
+  return data;
+}
+
+async function refreshServiceTypeCaches() {
+  if (useRealData) {
+    try { REAL_SERVICE_TYPES = await apiGet('/service-types?habilitado=true'); } catch (e) {}
+  }
+}
+
+async function submitNewTarifa() {
+  const data  = collectTarifaData(true);
+  const errEl = document.getElementById('tarError');
+  if (!data.code || !data.name) { errEl.textContent = 'Código y nombre son obligatorios'; errEl.style.display = 'block'; return; }
+
+  if (!useRealData) {
+    tarifasList.push({ id: 'st'+Date.now(), ...data, habilitado: true });
+    closeStopModal(); showToast('Tipo de servicio creado (demo)', 'success'); renderTarifasBody(); return;
+  }
+  try {
+    const st = await apiPost('/service-types', data);
+    tarifasList.push(st);
+    await refreshServiceTypeCaches();
+    closeStopModal(); showToast('Tipo de servicio creado', 'success'); renderTarifasBody();
+  } catch (e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; }
+}
+
+async function submitEditTarifa(id) {
+  const data  = collectTarifaData(false);
+  const errEl = document.getElementById('tarError');
+  if (!data.name) { errEl.textContent = 'El nombre es obligatorio'; errEl.style.display = 'block'; return; }
+
+  if (!useRealData) {
+    const t = tarifasList.find(x => x.id === id);
+    if (t) Object.assign(t, data);
+    closeStopModal(); showToast('Tarifa actualizada (demo)', 'success'); renderTarifasBody(); return;
+  }
+  try {
+    const st = await apiPatch(`/service-types/${id}`, data);
+    const idx = tarifasList.findIndex(x => x.id === id);
+    if (idx !== -1) tarifasList[idx] = st;
+    await refreshServiceTypeCaches();
+    closeStopModal(); showToast('Tarifa actualizada', 'success'); renderTarifasBody();
+  } catch (e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; }
+}
+
+async function toggleTarifa(id, activate) {
+  if (!useRealData) {
+    const t = tarifasList.find(x => x.id === id);
+    if (t) t.habilitado = activate;
+    showToast(activate ? 'Tipo activado' : 'Tipo desactivado', 'success');
+    renderTarifasBody(); return;
+  }
+  try {
+    const st = await apiPatch(`/service-types/${id}`, { habilitado: activate });
+    const idx = tarifasList.findIndex(x => x.id === id);
+    if (idx !== -1) tarifasList[idx] = st;
+    await refreshServiceTypeCaches();
+    showToast(activate ? 'Tipo activado' : 'Tipo desactivado', 'success');
+    renderTarifasBody();
+  } catch (e) { showToast('Error: ' + e.message, 'warn'); }
+}
+
+// ── Negociación de precios ─────────────────────────────────────────────────────
+let negotiationRouteId = null;
+let negotiationData    = null;
+
+function negotiationBadgeLabel(status) {
+  const map = {
+    none:      'Sugerir precio',
+    suggested: 'Precio sugerido — esperando respuesta',
+    countered: 'Contraoferta pendiente',
+    accepted:  'Precio acordado',
+  };
+  return map[status] || 'Ver negociación';
+}
+
+async function openNegotiationPanel(routeId) {
+  negotiationRouteId = routeId;
+
+  document.getElementById('stopModalTitle').textContent = '💬 Negociación de precio';
+  document.getElementById('stopModalSub').textContent   = 'Comisión Muevo: 5%';
+  document.getElementById('stopModalBody').innerHTML = `
+    <div style="text-align:center;padding:24px;color:var(--muted)">
+      <div style="font-size:28px;margin-bottom:8px">⏳</div>
+      <div>Cargando negociación...</div>
+    </div>
+  `;
+  document.getElementById('stopModalOverlay').style.display = 'block';
+  document.getElementById('stopModal').style.display = 'block';
+
+  if (!useRealData) {
+    negotiationData = {
+      route_id: routeId, route_number: 'ORL-DEMO-001',
+      negotiation_status: 'countered', suggested_price: 95.00, system_suggested_price: 92.40, current_price: 87.50,
+      offers: [
+        { id:'o1', offered_by:'warehouse', user_name:'Carlos Rodriguez', amount:95.00, note:'Precio sugerido por el sistema según distancia y peso', status:'superseded', created_at:'2026-08-01T10:00:00' },
+        { id:'o2', offered_by:'transport', user_name:'Andrea Fuentes',   amount:110.00, note:'La ruta cruza zona de peaje, necesitamos ajustar', status:'pending', created_at:'2026-08-01T14:30:00' },
+      ],
+    };
+    renderNegotiationPanel();
+    return;
+  }
+
+  try {
+    negotiationData = await apiGet(`/warehouse/routes/${routeId}/negotiation`);
+    renderNegotiationPanel();
+  } catch(e) {
+    document.getElementById('stopModalBody').innerHTML = `<div style="color:var(--red,#D85A30)">Error: ${e.message}</div>`;
+  }
+}
+
+function renderNegotiationPanel() {
+  const n = negotiationData;
+  const lastOffer = [...n.offers].reverse().find(o => o.status === 'pending');
+  const isAccepted = n.negotiation_status === 'accepted';
+  const canRespond = lastOffer && lastOffer.offered_by === 'transport';
+
+  document.getElementById('stopModalBody').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;
+                padding:10px 14px;background:var(--card2);border-radius:8px">
+      <div>
+        <div style="font-size:11px;color:var(--muted)">Precio actual</div>
+        <div style="font-size:20px;font-weight:700;color:var(--orange)">${fmt$(n.current_price)}</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:11px;color:var(--muted)">Estado</div>
+        <div style="font-size:13px;font-weight:600;color:${
+          isAccepted ? 'var(--green)' : n.negotiation_status==='countered' ? 'var(--orange)' : 'var(--muted)'
+        }">${negotiationBadgeLabel(n.negotiation_status)}</div>
+      </div>
+    </div>
+
+    <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">
+      Historial de ofertas
+    </div>
+    <div style="max-height:220px;overflow-y:auto;margin-bottom:16px">
+      ${n.offers.length === 0 ? `
+        <div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">Sin ofertas todavía</div>
+      ` : n.offers.map(o => `
+        <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);
+                    ${o.status==='pending' ? 'opacity:1' : 'opacity:0.6'}">
+          <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;
+                      background:${o.offered_by==='warehouse' ? 'var(--orange)' : 'var(--blue,#2E86DE)'};
+                      display:flex;align-items:center;justify-content:center;font-size:12px;color:#111">
+            ${o.offered_by === 'warehouse' ? '🏭' : '🚐'}
+          </div>
+          <div style="flex:1">
+            <div style="display:flex;justify-content:space-between;align-items:baseline">
+              <span style="font-size:12px;font-weight:600;color:var(--white)">
+                ${o.offered_by === 'warehouse' ? 'Warehouse' : 'Transportista'} ${o.user_name ? '· '+o.user_name : ''}
+              </span>
+              <span style="font-size:14px;font-weight:700;color:var(--orange)">${fmt$(o.amount)}</span>
+            </div>
+            ${o.note ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">${o.note}</div>` : ''}
+            <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+              <span style="font-size:10px;color:var(--muted)">${o.created_at?.replace('T',' ').substring(0,16)||''}</span>
+              ${o.status==='pending'  ? '<span class="badge badge-orange" style="font-size:9px">Pendiente</span>' : ''}
+              ${o.status==='accepted' ? '<span class="badge badge-green"  style="font-size:9px">✓ Aceptada</span>' : ''}
+              ${o.status==='rejected' ? '<span class="badge badge-muted"  style="font-size:9px">Rechazada</span>' : ''}
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+
+    ${isAccepted ? `
+      <div style="text-align:center;padding:12px;background:rgba(39,174,96,.1);border-radius:8px;color:var(--green);font-size:13px">
+        ✓ Precio acordado en ${fmt$(n.current_price)} · Comisión Muevo 5% aplicada
+      </div>
+    ` : n.negotiation_status === 'none' ? `
+      <!-- Sugerir precio inicial -->
+      ${n.system_suggested_price != null ? `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:var(--orange-dim);border:1px solid var(--orange-bdr);border-radius:8px">
+        <span style="font-size:16px">🤖</span>
+        <div>
+          <div style="font-size:12px;color:var(--white)">Sugerencia del sistema: <b style="color:var(--orange)">${fmt$(n.system_suggested_price)}</b></div>
+          <div style="font-size:10.5px;color:var(--muted)">Calculado según distancia, peso y volumen de la ruta</div>
+        </div>
+      </div>` : ''}
+      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Sugerir precio inicial al transportista</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input id="negAmount" type="number" step="0.01" placeholder="0.00"
+          value="${n.system_suggested_price != null ? n.system_suggested_price.toFixed(2) : ''}"
+          style="flex:1;padding:9px 12px;background:var(--card2);border:1px solid var(--border);
+                 border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">
+      </div>
+      <textarea id="negNote" placeholder="Nota (opcional)..."
+        style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);
+               border-radius:8px;color:var(--white);font-size:13px;resize:vertical;min-height:50px;
+               box-sizing:border-box;margin-bottom:10px"></textarea>
+      <div id="negError" style="color:var(--red,#D85A30);font-size:13px;display:none;margin-bottom:8px"></div>
+      <button class="btn btn-primary" style="width:100%" onclick="submitSuggestPrice()">Enviar precio sugerido</button>
+    ` : canRespond ? `
+      <!-- Responder a contraoferta del transporte -->
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">
+        El transportista contraofertó ${fmt$(lastOffer.amount)}. ¿Cómo respondés?
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <button class="btn btn-primary" style="flex:1;font-size:13px"
+          onclick="respondOffer('accept')">✓ Aceptar ${fmt$(lastOffer.amount)}</button>
+        <button class="btn btn-ghost" style="flex:1;font-size:13px;color:var(--red,#D85A30)"
+          onclick="respondOffer('reject')">✕ Rechazar</button>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin:10px 0 6px">O hacé una nueva contraoferta:</div>
+      <input id="negCounterAmount" type="number" step="0.01" placeholder="Nuevo monto"
+        style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);
+               border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box;margin-bottom:8px">
+      <textarea id="negCounterNote" placeholder="Nota (opcional)..."
+        style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);
+               border-radius:8px;color:var(--white);font-size:13px;resize:vertical;min-height:50px;
+               box-sizing:border-box;margin-bottom:10px"></textarea>
+      <div id="negError" style="color:var(--red,#D85A30);font-size:13px;display:none;margin-bottom:8px"></div>
+      <button class="btn btn-ghost" style="width:100%" onclick="respondOffer('counter')">Enviar contraoferta</button>
+    ` : `
+      <div style="text-align:center;padding:16px;color:var(--muted);font-size:13px">
+        ⏳ Esperando respuesta del transportista...
+      </div>
+    `}
+  `;
+}
+
+async function submitSuggestPrice() {
+  const amount = parseFloat(document.getElementById('negAmount')?.value);
+  const note   = document.getElementById('negNote')?.value.trim() || null;
+  const errEl  = document.getElementById('negError');
+
+  if (!amount || amount <= 0) {
+    errEl.textContent = 'Ingresá un monto válido'; errEl.style.display = 'block'; return;
+  }
+  errEl.style.display = 'none';
+
+  if (!useRealData) {
+    negotiationData.negotiation_status = 'suggested';
+    negotiationData.suggested_price = amount;
+    negotiationData.offers.push({
+      id:'o'+Date.now(), offered_by:'warehouse', user_name:'Carlos Rodriguez',
+      amount, note, status:'pending', created_at:new Date().toISOString(),
+    });
+    renderNegotiationPanel();
+    showToast('Precio sugerido enviado', 'success');
+    return;
+  }
+
+  try {
+    negotiationData = await apiPost(`/warehouse/routes/${negotiationRouteId}/suggest-price`, { amount, note });
+    renderNegotiationPanel();
+    showToast('Precio sugerido enviado', 'success');
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; }
+}
+
+async function respondOffer(action) {
+  const errEl = document.getElementById('negError');
+  let amount = null, note = null;
+
+  if (action === 'counter') {
+    amount = parseFloat(document.getElementById('negCounterAmount')?.value);
+    note   = document.getElementById('negCounterNote')?.value.trim() || null;
+    if (!amount || amount <= 0) {
+      errEl.textContent = 'Ingresá un monto válido para la contraoferta'; errEl.style.display = 'block'; return;
+    }
+  }
+  if (errEl) errEl.style.display = 'none';
+
+  if (!useRealData) {
+    const lastOffer = [...negotiationData.offers].reverse().find(o => o.status === 'pending');
+    if (action === 'accept') {
+      if (lastOffer) lastOffer.status = 'accepted';
+      negotiationData.negotiation_status = 'accepted';
+      negotiationData.current_price = lastOffer.amount;
+    } else if (action === 'counter') {
+      if (lastOffer) lastOffer.status = 'superseded';
+      negotiationData.offers.push({
+        id:'o'+Date.now(), offered_by:'warehouse', user_name:'Carlos Rodriguez',
+        amount, note, status:'pending', created_at:new Date().toISOString(),
+      });
+      negotiationData.negotiation_status = 'countered';
+      negotiationData.suggested_price = amount;
+    } else if (action === 'reject') {
+      if (lastOffer) lastOffer.status = 'rejected';
+      negotiationData.negotiation_status = 'none';
+    }
+    renderNegotiationPanel();
+    showToast('Respuesta enviada', 'success');
+    return;
+  }
+
+  try {
+    negotiationData = await apiPost(`/warehouse/routes/${negotiationRouteId}/respond-offer`, { action, amount, note });
+    renderNegotiationPanel();
+    showToast('Respuesta enviada', 'success');
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; }
+}
+
 // ── Auth flow ────────────────────────────────────────────────────────────
 // El login en sí ocurre en login.html — este portal solo consume el token
 // guardado en sessionStorage (ver tryAutoLogin más abajo).
@@ -4922,6 +6971,10 @@ async function loadRealData() {
     REAL_BILLING       = await apiGet('/warehouse/billing');
     REAL_SERVICE_TYPES = await apiGet('/service-types?habilitado=true');
     REAL_VEHICLE_TYPES = await apiGet('/vehicle-types?habilitado=true');
+
+    // Límite de carga de CSV configurado para esta compañía (o el default global)
+    if (REAL_DASHBOARD?.max_csv_rows)         MAX_CSV_ROWS = REAL_DASHBOARD.max_csv_rows;
+    if (REAL_DASHBOARD?.max_csv_file_size_mb) MAX_CSV_FILE_SIZE_MB = REAL_DASHBOARD.max_csv_file_size_mb;
   } catch (e) {
     console.error('Error cargando datos reales:', e);
     useRealData = false;
@@ -4969,6 +7022,7 @@ function mapRealRoute(r) {
     client: r.company_name || 'Cliente corporativo',
     mode: r.service_mode === 'mensajeria' ? 'Mensajería' : r.service_mode === 'logistica' ? 'Logística' : r.service_mode === 'paqueteria' ? 'Paquetería' : 'Empleados',
     status: r.status === 'in_progress' ? 'in_progress' : r.status === 'completed' ? 'completed' : r.status === 'published' || r.status === 'assigned' ? 'scheduled' : r.status,
+    negotiation_status: r.negotiation_status || 'none',
     date: r.scheduled_date ? new Date(r.scheduled_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) : '—',
     time: r.scheduled_start && r.scheduled_end
       ? `${new Date(r.scheduled_start).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})} – ${new Date(r.scheduled_end).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}`
@@ -4987,12 +7041,14 @@ function mapRealRoute(r) {
       special_instructions: r.driver_notes || '',
     } : null,
     stops: (r.stops || []).map(s => ({
-      order: s.sequence_order, company: s.company_name || '', address: s.address || '',
+      id: s.id, order: s.sequence_order, company: s.company_name || '', address: s.address || '', zip: s.zip_code || '',
+      lat: s.lat, lng: s.lng,
       eta: s.eta_scheduled ? new Date(s.eta_scheduled).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}) : '',
       status: s.status, code: s.items?.[0]?.package_code || '', pod: s.pod_required,
       packages: s.packages_count, weight_lbs: s.weight_lbs, volume_ft3: s.volume_ft3,
       barcode: s.items?.[0]?.barcode || '', qr_code: s.items?.[0]?.qr_code || '',
       dock: s.dock_number || '', wait_min: s.wait_minutes_estimated || 0, notes: s.access_notes || '',
+      items: s.items || [],
     })),
   };
 }
@@ -5017,6 +7073,8 @@ function mapBatchRoute(r) {
     scheduled_end:         r.scheduled_end  || null,
     total_weight_lbs:      r.total_weight_lbs || 0,
     total_volume_ft3:      r.total_volume_ft3 || 0,
+    negotiation_status:    r.negotiation_status || 'none',
+    suggested_price:       r.suggested_price || null,
     date,
     time:         start && end ? `${start} – ${end}` : '—',
     stops_total:  r.total_stops      || 0,
