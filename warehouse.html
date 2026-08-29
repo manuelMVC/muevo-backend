@@ -465,7 +465,7 @@
   .prog-wrap { margin-bottom: 16px; }
   .prog-label { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 11px; color: var(--muted); }
   .prog-track { height: 5px; background: var(--card2); border-radius: 3px; overflow: hidden; }
-  .prog-fill  { height: 100%; border-radius: 3px; background: var(--orange); }
+  .prog-fill  { height: 100%; border-radius: 3px; background: var(--orange); transition: width .25s ease; }
   .prog-fill.green { background: var(--green); }
 
   /* ── Cost row ─────────────────────────────────────────────────────────── */
@@ -515,6 +515,7 @@
   .alert.warn { background: var(--yellow-dim); border: 1px solid rgba(241,196,15,.25); color: var(--yellow); }
   .alert.info { background: var(--blue-dim);   border: 1px solid var(--blue-bdr);     color: var(--blue); }
   .alert.ok   { background: var(--green-dim);  border: 1px solid var(--green-bdr);    color: var(--green); }
+  .alert.danger { background: var(--red-dim);  border: 1px solid rgba(231,76,60,.25); color: var(--red); }
 
   /* ── Tabs ─────────────────────────────────────────────────────────────── */
   .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
@@ -1348,7 +1349,7 @@ function renderDashboard() {
                     ` : ''}
                     ${['draft','approved'].includes(b.status) ? `
                       <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;color:var(--red,#D85A30)"
-                        onclick="event.stopPropagation();changeBatchStatus('${b.id}','cancelled')">✕ Cancelar</button>
+                        onclick="event.stopPropagation();changeBatchStatus('${b.id}','cancelled')">${b.status==='approved' ? '✕ Anular' : '✕ Cancelar'}</button>
                     ` : `
                       <span style="font-size:11px;color:var(--orange)">Ver detalle →</span>
                     `}
@@ -1705,10 +1706,21 @@ function openBatch(batchId) {
       ` : ''}
       ${['draft','approved'].includes(batch.status) ? `
         <button class="btn btn-ghost" style="font-size:13px;padding:6px 14px;color:var(--red,#D85A30)"
-          onclick="changeBatchStatus('${batch.id}','cancelled')">✕ Cancelar lote</button>
+          onclick="changeBatchStatus('${batch.id}','cancelled')">${batch.status==='approved' ? '✕ Anular lote' : '✕ Cancelar lote'}</button>
       ` : ''}
       <button class="btn btn-ghost" onclick="showToast('Exportando lote...','success')" style="font-size:12px">↓ Exportar</button>
     </div>
+
+    ${batch.status === 'cancelled' && batch.cancellation_reason ? `
+      <div class="alert danger">
+        <div class="alert-icon">✕</div>
+        <div class="alert-body">
+          <div class="alert-title">Lote anulado</div>
+          <strong>Motivo:</strong> ${batch.cancellation_reason}
+          ${batch.cancelled_at ? ` · ${batch.cancelled_at.split('T')[0]}` : ''}
+        </div>
+      </div>
+    ` : ''}
 
     <!-- Sub-header: tipo servicio / tipo vehículo / fecha estimada -->
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;padding:10px 14px;background:var(--card2);border-radius:8px;font-size:12px">
@@ -2420,6 +2432,11 @@ function batchStep1() {
         `}
         </div>
 
+        <div class="prog-wrap" id="planProgressWrap" style="display:none;margin-top:12px;margin-bottom:0">
+          <div class="prog-label"><span>Generando agrupamiento...</span><span id="planProgressPct">5%</span></div>
+          <div class="prog-track"><div class="prog-fill" id="planProgressFill" style="width:0%"></div></div>
+        </div>
+
         <div style="display:flex;gap:8px;margin-top:12px">
           <button class="btn btn-ghost" onclick="batchStep=0;document.getElementById('content').innerHTML=renderBatchPlanner()">← Atrás</button>
           <button class="btn btn-primary" style="flex:1" id="generatePlanBtn" onclick="batchRunPlan()"
@@ -2856,13 +2873,19 @@ function downloadCsvTemplate() {
 // ── Paso 2: Vista previa del agrupamiento ────────────────────────────────────
 async function batchRunPlan() {
   if (batchStops.length < 2) return;
-  showToast('Calculando agrupamiento óptimo...', 'info');
+
+  const btn = document.getElementById('generatePlanBtn');
+  if (btn) btn.disabled = true;
+  startFakeProgress('planProgressWrap', 'planProgressFill', estimateProgressMs(batchStops.length), 'planProgressPct');
 
   if (!useRealData) {
     // Simulación demo
     batchPlan = simulatePlan(batchStops, batchConfig);
-    batchStep = 2;
-    document.getElementById('content').innerHTML = renderBatchPlanner();
+    finishFakeProgress('planProgressWrap', 'planProgressFill', 'planProgressPct');
+    setTimeout(() => {
+      batchStep = 2;
+      document.getElementById('content').innerHTML = renderBatchPlanner();
+    }, 350);
     return;
   }
 
@@ -2876,9 +2899,14 @@ async function batchRunPlan() {
       paradas:             batchStops,
     });
     batchPlan = res;
-    batchStep = 2;
-    document.getElementById('content').innerHTML = renderBatchPlanner();
+    finishFakeProgress('planProgressWrap', 'planProgressFill', 'planProgressPct');
+    setTimeout(() => {
+      batchStep = 2;
+      document.getElementById('content').innerHTML = renderBatchPlanner();
+    }, 350);
   } catch (e) {
+    resetFakeProgress('planProgressWrap', 'planProgressFill');
+    if (btn) btn.disabled = false;
     showToast('Error al calcular: ' + e.message, 'warn');
   }
 }
@@ -3054,6 +3082,11 @@ function batchStep3() {
 
         <div id="confirmError" style="color:var(--red,#D85A30);font-size:13px;margin-bottom:8px;display:none"></div>
 
+        <div class="prog-wrap" id="confirmProgressWrap" style="display:none">
+          <div class="prog-label"><span>Generando lote${totalRutas===1?'':'s'}...</span><span id="confirmProgressPct">5%</span></div>
+          <div class="prog-track"><div class="prog-fill" id="confirmProgressFill" style="width:0%"></div></div>
+        </div>
+
         <div style="display:flex;gap:8px">
           <button class="btn btn-ghost" onclick="batchStep=2;document.getElementById('content').innerHTML=renderBatchPlanner()">← Volver</button>
           <button class="btn btn-primary" style="flex:1" id="btnConfirm" onclick="batchConfirm()">
@@ -3069,8 +3102,13 @@ async function batchConfirm() {
   const btn = document.getElementById('btnConfirm');
   btn.disabled = true;
   btn.textContent = 'Creando...';
+  startFakeProgress(
+    'confirmProgressWrap', 'confirmProgressFill',
+    estimateProgressMs(batchPlan?.total_paradas), 'confirmProgressPct'
+  );
 
   if (!useRealData) {
+    finishFakeProgress('confirmProgressWrap', 'confirmProgressFill', 'confirmProgressPct');
     showToast(`Lote "${batchConfig.nombre}" creado en demo (${batchPlan.total_rutas} rutas)`, 'success');
     batchStep = 0; batchStops = []; batchPlan = null; batchConfig = { nombre:'', fecha:'', vehicle_type:'furgoneta', service_type:'mensajeria', client_id:'', peso_max:1800, vol_max:200, max_stops:10 };
     document.getElementById('content').innerHTML = renderBatchPlanner();
@@ -3088,12 +3126,14 @@ async function batchConfirm() {
       scheduled_end:   document.getElementById('bSchedEnd').value,
       grupos:          batchPlan.rutas,
     });
+    finishFakeProgress('confirmProgressWrap', 'confirmProgressFill', 'confirmProgressPct');
     showToast(`Lote creado: ${res.routes} rutas en la DB`, 'success');
     batchStep = 0; batchStops = []; batchPlan = null;
     batchConfig = { nombre:'', fecha:'', vehicle_type:'furgoneta', service_type:'mensajeria', client_id:'', peso_max:1800, vol_max:200, max_stops:10 };
     await loadRealData();
     showView('rutas');
   } catch (e) {
+    resetFakeProgress('confirmProgressWrap', 'confirmProgressFill');
     document.getElementById('confirmError').textContent = 'Error: ' + e.message;
     document.getElementById('confirmError').style.display = 'block';
     btn.disabled = false;
@@ -3742,7 +3782,7 @@ function openStopModal(routeId, stopOrder) {
     </div>
     <div class="table-wrap" style="margin-bottom:0">
       <table>
-        <thead><tr><th>Código</th><th>Descripción</th><th>Cant.</th><th>Peso</th><th>Valor</th></tr></thead>
+        <thead><tr><th>Código</th><th>Descripción</th><th>Cant.</th><th>Peso</th></tr></thead>
         <tbody>
           ${s.items.map(it => `
             <tr>
@@ -3750,7 +3790,6 @@ function openStopModal(routeId, stopOrder) {
               <td>${it.description || '—'}</td>
               <td>${it.quantity}</td>
               <td>${it.weight_lbs} lbs</td>
-              <td>$${(it.declared_value||0).toLocaleString()}</td>
             </tr>
           `).join('')}
         </tbody>
@@ -3794,6 +3833,61 @@ function showToast(msg, type='info') {
   el.innerHTML = `<span>${icons[type]||'ℹ️'}</span><span>${msg}</span>`;
   el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ── Barra de progreso simulada ───────────────────────────────────────────────
+// El servidor no reporta progreso real (es un único request/response), así que
+// se anima hasta un tope (92%) durante una duración estimada según la cantidad
+// de paradas, y se completa al 100% recién cuando la respuesta llega — nunca
+// promete un % que no se puede sostener si el servidor tarda más de lo esperado.
+let _fakeProgressTimers = {};
+
+function estimateProgressMs(stopCount) {
+  return Math.min(Math.max((stopCount || 1) * 15, 600), 8000);
+}
+
+function startFakeProgress(wrapId, fillId, estimatedMs, pctLabelId) {
+  const wrap = document.getElementById(wrapId);
+  const fill = document.getElementById(fillId);
+  const label = pctLabelId ? document.getElementById(pctLabelId) : null;
+  if (!wrap || !fill) return;
+  wrap.style.display = 'block';
+
+  clearInterval(_fakeProgressTimers[fillId]);
+  let pct = 5;
+  fill.style.width = pct + '%';
+  if (label) label.textContent = Math.round(pct) + '%';
+  const stepMs = 120;
+  const steps = Math.max(estimatedMs / stepMs, 4);
+  const increment = 87 / steps; // deja el resto para el salto final a 100%
+  _fakeProgressTimers[fillId] = setInterval(() => {
+    pct = Math.min(pct + increment, 92);
+    fill.style.width = pct + '%';
+    if (label) label.textContent = Math.round(pct) + '%';
+  }, stepMs);
+}
+
+function finishFakeProgress(wrapId, fillId, pctLabelId) {
+  clearInterval(_fakeProgressTimers[fillId]);
+  delete _fakeProgressTimers[fillId];
+  const fill = document.getElementById(fillId);
+  const label = pctLabelId ? document.getElementById(pctLabelId) : null;
+  if (fill) fill.style.width = '100%';
+  if (label) label.textContent = '100%';
+  setTimeout(() => {
+    const wrap = document.getElementById(wrapId);
+    if (wrap) wrap.style.display = 'none';
+    if (fill) fill.style.width = '0%';
+  }, 350);
+}
+
+function resetFakeProgress(wrapId, fillId) {
+  clearInterval(_fakeProgressTimers[fillId]);
+  delete _fakeProgressTimers[fillId];
+  const wrap = document.getElementById(wrapId);
+  const fill = document.getElementById(fillId);
+  if (wrap) wrap.style.display = 'none';
+  if (fill) fill.style.width = '0%';
 }
 
 
@@ -4074,32 +4168,93 @@ async function changeBatchStatus(batchId, newStatus) {
   const batch = getActiveBatches().find(b => b.id === batchId);
   if (!batch) return;
 
+  // Anular un lote ya aprobado es más serio que cancelar un borrador — exige motivo
+  if (newStatus === 'cancelled' && batch.status === 'approved') {
+    openAnularLoteModal(batchId, batch.numero);
+    return;
+  }
+
   const labels = { approved: 'aprobar', cancelled: 'cancelar' };
   const label  = labels[newStatus] || newStatus;
 
   if (!confirm(`¿Seguro que querés ${label} el lote ${batch.numero}?`)) return;
 
+  await applyBatchStatusChange(batchId, newStatus, null);
+}
+
+function openAnularLoteModal(batchId, numero) {
+  document.getElementById('stopModalTitle').textContent = '✕ Anular lote';
+  document.getElementById('stopModalSub').textContent   = numero || '';
+  document.getElementById('stopModalBody').innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="font-size:13px;color:var(--muted)">
+        Este lote ya fue aprobado y ofertado a transporte — indicá el motivo de la anulación.
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Motivo de la anulación *</label>
+        <textarea id="anularReason" placeholder="Ej: el cliente canceló el pedido, cambio de fecha, error en la carga..."
+          style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);
+                 border-radius:8px;color:var(--white);font-size:14px;resize:vertical;min-height:80px;box-sizing:border-box"></textarea>
+      </div>
+      <div id="anularError" style="color:var(--red,#D85A30);font-size:13px;display:none"></div>
+      <button class="btn btn-primary" style="width:100%;background:var(--red,#D85A30);border-color:var(--red,#D85A30)"
+        id="anularSubmitBtn" onclick="submitAnularLote('${batchId}')">✕ Anular lote</button>
+    </div>
+  `;
+  document.getElementById('stopModalOverlay').style.display = 'block';
+  document.getElementById('stopModal').style.display = 'block';
+}
+
+async function submitAnularLote(batchId) {
+  const reason = document.getElementById('anularReason')?.value.trim();
+  const errEl  = document.getElementById('anularError');
+  if (!reason) {
+    errEl.textContent = 'El motivo de la anulación es obligatorio';
+    errEl.style.display = 'block';
+    return;
+  }
+  errEl.style.display = 'none';
+
+  const btn = document.getElementById('anularSubmitBtn');
+  btn.disabled = true; btn.textContent = 'Anulando...';
+
+  const ok = await applyBatchStatusChange(batchId, 'cancelled', reason);
+  if (ok) {
+    closeStopModal();
+  } else {
+    btn.disabled = false; btn.textContent = '✕ Anular lote';
+  }
+}
+
+async function applyBatchStatusChange(batchId, newStatus, reason) {
+  const batch = getActiveBatches().find(b => b.id === batchId);
+  if (!batch) return false;
+
   if (!useRealData) {
     batch.status = newStatus;
     batch.fecha_estado = new Date().toISOString().split('T')[0];
+    if (reason) { batch.cancellation_reason = reason; batch.cancelled_at = new Date().toISOString(); }
     showToast(
-      newStatus === 'approved' ? `Lote ${batch.numero} aprobado` : `Lote ${batch.numero} cancelado`,
+      newStatus === 'approved' ? `Lote ${batch.numero} aprobado`
+        : (reason ? `Lote ${batch.numero} anulado` : `Lote ${batch.numero} cancelado`),
       newStatus === 'cancelled' ? 'info' : 'success'
     );
     document.getElementById('content').innerHTML = renderDashboard();
-    return;
+    return true;
   }
 
   try {
-    await apiPost(`/warehouse/batches/${batchId}/status`, { status: newStatus });
+    await apiPost(`/warehouse/batches/${batchId}/status`, { status: newStatus, reason: reason || null });
     showToast(
-      newStatus === 'approved' ? `Lote aprobado` : `Lote cancelado`,
+      newStatus === 'approved' ? `Lote aprobado` : (reason ? `Lote anulado` : `Lote cancelado`),
       newStatus === 'cancelled' ? 'info' : 'success'
     );
     await loadRealData();
     document.getElementById('content').innerHTML = renderDashboard();
+    return true;
   } catch (e) {
     showToast('Error: ' + e.message, 'warn');
+    return false;
   }
 }
 

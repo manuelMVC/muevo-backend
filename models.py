@@ -1597,6 +1597,10 @@ class RouteBatch(Base):
     notes         = Column(Text, nullable=True)
     offered_at    = Column(DateTime(timezone=True), nullable=True)
     expires_at    = Column(DateTime(timezone=True), nullable=True)
+
+    # Anulación — obligatoria al anular un lote ya aprobado (ver change_batch_status en main.py)
+    cancellation_reason = Column(Text, nullable=True)
+    cancelled_at         = Column(DateTime(timezone=True), nullable=True)
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
     updated_at    = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

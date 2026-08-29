@@ -1213,6 +1213,7 @@ async def create_service_type(
     db:           Session = Depends(get_db),
 ):
     """Crea un nuevo tipo de servicio (solo super-admin del holding)."""
+    require_permission(current_user, db, "config", "create")
     existing = db.execute(
         select(ServiceType).where(ServiceType.code == data.code)
     ).scalar_one_or_none()
@@ -1244,6 +1245,7 @@ async def update_service_type(
     db:              Session = Depends(get_db),
 ):
     """Actualiza un tipo de servicio existente."""
+    require_permission(current_user, db, "config", "edit")
     st = db.get(ServiceType, uuid.UUID(service_type_id))
     if not st:
         raise HTTPException(status_code=404, detail="Tipo de servicio no encontrado")
@@ -1469,6 +1471,7 @@ async def create_batch_client(
 ):
     """Registra un nuevo contacto/cliente para la compañía activa."""
     company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "clients", "create", company.id)
     client = BatchClient(
         id=uuid.uuid4(), company_id=company.id,
         name=data.name, email=data.email, phone=data.phone,
@@ -1494,6 +1497,7 @@ async def update_batch_client(
 ):
     """Actualiza datos o preferencias de notificación de un cliente."""
     company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "clients", "edit", company.id)
     client  = db.get(BatchClient, uuid.UUID(client_id))
     if not client or client.company_id != company.id:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
@@ -1525,6 +1529,7 @@ async def delete_batch_client(
 ):
     """Elimina un cliente (solo si no tiene lotes activos asociados)."""
     company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "clients", "delete", company.id)
     client  = db.get(BatchClient, uuid.UUID(client_id))
     if not client or client.company_id != company.id:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
@@ -1548,6 +1553,7 @@ async def import_clients_csv(
     Si el email ya existe para la compañía, actualiza en vez de duplicar.
     """
     company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "clients", "create", company.id)
     rows    = data.get("rows", [])
     created = 0
     updated = 0
@@ -1677,6 +1683,56 @@ def get_current_holding_user(current_user: User, db: Session) -> HoldingUser:
 def require_super_admin(hu: HoldingUser):
     if not hu.is_super_admin:
         raise HTTPException(status_code=403, detail="Se requiere rol de super-admin del holding")
+
+
+def require_permission(
+    current_user: User, db: Session, module: str, action: str,
+    company_id: Optional[uuid.UUID] = None,
+) -> None:
+    """
+    Verifica que el usuario tenga el permiso '{module}.{action}' a través de
+    algún perfil que tenga asignado (ver HoldingUserProfile / ProfilePermission).
+
+    - super_admin del holding siempre pasa.
+    - Un HoldingUserProfile con company_id=NULL aplica a todo el holding;
+      con company_id=X aplica solo a esa compañía.
+    - Si el usuario no tiene ningún HoldingUserProfile asignado (todavía no
+      migrado al nuevo sistema), se lo deja pasar — el resto del endpoint
+      sigue protegido por los chequeos de acceso existentes
+      (get_current_company / HoldingUserCompany / CompanyAdmin). Esto evita
+      romper cuentas que aún no tienen un perfil formal asignado.
+    """
+    hu = get_current_holding_user(current_user, db)
+    if hu.is_super_admin:
+        return
+
+    assignments = db.execute(
+        select(HoldingUserProfile).where(HoldingUserProfile.holding_user_id == hu.id)
+    ).scalars().all()
+    if not assignments:
+        return  # sin perfil asignado todavía — no bloquear, ver docstring
+
+    code = f"{module}.{action}"
+    for a in assignments:
+        if company_id is None:
+            # Recurso global (ej. catálogos de config) — solo cuenta una
+            # asignación de todo el holding, no una acotada a una compañía.
+            if a.company_id is not None:
+                continue
+        else:
+            # Recurso de una compañía — cuenta una asignación holding-wide
+            # (company_id NULL) o una específica de esa compañía.
+            if a.company_id is not None and a.company_id != company_id:
+                continue
+        exists = db.execute(
+            select(Permission.id)
+            .join(ProfilePermission, ProfilePermission.permission_id == Permission.id)
+            .where(ProfilePermission.profile_id == a.profile_id, Permission.code == code)
+        ).first()
+        if exists:
+            return
+
+    raise HTTPException(status_code=403, detail=f"Sin permiso '{code}' para esta acción")
 
 
 def resolve_active_company(request_company_id: str, hu: HoldingUser, db: Session) -> tuple:
@@ -2471,6 +2527,7 @@ async def scan_item(
     - Si viene batch_id → flujo B: marca status=added_to_batch
     """
     company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "inventory", "create", company.id)
     parsed  = parse_scanned_code(data.raw_code)
 
     # ── Buscar duplicado pendiente ────────────────────────────────────────────
@@ -2558,6 +2615,7 @@ async def update_inventory_item(
 ):
     """Edita los datos de un ítem escaneado (completar info faltante)."""
     company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "inventory", "edit", company.id)
     item    = db.get(WarehouseInventoryItem, uuid.UUID(item_id))
     if not item or item.company_id != company.id:
         raise HTTPException(status_code=404, detail="Ítem no encontrado")
@@ -2593,6 +2651,7 @@ async def cancel_inventory_item(
 ):
     """Cancela (soft delete) un ítem del inventario."""
     company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "inventory", "delete", company.id)
     item    = db.get(WarehouseInventoryItem, uuid.UUID(item_id))
     if not item or item.company_id != company.id:
         raise HTTPException(status_code=404, detail="Ítem no encontrado")
@@ -2613,6 +2672,7 @@ async def inventory_to_batch_stops(
     las inyecte en batchStops y continúe el flujo normal del batch planner.
     """
     company    = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "inventory", "edit", company.id)
     item_ids   = data.get("item_ids", [])  # lista de UUIDs a convertir, vacío = todos pending
 
     query = select(WarehouseInventoryItem).where(
@@ -2764,6 +2824,7 @@ async def create_reception(
 ):
     """Crea una recepción esperada (manifiesto) — todavía no implica que algo llegó físicamente."""
     company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "receptions", "create", company.id)
 
     try:
         source_type = ReceptionSourceType(data.source_type)
@@ -2857,6 +2918,7 @@ async def update_reception(
     x_company_id: Optional[str] = Header(None),
 ):
     company   = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "receptions", "edit", company.id)
     reception = _get_reception_or_404(db, reception_id, company.id)
     if reception.status == ReceptionStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="La recepción ya está cerrada, no se puede editar")
@@ -2880,6 +2942,7 @@ async def add_reception_item(
     x_company_id: Optional[str] = Header(None),
 ):
     company   = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "receptions", "create", company.id)
     reception = _get_reception_or_404(db, reception_id, company.id)
     if reception.status == ReceptionStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="La recepción ya está cerrada, no se pueden agregar ítems")
@@ -2909,6 +2972,7 @@ async def delete_reception_item(
     x_company_id: Optional[str] = Header(None),
 ):
     company   = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "receptions", "delete", company.id)
     reception = _get_reception_or_404(db, reception_id, company.id)
     if reception.status == ReceptionStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="La recepción ya está cerrada")
@@ -2940,6 +3004,7 @@ async def check_in_reception_item(
       inventario disponible (no se puede despachar mercancía dañada).
     """
     company   = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "receptions", "edit", company.id)
     reception = _get_reception_or_404(db, reception_id, company.id)
     if reception.status == ReceptionStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="La recepción ya está cerrada")
@@ -3003,6 +3068,7 @@ async def complete_reception(
 ):
     """Cierra la recepción: cualquier ítem que siga 'pending' pasa a 'missing'."""
     company   = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "receptions", "approve", company.id)
     reception = _get_reception_or_404(db, reception_id, company.id)
     if reception.status == ReceptionStatus.COMPLETED:
         raise HTTPException(status_code=400, detail="La recepción ya está cerrada")
@@ -3091,6 +3157,7 @@ async def create_message_template(
     db:           Session = Depends(get_db),
 ):
     """Crea un mensaje estándar en el catálogo."""
+    require_permission(current_user, db, "messages", "create")
     existing = db.execute(
         select(MessageTemplate).where(MessageTemplate.code == data.code)
     ).scalar_one_or_none()
@@ -3114,6 +3181,7 @@ async def update_message_template(
     db:           Session = Depends(get_db),
 ):
     """Actualiza un mensaje del catálogo (el código no se puede cambiar)."""
+    require_permission(current_user, db, "messages", "edit")
     t = db.get(MessageTemplate, uuid.UUID(message_id))
     if not t:
         raise HTTPException(status_code=404, detail="Mensaje no encontrado")
@@ -3270,6 +3338,7 @@ async def suggest_price(
 ):
     """El warehouse sugiere el precio inicial de la ruta, abriendo la negociación."""
     company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "pricing", "create", company.id)
     route   = db.get(RouteHeader, uuid.UUID(route_id))
     if not route or route.company_id != company.id:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
@@ -3368,6 +3437,11 @@ async def warehouse_respond_offer(
     - reject: rechaza y cierra la negociación sin acuerdo
     """
     company = get_current_company(current_user, db, x_company_id)
+    PRICING_ACTION_PERMISSION = {"accept": "approve", "counter": "edit", "reject": "cancel"}
+    require_permission(
+        current_user, db, "pricing",
+        PRICING_ACTION_PERMISSION.get(data.action, "edit"), company.id,
+    )
     route   = db.get(RouteHeader, uuid.UUID(route_id))
     if not route or route.company_id != company.id:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
@@ -3588,6 +3662,8 @@ async def warehouse_list_batches(
             "vehicle_type":     b.vehicle_type,
             "service_type":     b.service_type,
             "routes":           routes,
+            "cancellation_reason": b.cancellation_reason,
+            "cancelled_at":        b.cancelled_at.isoformat() if b.cancelled_at else None,
         })
 
     return result
@@ -4238,6 +4314,7 @@ async def create_incident_type(
     db:           Session = Depends(get_db),
 ):
     """Crea un nuevo tipo de incidencia en el catálogo."""
+    require_permission(current_user, db, "incidents", "create")
     existing = db.execute(
         select(IncidentType).where(IncidentType.code == data.code)
     ).scalar_one_or_none()
@@ -4266,6 +4343,7 @@ async def update_incident_type(
     db:           Session = Depends(get_db),
 ):
     """Actualiza un tipo de incidencia existente."""
+    require_permission(current_user, db, "incidents", "edit")
     t = db.get(IncidentType, uuid.UUID(type_id))
     if not t:
         raise HTTPException(status_code=404, detail="Tipo de incidencia no encontrado")
@@ -4324,6 +4402,7 @@ async def warehouse_report_incident(
 ):
     """Reporta una incidencia desde el portal warehouse."""
     company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "incidents", "create", company.id)
 
     # Validar que la ruta pertenece a la compañía
     if data.route_header_id:
@@ -4368,6 +4447,7 @@ async def warehouse_update_incident_status(
 ):
     """Actualiza el estado de una incidencia desde el portal warehouse."""
     company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "incidents", "edit", company.id)
     incident = db.get(Incident, uuid.UUID(incident_id))
     if not incident:
         raise HTTPException(status_code=404, detail="Incidencia no encontrada")
@@ -4567,6 +4647,7 @@ async def respond_batch_item(
 
 class BatchStatusChange(BaseModel):
     status: str  # "approved" | "cancelled"
+    reason: Optional[str] = None  # obligatorio al anular un lote aprobado
 
 
 @app.post("/api/v1/warehouse/batches/{batch_id}/status")
@@ -4607,6 +4688,12 @@ async def change_batch_status(
     if not has_access:
         raise HTTPException(status_code=403, detail="Sin acceso a este lote")
 
+    BATCH_STATUS_PERMISSION = {"approved": "approve", "cancelled": "cancel"}
+    require_permission(
+        current_user, db, "batches",
+        BATCH_STATUS_PERMISSION.get(data.status, "edit"), batch.company_id,
+    )
+
     # Validar transición manual permitida
     MANUAL_TRANSITIONS = {
         "draft":    ["approved", "cancelled"],
@@ -4621,6 +4708,35 @@ async def change_batch_status(
             detail=f"Transición no permitida: {current_status} → {data.status}. "
                    f"Transiciones manuales permitidas desde '{current_status}': {allowed}"
         )
+
+    # Para aprobar el lote, todas sus rutas necesitan un precio ya fijado
+    # (gross_pay != 0) — evita ofertar a transporte una ruta sin negociar.
+    if data.status == "approved":
+        route_ids = db.execute(
+            select(RouteBatchItem.route_header_id).where(RouteBatchItem.batch_id == batch.id)
+        ).scalars().all()
+        routes_without_price = db.execute(
+            select(RouteHeader.route_number).where(
+                RouteHeader.id.in_(route_ids),
+                RouteHeader.gross_pay == 0,
+            )
+        ).scalars().all()
+        if routes_without_price:
+            raise HTTPException(
+                status_code=400,
+                detail="No se puede aprobar el lote — hay rutas sin precio fijado (cerrá la "
+                       "negociación primero): " + ", ".join(routes_without_price)
+            )
+
+    # Anular un lote ya aprobado es más serio que cancelar un borrador — exige motivo
+    if data.status == "cancelled" and current_status == "approved":
+        if not data.reason or not data.reason.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Para anular un lote aprobado hay que indicar el motivo de la anulación"
+            )
+        batch.cancellation_reason = data.reason.strip()
+        batch.cancelled_at        = datetime.utcnow()
 
     old_status   = batch.status.value if hasattr(batch.status, 'value') else batch.status
     batch.status = BatchStatus(data.status)
@@ -4648,14 +4764,16 @@ async def change_batch_status(
             f"<strong>Estado anterior:</strong> {old_status}",
             f"<strong>Estado actual:</strong> {data.status}",
             f"<strong>Fecha:</strong> {datetime.utcnow().strftime('%d/%m/%Y %H:%M')} UTC",
-        ],
+        ] + ([f"<strong>Motivo de la anulación:</strong> {batch.cancellation_reason}"] if batch.cancellation_reason else []),
         db=db,
     )
 
     return {
-        "status":     "updated",
-        "batch_id":   batch_id,
-        "new_status": data.status,
+        "status":              "updated",
+        "batch_id":            batch_id,
+        "new_status":          data.status,
+        "cancellation_reason": batch.cancellation_reason,
+        "cancelled_at":        batch.cancelled_at.isoformat() if batch.cancelled_at else None,
     }
 
 
