@@ -35,7 +35,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 
 import jwt
-from fastapi import Depends, FastAPI, HTTPException, status, WebSocket, WebSocketDisconnect, Header
+from fastapi import Depends, FastAPI, HTTPException, status, WebSocket, WebSocketDisconnect, Header, Request
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -76,6 +76,8 @@ from models import (
     RoutePriceOffer, NegotiationStatus, OfferSource, OfferStatus,
     # Company & Warehouse management
     Warehouse,
+    # Auditoría
+    AuditLog, AuditAction, current_audit_user_id,
 )
 
 # ─── Config ───────────────────────────────────────────────────────────────────
@@ -197,6 +199,36 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def audit_user_context_middleware(request: Request, call_next):
+    """
+    Decodifica el JWT del header Authorization (si viene) y lo deja en un
+    ContextVar para que el listener before_flush de models.py pueda anotar
+    quién hizo cada cambio de auditoría, sin que cada endpoint tenga que
+    pasarlo explícitamente. Best-effort: un token ausente o inválido no
+    bloquea la request, solo deja el autor de la auditoría en None (el
+    401 real, si corresponde, lo sigue dando get_current_user).
+    """
+    token_value = None
+    auth_header = request.headers.get("authorization")
+    if auth_header and auth_header.lower().startswith("bearer "):
+        raw_token = auth_header[7:]
+        try:
+            payload = jwt.decode(raw_token, SECRET_KEY, algorithms=[ALGORITHM])
+            user_id = payload.get("sub")
+            if user_id:
+                token_value = uuid.UUID(user_id)
+        except Exception:
+            token_value = None
+
+    reset_token = current_audit_user_id.set(token_value)
+    try:
+        return await call_next(request)
+    finally:
+        current_audit_user_id.reset(reset_token)
+
 
 # ─── Schemas Pydantic ─────────────────────────────────────────────────────────
 
@@ -2021,6 +2053,57 @@ def serialize_profile(p: Profile, db: Session) -> dict:
         "permissions": [{"id": str(pm.id), "code": pm.code, "name": pm.name} for pm in perms],
         "created_at": p.created_at.isoformat() if p.created_at else None,
     }
+
+
+def serialize_audit_log(a: AuditLog, db: Session) -> dict:
+    user = db.get(User, a.changed_by_user_id) if a.changed_by_user_id else None
+    return {
+        "id":              str(a.id),
+        "table_name":      a.table_name,
+        "record_id":       a.record_id,
+        "action":          a.action.value if hasattr(a.action, 'value') else a.action,
+        "changed_by":      {"id": str(user.id), "name": user.full_name, "email": user.email} if user else None,
+        "company_id":      str(a.company_id) if a.company_id else None,
+        "changes":         a.changes,
+        "created_at":      a.created_at.isoformat() if a.created_at else None,
+    }
+
+
+@app.get("/api/v1/admin/audit-logs")
+async def list_audit_logs(
+    table_name:         Optional[str] = None,
+    record_id:          Optional[str] = None,
+    changed_by_user_id: Optional[str] = None,
+    date_from:          Optional[str] = None,
+    date_to:            Optional[str] = None,
+    limit:              int = 50,
+    offset:             int = 0,
+    current_user:       User    = Depends(get_current_user),
+    db:                 Session = Depends(get_db),
+):
+    """
+    Historial de auditoría — captura automática (ver listener before_flush
+    en models.py) de cualquier insert/update/delete que pasó por el ORM.
+    Alcance exclusivamente holding-wide: no requiere una company en particular.
+    """
+    require_permission(current_user, db, "audit", "view", company_id=None)
+
+    limit = max(1, min(limit, 200))
+    query = select(AuditLog)
+    if table_name:
+        query = query.where(AuditLog.table_name == table_name)
+    if record_id:
+        query = query.where(AuditLog.record_id == record_id)
+    if changed_by_user_id:
+        query = query.where(AuditLog.changed_by_user_id == uuid.UUID(changed_by_user_id))
+    if date_from:
+        query = query.where(AuditLog.created_at >= datetime.fromisoformat(date_from))
+    if date_to:
+        query = query.where(AuditLog.created_at <= datetime.fromisoformat(date_to))
+
+    query = query.order_by(AuditLog.created_at.desc()).limit(limit).offset(offset)
+    rows = db.execute(query).scalars().all()
+    return [serialize_audit_log(a, db) for a in rows]
 
 
 @app.get("/api/v1/admin/profiles")

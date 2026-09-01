@@ -58,6 +58,7 @@ NEW_MODULES = [
     ("receptions", "Recepción de mercancía",  ["view", "create", "edit", "approve", "delete"]),
     ("inventory",  "Inventario",              ["view", "create", "edit", "delete"]),
     ("messages",   "Mensajes",                ["view", "create", "edit"]),
+    ("audit",      "Auditoría",               ["view"]),
 ]
 
 # ── 2. Qué acciones tiene cada perfil en cada módulo nuevo ───────────────────
@@ -66,7 +67,8 @@ NEW_MODULES = [
 # fuertes, viewer solo view, billing_manager solo lo financiero (pricing).
 PROFILE_GRANTS = {
     "super_admin":     {"incidents": "vced", "clients": "vced", "pricing": "vceax",
-                         "receptions": "vcead", "inventory": "vced", "messages": "vce"},
+                         "receptions": "vcead", "inventory": "vced", "messages": "vce",
+                         "audit": "v"},
     "company_admin":   {"incidents": "vced", "clients": "vced", "pricing": "vceax",
                          "receptions": "vcead", "inventory": "vced", "messages": "vce"},
     "warehouse_admin": {"incidents": "vced", "clients": "vced", "pricing": "vceax",

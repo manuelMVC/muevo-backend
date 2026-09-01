@@ -25,17 +25,20 @@ Correr migraciones:
 from __future__ import annotations
 
 import uuid
+from contextvars import ContextVar
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum as PyEnum
+from typing import Optional
 
 from sqlalchemy import (
     Boolean, Column, DateTime, Float, ForeignKey,
     Integer, Numeric, String, Text, JSON,
-    Enum, UniqueConstraint, CheckConstraint, Index,
+    Enum, UniqueConstraint, CheckConstraint, Index, event,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Session, attributes
 from sqlalchemy.sql import func
 
 Base = declarative_base()
@@ -2049,3 +2052,116 @@ class HoldingUserProfile(Base):
         Index("ix_hup_profile_id",      "profile_id"),
         Index("ix_hup_company_id",      "company_id"),
     )
+
+# ─── AUDITORÍA ──────────────────────────────────────────────────────────────
+# Captura automática de cualquier insert/update/delete que pase por el ORM,
+# vía el listener before_flush al final de este archivo. No requiere que
+# ningún endpoint la invoque explícitamente.
+
+class AuditAction(str, PyEnum):
+    INSERT = "insert"
+    UPDATE = "update"
+    DELETE = "delete"
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id                 = uuid_pk()
+    table_name         = Column(String(100), nullable=False)
+    record_id          = Column(String(100), nullable=False)
+    action             = Column(Enum(AuditAction, values_callable=lambda o: [e.value for e in o]), nullable=False)
+    changed_by_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    company_id         = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True)
+    changes            = Column(JSONB, nullable=True)
+    created_at         = Column(DateTime(timezone=True), server_default=func.now())
+
+    changed_by = relationship("User", foreign_keys=[changed_by_user_id])
+
+    __table_args__ = (
+        Index("ix_audit_table_record", "table_name", "record_id"),
+        Index("ix_audit_changed_by",   "changed_by_user_id"),
+        Index("ix_audit_created_at",   "created_at"),
+    )
+
+
+# Seteado por un middleware en main.py con el usuario autenticado de la
+# request actual (decodifica el JWT best-effort, sin bloquear la request
+# si falta o es inválido). None cuando el cambio no viene de una request
+# HTTP autenticada (ej. un script de seed corrido a mano).
+current_audit_user_id: ContextVar[Optional["uuid.UUID"]] = ContextVar(
+    "current_audit_user_id", default=None
+)
+
+# Tablas de alta frecuencia donde un update de solo estas columnas no amerita
+# una fila de auditoría propia (el dato en sí se sigue guardando igual) —
+# hoy el único caso real es el ping de GPS del conductor.
+_AUDIT_NOISY_COLUMNS = {
+    "drivers": {"current_lat", "current_lng", "last_location_at"},
+}
+
+
+def _audit_serialize(value):
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, PyEnum):
+        return value.value
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
+
+
+def _audit_snapshot(obj) -> dict:
+    return {c.key: _audit_serialize(getattr(obj, c.key)) for c in obj.__mapper__.column_attrs}
+
+
+@event.listens_for(Session, "before_flush")
+def _capture_audit_log(session, flush_context, instances):
+    pending = []
+
+    for obj in session.new:
+        if isinstance(obj, AuditLog):
+            continue
+        pending.append((obj, "insert", _audit_snapshot(obj)))
+
+    for obj in session.dirty:
+        if isinstance(obj, AuditLog) or obj in session.new or obj in session.deleted:
+            continue
+        if not session.is_modified(obj, include_collections=False):
+            continue
+        diff = {}
+        for c in obj.__mapper__.column_attrs:
+            hist = attributes.get_history(obj, c.key)
+            if not hist.has_changes():
+                continue
+            old = hist.deleted[0] if hist.deleted else None
+            new = hist.added[0] if hist.added else getattr(obj, c.key)
+            diff[c.key] = {"old": _audit_serialize(old), "new": _audit_serialize(new)}
+        if not diff:
+            continue
+        noisy = _AUDIT_NOISY_COLUMNS.get(obj.__tablename__)
+        if noisy and set(diff.keys()) <= noisy:
+            continue
+        pending.append((obj, "update", diff))
+
+    for obj in session.deleted:
+        if isinstance(obj, AuditLog):
+            continue
+        pending.append((obj, "delete", _audit_snapshot(obj)))
+
+    if not pending:
+        return
+
+    user_id = current_audit_user_id.get()
+    for obj, action, changes in pending:
+        session.add(AuditLog(
+            id=uuid.uuid4(),
+            table_name=obj.__tablename__,
+            record_id=str(getattr(obj, "id", None)),
+            action=action,
+            changed_by_user_id=user_id,
+            company_id=getattr(obj, "company_id", None),
+            changes=changes,
+        ))
