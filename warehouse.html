@@ -630,6 +630,9 @@
     <button class="nav-item" onclick="showView('reportes')">
       <span class="nav-icon">📈</span> Reportes
     </button>
+    <button class="nav-item" id="navAuditoria" onclick="showView('auditoria')">
+      <span class="nav-icon">🕵️</span> Auditoría
+    </button>
   </nav>
 
   <div class="sidebar-bottom">
@@ -1127,6 +1130,7 @@ function showView(view) {
     recepcion:      ['Recepción', 'Ingreso de mercancía al warehouse — manifiestos y check-in'],
     mensajes:       ['Mensajes', 'Catálogo de mensajes estándar — código, descripción y macro'],
     tarifas:        ['Tarifas de servicio', 'Parámetros de precio por km, peso y volumen usados en la sugerencia automática'],
+    auditoria:      ['Auditoría', 'Historial de cambios en el sistema — quién, qué y cuándo'],
   };
   const [title, sub] = titles[view] || ['', ''];
   document.getElementById('topbarTitle').textContent = title;
@@ -1147,6 +1151,7 @@ function showView(view) {
     recepcion:      renderRecepcion,
     mensajes:       renderMensajes,
     tarifas:        renderTarifas,
+    auditoria:      renderAuditoria,
   };
   document.getElementById('content').innerHTML = (renders[view] || (() => ''))();
   if (view === 'usuarios')    setTimeout(loadHoldingUsers, 0);
@@ -1155,6 +1160,7 @@ function showView(view) {
   if (view === 'recepcion')   setTimeout(loadRecepciones, 0);
   if (view === 'mensajes')    setTimeout(loadMensajes, 0);
   if (view === 'tarifas')     setTimeout(loadTarifas, 0);
+  if (view === 'auditoria')   setTimeout(() => loadAuditoria(0), 0);
   csvStep = 0;
 
   if (view === 'tracking') {
@@ -6870,6 +6876,176 @@ async function toggleTarifa(id, activate) {
     showToast(activate ? 'Tipo activado' : 'Tipo desactivado', 'success');
     renderTarifasBody();
   } catch (e) { showToast('Error: ' + e.message, 'warn'); }
+}
+
+// ── Auditoría ────────────────────────────────────────────────────────────────
+let auditoriaList    = [];
+let auditoriaOffset  = 0;
+const AUDITORIA_LIMIT = 50;
+
+const DEMO_AUDIT_LOGS = [
+  { id:'a1', table_name:'batch_clients', record_id:'c-demo-1', action:'insert',
+    changed_by:{name:'Carlos Rodriguez', email:'carlos@muevo.app'}, company_id:'c1',
+    changes:{ name:'Distribuidora 808', email:'contacto@distribuidora808.com' },
+    created_at:'2026-08-30T14:22:10' },
+  { id:'a2', table_name:'route_headers', record_id:'r-demo-1', action:'update',
+    changed_by:{name:'Ana Gutierrez', email:'ana@muevo.app'}, company_id:'c1',
+    changes:{ gross_pay:{old:100.00,new:92.00}, negotiation_status:{old:'suggested',new:'accepted'} },
+    created_at:'2026-08-30T15:05:44' },
+  { id:'a3', table_name:'batch_clients', record_id:'c-demo-2', action:'update',
+    changed_by:{name:'Carlos Rodriguez', email:'carlos@muevo.app'}, company_id:'c1',
+    changes:{ is_active:{old:true,new:false} },
+    created_at:'2026-08-31T09:18:02' },
+];
+
+function auditActionBadge(action) {
+  const map = {
+    insert: ['badge-green',  '+ Creado'],
+    update: ['badge-orange', '✎ Editado'],
+    delete: ['badge-muted',  '🗑 Eliminado'],
+  };
+  const [cls, label] = map[action] || ['badge-muted', action];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function renderAuditChanges(changes) {
+  if (!changes || typeof changes !== 'object') return '—';
+  const keys = Object.keys(changes);
+  if (keys.length === 0) return '—';
+  const isDiff = typeof changes[keys[0]] === 'object' && changes[keys[0]] !== null && 'old' in changes[keys[0]];
+  const preview = keys.slice(0, 2).map(k => isDiff
+    ? `<b>${k}</b>: ${JSON.stringify(changes[k].old)} → ${JSON.stringify(changes[k].new)}`
+    : `<b>${k}</b>: ${JSON.stringify(changes[k])}`
+  ).join(' · ');
+  return `
+    <details>
+      <summary style="cursor:pointer;font-size:12px">${preview}${keys.length > 2 ? ` <span style="color:var(--muted)">+${keys.length - 2} más</span>` : ''}</summary>
+      <pre style="margin-top:6px;padding:8px;background:var(--card2);border-radius:6px;font-size:11px;white-space:pre-wrap;word-break:break-all">${JSON.stringify(changes, null, 2)}</pre>
+    </details>
+  `;
+}
+
+function renderAuditoria() {
+  return `
+    <div style="margin-bottom:16px">
+      <div class="section-title">Auditoría</div>
+      <div class="section-sub">Captura automática de cualquier cambio en el sistema — solo visible con alcance de todo el holding</div>
+    </div>
+    <div class="table-wrap" style="padding:12px 16px;margin-bottom:16px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Tabla</div>
+          <input id="auditFilterTable" type="text" placeholder="ej: batch_clients"
+            style="padding:7px 10px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;width:160px">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">ID de registro</div>
+          <input id="auditFilterRecord" type="text" placeholder="uuid"
+            style="padding:7px 10px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;width:200px">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Desde</div>
+          <input id="auditFilterFrom" type="date"
+            style="padding:7px 10px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px">
+        </div>
+        <div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Hasta</div>
+          <input id="auditFilterTo" type="date"
+            style="padding:7px 10px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px">
+        </div>
+        <button class="btn btn-primary" style="font-size:13px" onclick="loadAuditoria(0)">Filtrar</button>
+        <button class="btn btn-ghost" style="font-size:13px" onclick="clearAuditoriaFilters()">Limpiar</button>
+      </div>
+    </div>
+    <div id="auditoriaBody">
+      <div style="text-align:center;padding:48px;color:var(--muted)">
+        <div style="font-size:32px;margin-bottom:8px">⏳</div>
+        <div>Cargando...</div>
+      </div>
+    </div>
+  `;
+}
+
+function clearAuditoriaFilters() {
+  ['auditFilterTable','auditFilterRecord','auditFilterFrom','auditFilterTo'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  loadAuditoria(0);
+}
+
+async function loadAuditoria(offset) {
+  auditoriaOffset = offset;
+  const body = document.getElementById('auditoriaBody');
+
+  if (!useRealData) {
+    auditoriaList = DEMO_AUDIT_LOGS;
+    renderAuditoriaBody();
+    return;
+  }
+
+  const params = new URLSearchParams({ limit: AUDITORIA_LIMIT, offset });
+  const tableName = document.getElementById('auditFilterTable')?.value.trim();
+  const recordId  = document.getElementById('auditFilterRecord')?.value.trim();
+  const dateFrom  = document.getElementById('auditFilterFrom')?.value;
+  const dateTo    = document.getElementById('auditFilterTo')?.value;
+  if (tableName) params.set('table_name', tableName);
+  if (recordId)  params.set('record_id', recordId);
+  if (dateFrom)  params.set('date_from', dateFrom);
+  if (dateTo)    params.set('date_to', dateTo);
+
+  try {
+    auditoriaList = await apiGet(`/admin/audit-logs?${params.toString()}`);
+    renderAuditoriaBody();
+  } catch (e) {
+    if (body) body.innerHTML = `
+      <div style="text-align:center;padding:48px;color:var(--muted)">
+        <div style="font-size:32px;margin-bottom:8px">🔒</div>
+        <div>No se pudo cargar la auditoría — ${e.message.includes('403') ? 'necesitás un perfil con alcance de todo el holding' : e.message}</div>
+      </div>
+    `;
+  }
+}
+
+function renderAuditoriaBody() {
+  const body = document.getElementById('auditoriaBody');
+  if (!body) return;
+  body.innerHTML = `
+    <div class="table-wrap" style="overflow-x:auto">
+      <table style="min-width:900px">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Tabla</th>
+            <th>Registro</th>
+            <th>Acción</th>
+            <th>Usuario</th>
+            <th>Cambios</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${auditoriaList.length === 0 ? `
+            <tr><td colspan="6" style="text-align:center;padding:32px;color:var(--muted)">Sin resultados para estos filtros</td></tr>
+          ` : auditoriaList.map(a => `
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:10px 8px;font-size:11px;color:var(--muted);white-space:nowrap">${a.created_at?.replace('T',' ').substring(0,19) || ''}</td>
+              <td style="padding:10px 8px;font-family:var(--font-mono);font-size:12px;color:var(--orange)">${a.table_name}</td>
+              <td style="padding:10px 8px;font-family:var(--font-mono);font-size:11px;color:var(--muted)" title="${a.record_id}">${a.record_id.substring(0,8)}…</td>
+              <td style="padding:10px 8px">${auditActionBadge(a.action)}</td>
+              <td style="padding:10px 8px;font-size:12px">${a.changed_by ? `${a.changed_by.name}<div style="font-size:10.5px;color:var(--muted)">${a.changed_by.email}</div>` : '<span style="color:var(--muted)">sistema</span>'}</td>
+              <td style="padding:10px 8px;font-size:12px;max-width:360px">${renderAuditChanges(a.changes)}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div style="display:flex;justify-content:center;gap:10px;margin-top:14px">
+      <button class="btn btn-ghost" style="font-size:12px" ${auditoriaOffset === 0 ? 'disabled' : ''}
+        onclick="loadAuditoria(${Math.max(0, auditoriaOffset - AUDITORIA_LIMIT)})">← Anterior</button>
+      <button class="btn btn-ghost" style="font-size:12px" ${auditoriaList.length < AUDITORIA_LIMIT ? 'disabled' : ''}
+        onclick="loadAuditoria(${auditoriaOffset + AUDITORIA_LIMIT})">Siguiente →</button>
+    </div>
+  `;
 }
 
 // ── Negociación de precios ─────────────────────────────────────────────────────
