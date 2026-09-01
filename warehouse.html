@@ -6878,10 +6878,10 @@ let negotiationData    = null;
 
 function negotiationBadgeLabel(status) {
   const map = {
-    none:      'Sugerir precio',
-    suggested: 'Precio sugerido — esperando respuesta',
-    countered: 'Contraoferta pendiente',
-    accepted:  'Precio acordado',
+    none:                      'Sugerir precio',
+    suggested:                 'Abierto a pujas',
+    pending_holding_approval:  'En holding — pendiente de aprobación',
+    accepted:                  'Precio acordado',
   };
   return map[status] || 'Ver negociación';
 }
@@ -6903,11 +6903,17 @@ async function openNegotiationPanel(routeId) {
   if (!useRealData) {
     negotiationData = {
       route_id: routeId, route_number: 'ORL-DEMO-001',
-      negotiation_status: 'countered', suggested_price: 95.00, system_suggested_price: 92.40, current_price: 87.50,
-      offers: [
-        { id:'o1', offered_by:'warehouse', user_name:'Carlos Rodriguez', amount:95.00, note:'Precio sugerido por el sistema según distancia y peso', status:'superseded', created_at:'2026-08-01T10:00:00' },
-        { id:'o2', offered_by:'transport', user_name:'Andrea Fuentes',   amount:110.00, note:'La ruta cruza zona de peaje, necesitamos ajustar', status:'pending', created_at:'2026-08-01T14:30:00' },
+      negotiation_status: 'suggested', suggested_price: 95.00, system_suggested_price: 92.40, current_price: 87.50,
+      broadcast_offers: [
+        { id:'b1', transport_company_id:null, offered_by:'warehouse', user_name:'Carlos Rodriguez', amount:95.00, note:'Precio sugerido por el sistema según distancia y peso', status:'pending', created_at:'2026-08-01T10:00:00' },
       ],
+      threads: [
+        { transport_company_id:'tc1', transport_company_name:'Rapid Courier Orlando LLC', avg_rating:4.6, on_time_pct:92,
+          offers:[{ id:'o2', transport_company_id:'tc1', offered_by:'transport', user_name:'Andrea Fuentes', amount:110.00, note:'La ruta cruza zona de peaje, necesitamos ajustar', status:'pending', created_at:'2026-08-01T14:30:00' }] },
+        { transport_company_id:'tc2', transport_company_name:'Sunshine Logistics', avg_rating:4.2, on_time_pct:88,
+          offers:[{ id:'o3', transport_company_id:'tc2', offered_by:'transport', user_name:'Miguel Torres', amount:99.00, note:null, status:'pending', created_at:'2026-08-01T15:10:00' }] },
+      ],
+      pending_holding_approval: null,
     };
     renderNegotiationPanel();
     return;
@@ -6921,11 +6927,42 @@ async function openNegotiationPanel(routeId) {
   }
 }
 
+function renderOfferRow(o) {
+  return `
+    <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);
+                ${o.status==='pending' || o.status==='selected' ? 'opacity:1' : 'opacity:0.6'}">
+      <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;
+                  background:${o.offered_by==='warehouse' ? 'var(--orange)' : 'var(--blue,#2E86DE)'};
+                  display:flex;align-items:center;justify-content:center;font-size:12px;color:#111">
+        ${o.offered_by === 'warehouse' ? '🏭' : '🚐'}
+      </div>
+      <div style="flex:1">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span style="font-size:12px;font-weight:600;color:var(--white)">
+            ${o.offered_by === 'warehouse' ? 'Warehouse' : 'Transportista'} ${o.user_name ? '· '+o.user_name : ''}
+          </span>
+          <span style="font-size:14px;font-weight:700;color:var(--orange)">${fmt$(o.amount)}</span>
+        </div>
+        ${o.note ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">${o.note}</div>` : ''}
+        <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
+          <span style="font-size:10px;color:var(--muted)">${o.created_at?.replace('T',' ').substring(0,16)||''}</span>
+          ${o.status==='pending'  ? '<span class="badge badge-orange" style="font-size:9px">Pendiente</span>' : ''}
+          ${o.status==='selected' ? '<span class="badge badge-orange" style="font-size:9px">Seleccionada — en holding</span>' : ''}
+          ${o.status==='accepted' ? '<span class="badge badge-green"  style="font-size:9px">✓ Aceptada</span>' : ''}
+          ${o.status==='rejected' ? '<span class="badge badge-muted"  style="font-size:9px">No seleccionada</span>' : ''}
+          ${o.status==='superseded' ? '<span class="badge badge-muted" style="font-size:9px">Reemplazada</span>' : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function renderNegotiationPanel() {
   const n = negotiationData;
-  const lastOffer = [...n.offers].reverse().find(o => o.status === 'pending');
-  const isAccepted = n.negotiation_status === 'accepted';
-  const canRespond = lastOffer && lastOffer.offered_by === 'transport';
+  const isAccepted      = n.negotiation_status === 'accepted';
+  const isPendingHolding= n.negotiation_status === 'pending_holding_approval';
+  const isOpen          = n.negotiation_status === 'suggested';   // marketplace abierto — permite seleccionar ofertas
+  const canSuggest      = n.negotiation_status === 'none' || n.negotiation_status === 'suggested';
 
   document.getElementById('stopModalBody').innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;
@@ -6937,50 +6974,67 @@ function renderNegotiationPanel() {
       <div style="text-align:right">
         <div style="font-size:11px;color:var(--muted)">Estado</div>
         <div style="font-size:13px;font-weight:600;color:${
-          isAccepted ? 'var(--green)' : n.negotiation_status==='countered' ? 'var(--orange)' : 'var(--muted)'
+          isAccepted ? 'var(--green)' : isPendingHolding ? 'var(--orange)' : 'var(--muted)'
         }">${negotiationBadgeLabel(n.negotiation_status)}</div>
       </div>
     </div>
 
     <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">
-      Historial de ofertas
+      Precio público (ask)
     </div>
-    <div style="max-height:220px;overflow-y:auto;margin-bottom:16px">
-      ${n.offers.length === 0 ? `
-        <div style="text-align:center;padding:20px;color:var(--muted);font-size:13px">Sin ofertas todavía</div>
-      ` : n.offers.map(o => `
-        <div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);
-                    ${o.status==='pending' ? 'opacity:1' : 'opacity:0.6'}">
-          <div style="width:28px;height:28px;border-radius:50%;flex-shrink:0;
-                      background:${o.offered_by==='warehouse' ? 'var(--orange)' : 'var(--blue,#2E86DE)'};
-                      display:flex;align-items:center;justify-content:center;font-size:12px;color:#111">
-            ${o.offered_by === 'warehouse' ? '🏭' : '🚐'}
-          </div>
-          <div style="flex:1">
-            <div style="display:flex;justify-content:space-between;align-items:baseline">
-              <span style="font-size:12px;font-weight:600;color:var(--white)">
-                ${o.offered_by === 'warehouse' ? 'Warehouse' : 'Transportista'} ${o.user_name ? '· '+o.user_name : ''}
-              </span>
-              <span style="font-size:14px;font-weight:700;color:var(--orange)">${fmt$(o.amount)}</span>
-            </div>
-            ${o.note ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">${o.note}</div>` : ''}
-            <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
-              <span style="font-size:10px;color:var(--muted)">${o.created_at?.replace('T',' ').substring(0,16)||''}</span>
-              ${o.status==='pending'  ? '<span class="badge badge-orange" style="font-size:9px">Pendiente</span>' : ''}
-              ${o.status==='accepted' ? '<span class="badge badge-green"  style="font-size:9px">✓ Aceptada</span>' : ''}
-              ${o.status==='rejected' ? '<span class="badge badge-muted"  style="font-size:9px">Rechazada</span>' : ''}
-            </div>
-          </div>
+    <div style="max-height:120px;overflow-y:auto;margin-bottom:16px">
+      ${n.broadcast_offers.length === 0 ? `
+        <div style="text-align:center;padding:12px;color:var(--muted);font-size:13px">Todavía no se sugirió un precio</div>
+      ` : n.broadcast_offers.map(renderOfferRow).join('')}
+    </div>
+
+    ${isPendingHolding && n.pending_holding_approval ? `
+      <div class="alert" style="background:rgba(255,159,10,.1);border:1px solid var(--orange);border-radius:8px;padding:12px;margin-bottom:16px">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:4px">En holding — pendiente de aprobación</div>
+        <div style="font-size:14px;font-weight:600;color:var(--white)">
+          ${n.pending_holding_approval.transport_company_name || 'Transportista'} · ${fmt$(n.pending_holding_approval.amount)}
         </div>
-      `).join('')}
-    </div>
+        <div id="negError" style="color:var(--red,#D85A30);font-size:13px;display:none;margin:8px 0"></div>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="holdingApproveNegotiation()">✓ Aprobar (holding)</button>
+      </div>
+    ` : ''}
 
     ${isAccepted ? `
       <div style="text-align:center;padding:12px;background:rgba(39,174,96,.1);border-radius:8px;color:var(--green);font-size:13px">
         ✓ Precio acordado en ${fmt$(n.current_price)} · Comisión Muevo 5% aplicada
       </div>
-    ` : n.negotiation_status === 'none' ? `
-      <!-- Sugerir precio inicial -->
+    ` : ''}
+
+    ${!isAccepted ? `
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:16px 0 8px">
+        Ofertas de transportistas (${n.threads.length})
+      </div>
+      <div style="max-height:220px;overflow-y:auto;margin-bottom:16px">
+        ${n.threads.length === 0 ? `
+          <div style="text-align:center;padding:16px;color:var(--muted);font-size:13px">Todavía no pujó ningún transportista</div>
+        ` : n.threads.map(t => {
+          const lastOffer = t.offers[t.offers.length - 1];
+          const canSelect = isOpen && lastOffer && lastOffer.status === 'pending';
+          return `
+            <div style="padding:10px;margin-bottom:8px;background:var(--card2);border-radius:8px;border:1px solid var(--border)">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <div>
+                  <div style="font-size:13px;font-weight:600;color:var(--white)">${t.transport_company_name || 'Transportista'}</div>
+                  <div style="font-size:10.5px;color:var(--muted)">★ ${t.avg_rating?.toFixed(1) ?? '—'} · ${t.on_time_pct != null ? t.on_time_pct.toFixed(0)+'% a tiempo' : 'sin historial'}</div>
+                </div>
+                ${canSelect ? `<button class="btn btn-primary" style="font-size:12px" onclick="selectOffer('${t.transport_company_id}')">Seleccionar esta oferta</button>` : ''}
+              </div>
+              ${t.offers.map(renderOfferRow).join('')}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    ` : ''}
+
+    ${canSuggest ? `
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">
+        ${n.negotiation_status === 'none' ? 'Sugerir precio inicial' : 'Actualizar precio público'}
+      </div>
       ${n.system_suggested_price != null ? `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 12px;background:var(--orange-dim);border:1px solid var(--orange-bdr);border-radius:8px">
         <span style="font-size:16px">🤖</span>
@@ -6989,10 +7043,9 @@ function renderNegotiationPanel() {
           <div style="font-size:10.5px;color:var(--muted)">Calculado según distancia, peso y volumen de la ruta</div>
         </div>
       </div>` : ''}
-      <div style="font-size:12px;color:var(--muted);margin-bottom:6px">Sugerir precio inicial al transportista</div>
       <div style="display:flex;gap:8px;margin-bottom:8px">
         <input id="negAmount" type="number" step="0.01" placeholder="0.00"
-          value="${n.system_suggested_price != null ? n.system_suggested_price.toFixed(2) : ''}"
+          value="${n.suggested_price != null ? Number(n.suggested_price).toFixed(2) : (n.system_suggested_price != null ? n.system_suggested_price.toFixed(2) : '')}"
           style="flex:1;padding:9px 12px;background:var(--card2);border:1px solid var(--border);
                  border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">
       </div>
@@ -7001,33 +7054,10 @@ function renderNegotiationPanel() {
                border-radius:8px;color:var(--white);font-size:13px;resize:vertical;min-height:50px;
                box-sizing:border-box;margin-bottom:10px"></textarea>
       <div id="negError" style="color:var(--red,#D85A30);font-size:13px;display:none;margin-bottom:8px"></div>
-      <button class="btn btn-primary" style="width:100%" onclick="submitSuggestPrice()">Enviar precio sugerido</button>
-    ` : canRespond ? `
-      <!-- Responder a contraoferta del transporte -->
-      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">
-        El transportista contraofertó ${fmt$(lastOffer.amount)}. ¿Cómo respondés?
-      </div>
-      <div style="display:flex;gap:8px;margin-bottom:10px">
-        <button class="btn btn-primary" style="flex:1;font-size:13px"
-          onclick="respondOffer('accept')">✓ Aceptar ${fmt$(lastOffer.amount)}</button>
-        <button class="btn btn-ghost" style="flex:1;font-size:13px;color:var(--red,#D85A30)"
-          onclick="respondOffer('reject')">✕ Rechazar</button>
-      </div>
-      <div style="font-size:12px;color:var(--muted);margin:10px 0 6px">O hacé una nueva contraoferta:</div>
-      <input id="negCounterAmount" type="number" step="0.01" placeholder="Nuevo monto"
-        style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);
-               border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box;margin-bottom:8px">
-      <textarea id="negCounterNote" placeholder="Nota (opcional)..."
-        style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);
-               border-radius:8px;color:var(--white);font-size:13px;resize:vertical;min-height:50px;
-               box-sizing:border-box;margin-bottom:10px"></textarea>
-      <div id="negError" style="color:var(--red,#D85A30);font-size:13px;display:none;margin-bottom:8px"></div>
-      <button class="btn btn-ghost" style="width:100%" onclick="respondOffer('counter')">Enviar contraoferta</button>
-    ` : `
-      <div style="text-align:center;padding:16px;color:var(--muted);font-size:13px">
-        ⏳ Esperando respuesta del transportista...
-      </div>
-    `}
+      <button class="btn btn-primary" style="width:100%" onclick="submitSuggestPrice()">
+        ${n.negotiation_status === 'none' ? 'Enviar precio sugerido' : 'Actualizar precio público'}
+      </button>
+    ` : ''}
   `;
 }
 
@@ -7044,8 +7074,8 @@ async function submitSuggestPrice() {
   if (!useRealData) {
     negotiationData.negotiation_status = 'suggested';
     negotiationData.suggested_price = amount;
-    negotiationData.offers.push({
-      id:'o'+Date.now(), offered_by:'warehouse', user_name:'Carlos Rodriguez',
+    negotiationData.broadcast_offers.push({
+      id:'b'+Date.now(), transport_company_id:null, offered_by:'warehouse', user_name:'Carlos Rodriguez',
       amount, note, status:'pending', created_at:new Date().toISOString(),
     });
     renderNegotiationPanel();
@@ -7060,47 +7090,54 @@ async function submitSuggestPrice() {
   } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; }
 }
 
-async function respondOffer(action) {
-  const errEl = document.getElementById('negError');
-  let amount = null, note = null;
-
-  if (action === 'counter') {
-    amount = parseFloat(document.getElementById('negCounterAmount')?.value);
-    note   = document.getElementById('negCounterNote')?.value.trim() || null;
-    if (!amount || amount <= 0) {
-      errEl.textContent = 'Ingresá un monto válido para la contraoferta'; errEl.style.display = 'block'; return;
-    }
-  }
-  if (errEl) errEl.style.display = 'none';
-
+async function selectOffer(transportCompanyId) {
   if (!useRealData) {
-    const lastOffer = [...negotiationData.offers].reverse().find(o => o.status === 'pending');
-    if (action === 'accept') {
-      if (lastOffer) lastOffer.status = 'accepted';
-      negotiationData.negotiation_status = 'accepted';
-      negotiationData.current_price = lastOffer.amount;
-    } else if (action === 'counter') {
-      if (lastOffer) lastOffer.status = 'superseded';
-      negotiationData.offers.push({
-        id:'o'+Date.now(), offered_by:'warehouse', user_name:'Carlos Rodriguez',
-        amount, note, status:'pending', created_at:new Date().toISOString(),
-      });
-      negotiationData.negotiation_status = 'countered';
-      negotiationData.suggested_price = amount;
-    } else if (action === 'reject') {
-      if (lastOffer) lastOffer.status = 'rejected';
-      negotiationData.negotiation_status = 'none';
-    }
+    const thread = negotiationData.threads.find(t => t.transport_company_id === transportCompanyId);
+    const lastOffer = thread?.offers[thread.offers.length - 1];
+    if (!lastOffer) return;
+    negotiationData.threads.forEach(t => {
+      if (t.transport_company_id === transportCompanyId) return;
+      const lo = t.offers[t.offers.length - 1];
+      if (lo && lo.status === 'pending') lo.status = 'rejected';
+    });
+    lastOffer.status = 'selected';
+    negotiationData.negotiation_status = 'pending_holding_approval';
+    negotiationData.pending_holding_approval = {
+      offer_id: lastOffer.id, transport_company_id: transportCompanyId,
+      transport_company_name: thread.transport_company_name, amount: lastOffer.amount,
+    };
     renderNegotiationPanel();
-    showToast('Respuesta enviada', 'success');
+    showToast('Oferta seleccionada — pasa a holding', 'success');
     return;
   }
 
   try {
-    negotiationData = await apiPost(`/warehouse/routes/${negotiationRouteId}/respond-offer`, { action, amount, note });
+    negotiationData = await apiPost(`/warehouse/routes/${negotiationRouteId}/select-offer/${transportCompanyId}`, {});
     renderNegotiationPanel();
-    showToast('Respuesta enviada', 'success');
-  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; }
+    showToast('Oferta seleccionada — pasa a holding', 'success');
+  } catch(e) { showToast('Error: ' + e.message, 'warn'); }
+}
+
+async function holdingApproveNegotiation() {
+  const errEl = document.getElementById('negError');
+
+  if (!useRealData) {
+    negotiationData.negotiation_status = 'accepted';
+    negotiationData.current_price = negotiationData.pending_holding_approval.amount;
+    negotiationData.pending_holding_approval = null;
+    renderNegotiationPanel();
+    showToast('Negociación aprobada', 'success');
+    return;
+  }
+
+  try {
+    negotiationData = await apiPost(`/warehouse/routes/${negotiationRouteId}/holding-approve`, {});
+    renderNegotiationPanel();
+    showToast('Negociación aprobada', 'success');
+  } catch(e) {
+    if (errEl) { errEl.textContent = 'Error: ' + e.message; errEl.style.display = 'block'; }
+    else showToast('Error: ' + e.message, 'warn');
+  }
 }
 
 // ── Auth flow ────────────────────────────────────────────────────────────

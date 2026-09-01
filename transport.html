@@ -594,6 +594,9 @@
       <span class="nav-icon">🗺</span> Rutas
       <span class="nav-badge" id="navOfferedBadge">2</span>
     </button>
+    <button class="nav-item" onclick="showView('negociacion')">
+      <span class="nav-icon">💬</span> Negociación
+    </button>
     <button class="nav-item" onclick="showView('flota')">
       <span class="nav-icon">🚐</span> Mi flota
     </button>
@@ -910,12 +913,13 @@ let activeTab   = 'todas';
 function showView(view) {
   currentView = view;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  const idx = ['dashboard','rutas','flota','tracking','facturacion'].indexOf(view);
+  const idx = ['dashboard','rutas','negociacion','flota','tracking','facturacion'].indexOf(view);
   document.querySelectorAll('.nav-item')[idx]?.classList.add('active');
 
   const titles = {
     dashboard:   ['Dashboard', 'Resumen de operaciones · Hoy, 15 jun 2026'],
     rutas:       ['Rutas', 'Ofrecidas, en curso, y completadas'],
+    negociacion: ['Negociación', 'Marketplace de rutas abiertas a pujas'],
     flota:       ['Mi flota', 'Vehículos y conductores de tu empresa'],
     tracking:    ['Tracking de flota', 'Posición en vivo de todos tus vehículos'],
     facturacion: ['Facturación', 'Pagos recibidos por rutas completadas'],
@@ -927,6 +931,7 @@ function showView(view) {
   const renders = {
     dashboard:   renderDashboard,
     rutas:       renderRutas,
+    negociacion: renderNegociacion,
     flota:       renderFlota,
     tracking:    renderTracking,
     facturacion: renderFacturacion,
@@ -1692,6 +1697,7 @@ let REAL_ROUTES = null;
 let REAL_BILLING = null;
 let REAL_FLEET = null;
 let REAL_VEHICLE_TYPES_TC = null;
+let REAL_MARKETPLACE = null;
 
 async function loadRealData() {
   try {
@@ -1700,6 +1706,7 @@ async function loadRealData() {
     REAL_BILLING = await apiGet('/transport/billing');
     REAL_FLEET = await apiGet('/transport/fleet');
     REAL_VEHICLE_TYPES_TC = await apiGet('/vehicle-types?habilitado=true');
+    REAL_MARKETPLACE = await apiGet('/transport/marketplace');
   } catch (e) {
     console.error('Error cargando datos reales:', e);
     useRealData = false;
@@ -1747,6 +1754,120 @@ function mapRealRoute(r) {
 function getActiveRoutes() {
   if (useRealData && REAL_ROUTES) return REAL_ROUTES.map(mapRealRoute);
   return ROUTES;
+}
+
+// ── Marketplace de negociación ──────────────────────────────────────────────
+const MARKETPLACE_DEMO = [
+  {
+    route_id: 'demo-1', route_number: 'ORL-DEMO-101', title: 'Entrega centro logístico',
+    service_mode: 'logistica', scheduled_date: '2026-09-02T09:00:00', total_stops: 6,
+    total_weight_lbs: 420, total_volume_ft3: 38, current_ask: 145.00, my_thread: null,
+  },
+  {
+    route_id: 'demo-2', route_number: 'ORL-DEMO-102', title: 'Mensajería corporativa AM',
+    service_mode: 'mensajeria', scheduled_date: '2026-09-02T10:30:00', total_stops: 3,
+    total_weight_lbs: 40, total_volume_ft3: 6, current_ask: 62.00,
+    my_thread: { transport_company_id: 'demo-tc', offers: [
+      { id:'do1', offered_by:'transport', amount:58.00, note:null, status:'pending', created_at:'2026-08-30T16:00:00' },
+    ]},
+  },
+];
+
+function getMarketplaceRoutes() {
+  if (useRealData && REAL_MARKETPLACE) return REAL_MARKETPLACE;
+  return MARKETPLACE_DEMO;
+}
+
+async function refreshMarketplace() {
+  if (useRealData) {
+    REAL_MARKETPLACE = await apiGet('/transport/marketplace');
+  }
+  if (currentView === 'negociacion') document.getElementById('content').innerHTML = renderNegociacion();
+}
+
+function renderNegociacion() {
+  const routes = getMarketplaceRoutes();
+  return `
+    <div style="display:flex;flex-direction:column;gap:12px">
+      ${routes.length === 0 ? `
+        <div style="text-align:center;padding:40px;color:var(--muted)">No hay rutas abiertas a pujas en este momento.</div>
+      ` : routes.map(r => {
+        const lastMine = r.my_thread ? r.my_thread.offers[r.my_thread.offers.length - 1] : null;
+        const canBid = !lastMine || lastMine.status !== 'pending';
+        return `
+          <div class="table-wrap" style="padding:16px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+              <div>
+                <div style="font-weight:600;color:var(--white)">${r.title}</div>
+                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${r.route_number}</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:4px">
+                  ${r.total_stops} paradas · ${r.total_weight_lbs} lbs · ${r.total_volume_ft3} ft³
+                  ${r.scheduled_date ? ' · ' + new Date(r.scheduled_date).toLocaleDateString('es-ES',{day:'numeric',month:'short'}) : ''}
+                </div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:11px;color:var(--muted)">Precio público</div>
+                <div style="font-size:20px;font-weight:700;color:var(--orange)">${r.current_ask != null ? fmt$(r.current_ask) : '—'}</div>
+              </div>
+            </div>
+
+            ${r.my_thread ? `
+              <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+                <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Mi historial en esta ruta</div>
+                ${r.my_thread.offers.map(o => `
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px">
+                    <span style="color:var(--white)">${fmt$(o.amount)} ${o.note ? '· '+o.note : ''}</span>
+                    <span class="badge ${o.status==='pending'?'badge-orange':o.status==='accepted'?'badge-green':'badge-muted'}" style="font-size:9px">
+                      ${o.status==='pending' ? 'Pendiente' : o.status==='selected' ? 'Seleccionada — en holding' : o.status==='accepted' ? '✓ Aceptada' : o.status==='rejected' ? 'No seleccionada' : 'Reemplazada'}
+                    </span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+
+            ${canBid ? `
+              <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+                <button class="btn btn-primary" style="font-size:12px" onclick="acceptMarketAsk('${r.route_id}')">✓ Aceptar precio público</button>
+                <input id="counterAmount-${r.route_id}" type="number" step="0.01" placeholder="Monto"
+                  style="width:100px;padding:7px 10px;background:var(--card2);border:1px solid var(--border);
+                         border-radius:8px;color:var(--white);font-size:13px">
+                <input id="counterNote-${r.route_id}" type="text" placeholder="Nota (opcional)"
+                  style="flex:1;min-width:140px;padding:7px 10px;background:var(--card2);border:1px solid var(--border);
+                         border-radius:8px;color:var(--white);font-size:13px">
+                <button class="btn btn-ghost" style="font-size:12px" onclick="sendMarketCounter('${r.route_id}')">Enviar contraoferta</button>
+              </div>
+            ` : `
+              <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)">
+                ⏳ Esperando que el warehouse elija una oferta ganadora...
+              </div>
+            `}
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+async function acceptMarketAsk(routeId) {
+  if (!useRealData) { showToast('Precio aceptado (demo)', 'success'); return; }
+  try {
+    await apiPost(`/transport/routes/${routeId}/accept-price`, {});
+    showToast('Oferta enviada — esperando al warehouse', 'success');
+    await refreshMarketplace();
+  } catch (e) { showToast('Error: ' + e.message, 'warn'); }
+}
+
+async function sendMarketCounter(routeId) {
+  const amount = parseFloat(document.getElementById(`counterAmount-${routeId}`)?.value);
+  const note   = document.getElementById(`counterNote-${routeId}`)?.value.trim() || null;
+  if (!amount || amount <= 0) { showToast('Ingresá un monto válido', 'warn'); return; }
+
+  if (!useRealData) { showToast('Contraoferta enviada (demo)', 'success'); return; }
+  try {
+    await apiPost(`/transport/routes/${routeId}/counter-offer`, { amount, note });
+    showToast('Contraoferta enviada', 'success');
+    await refreshMarketplace();
+  } catch (e) { showToast('Error: ' + e.message, 'warn'); }
 }
 
 function updateOfferedBadge() {

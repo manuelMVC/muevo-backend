@@ -1002,10 +1002,11 @@ class Stop(Base):
 # ─── ROUTE HEADERS — Encabezado de ruta (multi-holding/company/warehouse) ─────
 
 class NegotiationStatus(PyEnum):
-    NONE       = "none"        # sin negociación iniciada
-    SUGGESTED  = "suggested"   # warehouse sugirió precio inicial
-    COUNTERED  = "countered"   # hay una contraoferta pendiente de respuesta
-    ACCEPTED   = "accepted"    # ambas partes acordaron el precio final
+    NONE                     = "none"                      # sin negociación iniciada
+    SUGGESTED                = "suggested"                 # warehouse sugirió precio — marketplace abierto a pujas
+    COUNTERED                = "countered"                 # hay una contraoferta pendiente de respuesta
+    PENDING_HOLDING_APPROVAL = "pending_holding_approval"   # warehouse eligió un ganador, en holding hasta que se apruebe
+    ACCEPTED                 = "accepted"                   # holding aprobó — precio final cerrado
 
 
 class RouteHeader(Base):
@@ -1043,6 +1044,9 @@ class RouteHeader(Base):
         default=NegotiationStatus.NONE, nullable=False
     )
     suggested_price             = Column(Numeric(10, 2), nullable=True)  # precio inicial sugerido por el warehouse
+    pending_offer_id            = Column(UUID(as_uuid=True), ForeignKey("route_price_offers.id"), nullable=True)
+    holding_approved_by         = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    holding_approved_at         = Column(DateTime(timezone=True), nullable=True)
     status                     = Column(Enum(RouteStatus, values_callable=lambda obj: [e.value for e in obj]), default=RouteStatus.DRAFT, nullable=False)
 
     # Programación
@@ -1659,8 +1663,9 @@ class OfferSource(PyEnum):
 
 class OfferStatus(PyEnum):
     PENDING    = "pending"     # esperando respuesta de la otra parte
+    SELECTED   = "selected"    # elegida por el warehouse, en holding hasta que se apruebe
     ACCEPTED   = "accepted"    # esta oferta fue la que cerró la negociación
-    REJECTED   = "rejected"    # rechazada explícitamente
+    REJECTED   = "rejected"    # rechazada explícitamente (o no seleccionada frente a otro hilo)
     SUPERSEDED = "superseded"  # reemplazada por una oferta posterior
 
 
@@ -1674,6 +1679,9 @@ class RoutePriceOffer(Base):
 
     id                = uuid_pk()
     route_header_id   = Column(UUID(as_uuid=True), ForeignKey("route_headers.id", ondelete="CASCADE"), nullable=False)
+    transport_company_id = Column(UUID(as_uuid=True), ForeignKey("transport_companies.id"), nullable=True)
+    # NULL = oferta pública/broadcast del warehouse (el "ask" visible a todos los transportistas).
+    # No-nulo = hilo propio de esa empresa de transporte (sus contraofertas y aceptaciones).
     offered_by        = Column(Enum(OfferSource, values_callable=lambda o: [e.value for e in o]), nullable=False)
     offered_by_user_id= Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     amount            = Column(Numeric(10, 2), nullable=False)
@@ -1685,11 +1693,13 @@ class RoutePriceOffer(Base):
     created_at        = Column(DateTime(timezone=True), server_default=func.now())
 
     route             = relationship("RouteHeader", foreign_keys=[route_header_id])
+    transport_company = relationship("TransportCompany", foreign_keys=[transport_company_id])
     offered_by_user   = relationship("User", foreign_keys=[offered_by_user_id])
 
     __table_args__ = (
         Index("ix_rpo_route_header_id", "route_header_id"),
         Index("ix_rpo_status",          "status"),
+        Index("ix_rpo_transport_company_id", "transport_company_id"),
     )
 
 # ─── WAREHOUSE INVENTORY ──────────────────────────────────────────────────────

@@ -3245,36 +3245,82 @@ def calculate_suggested_price(route: RouteHeader, svc: "ServiceType") -> float:
 
 def serialize_offer(o: RoutePriceOffer, db: Session) -> dict:
     user = db.get(User, o.offered_by_user_id) if o.offered_by_user_id else None
+    tc   = db.get(TransportCompany, o.transport_company_id) if o.transport_company_id else None
     return {
-        "id":          str(o.id),
-        "route_id":    str(o.route_header_id),
-        "offered_by":  o.offered_by.value if hasattr(o.offered_by,'value') else o.offered_by,
-        "user_name":   user.full_name if user else None,
-        "amount":      float(o.amount),
-        "note":        o.note,
-        "status":      o.status.value if hasattr(o.status,'value') else o.status,
-        "created_at":  o.created_at.isoformat() if o.created_at else None,
+        "id":                     str(o.id),
+        "route_id":               str(o.route_header_id),
+        "transport_company_id":   str(o.transport_company_id) if o.transport_company_id else None,
+        "transport_company_name": tc.name if tc else None,
+        "offered_by":             o.offered_by.value if hasattr(o.offered_by,'value') else o.offered_by,
+        "user_name":              user.full_name if user else None,
+        "amount":                 float(o.amount),
+        "note":                   o.note,
+        "status":                 o.status.value if hasattr(o.status,'value') else o.status,
+        "created_at":             o.created_at.isoformat() if o.created_at else None,
     }
 
 
 def serialize_negotiation(route: RouteHeader, db: Session) -> dict:
+    """
+    Devuelve el estado completo de la negociación: el historial del precio
+    público (broadcast) del warehouse, y un hilo independiente por cada
+    empresa de transporte que haya pujado (marketplace abierto — cualquier
+    transportista activo puede tener su propio hilo, sin pisar a los demás).
+    """
     offers = db.execute(
         select(RoutePriceOffer)
         .where(RoutePriceOffer.route_header_id == route.id)
         .order_by(RoutePriceOffer.created_at.asc())
     ).scalars().all()
 
+    broadcast_offers = [o for o in offers if o.transport_company_id is None]
+
+    threads_order: List[uuid.UUID] = []
+    threads_offers: dict = {}
+    for o in offers:
+        if o.transport_company_id is None:
+            continue
+        if o.transport_company_id not in threads_offers:
+            threads_order.append(o.transport_company_id)
+            threads_offers[o.transport_company_id] = []
+        threads_offers[o.transport_company_id].append(o)
+
+    threads = []
+    for tc_id in threads_order:
+        tc = db.get(TransportCompany, tc_id)
+        threads.append({
+            "transport_company_id":   str(tc_id),
+            "transport_company_name": tc.name if tc else None,
+            "avg_rating":             float(tc.avg_rating or 0) if tc else None,
+            "on_time_pct":            float(tc.on_time_pct or 0) if tc else None,
+            "offers":                 [serialize_offer(o, db) for o in threads_offers[tc_id]],
+        })
+
     svc = db.get(ServiceType, route.service_type_id) if route.service_type_id else None
     system_suggested_price = calculate_suggested_price(route, svc) if svc else None
 
+    pending_holding_approval = None
+    if route.pending_offer_id:
+        po = db.get(RoutePriceOffer, route.pending_offer_id)
+        if po:
+            tc = db.get(TransportCompany, po.transport_company_id) if po.transport_company_id else None
+            pending_holding_approval = {
+                "offer_id":               str(po.id),
+                "transport_company_id":   str(po.transport_company_id) if po.transport_company_id else None,
+                "transport_company_name": tc.name if tc else None,
+                "amount":                 float(po.amount),
+            }
+
     return {
-        "route_id":               str(route.id),
-        "route_number":           route.route_number,
-        "negotiation_status":     route.negotiation_status.value if hasattr(route.negotiation_status,'value') else route.negotiation_status,
-        "suggested_price":        float(route.suggested_price) if route.suggested_price else None,
-        "system_suggested_price": system_suggested_price,
-        "current_price":          float(route.gross_pay or 0),
-        "offers":                 [serialize_offer(o, db) for o in offers],
+        "route_id":                  str(route.id),
+        "route_number":              route.route_number,
+        "negotiation_status":        route.negotiation_status.value if hasattr(route.negotiation_status,'value') else route.negotiation_status,
+        "suggested_price":           float(route.suggested_price) if route.suggested_price else None,
+        "system_suggested_price":    system_suggested_price,
+        "current_price":             float(route.gross_pay or 0),
+        "broadcast_offers":          [serialize_offer(o, db) for o in broadcast_offers],
+        "threads":                   threads,
+        "pending_holding_approval":  pending_holding_approval,
     }
 
 
@@ -3286,12 +3332,6 @@ class SuggestPriceRequest(BaseModel):
 class CounterOfferRequest(BaseModel):
     amount: float
     note:   Optional[str] = None
-
-
-class RespondOfferRequest(BaseModel):
-    action: str  # "accept" | "counter" | "reject"
-    amount: Optional[float] = None   # requerido si action == "counter"
-    note:   Optional[str]   = None
 
 
 def _close_negotiation(route: RouteHeader, final_amount: float, db: Session):
@@ -3336,24 +3376,101 @@ async def suggest_price(
     db:           Session = Depends(get_db),
     x_company_id: Optional[str] = Header(None),
 ):
-    """El warehouse sugiere el precio inicial de la ruta, abriendo la negociación."""
+    """
+    El warehouse sugiere (o actualiza) el precio público de la ruta, abriendo
+    el marketplace a pujas de cualquier empresa de transporte activa. Puede
+    volver a llamarse mientras el marketplace esté abierto para ajustar el
+    ask — la oferta pública anterior queda en el historial como superseded.
+    """
     company = get_current_company(current_user, db, x_company_id)
     require_permission(current_user, db, "pricing", "create", company.id)
     route   = db.get(RouteHeader, uuid.UUID(route_id))
     if not route or route.company_id != company.id:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
+    if route.negotiation_status in (NegotiationStatus.PENDING_HOLDING_APPROVAL, NegotiationStatus.ACCEPTED):
+        raise HTTPException(status_code=400, detail="No se puede modificar el precio: ya hay una oferta seleccionada")
+
+    prev_broadcast = db.execute(
+        select(RoutePriceOffer).where(
+            RoutePriceOffer.route_header_id == route.id,
+            RoutePriceOffer.transport_company_id.is_(None),
+            RoutePriceOffer.status == OfferStatus.PENDING,
+        )
+    ).scalars().all()
+    for p in prev_broadcast:
+        p.status = OfferStatus.SUPERSEDED
 
     route.suggested_price    = data.amount
     route.negotiation_status = NegotiationStatus.SUGGESTED
 
     offer = RoutePriceOffer(
-        id=uuid.uuid4(), route_header_id=route.id,
+        id=uuid.uuid4(), route_header_id=route.id, transport_company_id=None,
         offered_by=OfferSource.WAREHOUSE, offered_by_user_id=current_user.id,
         amount=data.amount, note=data.note, status=OfferStatus.PENDING,
     )
     db.add(offer)
     db.commit()
     return serialize_negotiation(route, db)
+
+
+def _require_open_marketplace_route(route: Optional[RouteHeader]) -> None:
+    if not route:
+        raise HTTPException(status_code=404, detail="Ruta no encontrada")
+    if route.negotiation_status != NegotiationStatus.SUGGESTED:
+        raise HTTPException(status_code=400, detail="Esta ruta no está abierta a pujas en este momento")
+
+
+@app.get("/api/v1/transport/marketplace")
+async def transport_marketplace(
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """
+    Rutas de cualquier company abiertas a pujas (marketplace abierto). Incluye
+    el ask público actual y, si esta empresa ya pujó, su propio hilo — nunca
+    el de otras empresas.
+    """
+    tc = get_current_transport_company(current_user, db)
+    routes = db.execute(
+        select(RouteHeader).where(RouteHeader.negotiation_status == NegotiationStatus.SUGGESTED)
+        .order_by(RouteHeader.created_at.desc())
+    ).scalars().all()
+
+    result = []
+    for route in routes:
+        negotiation = serialize_negotiation(route, db)
+        my_thread = next(
+            (t for t in negotiation["threads"] if t["transport_company_id"] == str(tc.id)), None
+        )
+        result.append({
+            "route_id":       str(route.id),
+            "route_number":   route.route_number,
+            "title":          route.title,
+            "service_mode":   route.service_mode.value if hasattr(route.service_mode,'value') else route.service_mode,
+            "scheduled_date": route.scheduled_date.isoformat() if route.scheduled_date else None,
+            "total_stops":    route.total_stops,
+            "total_weight_lbs": float(route.total_weight_lbs or 0),
+            "total_volume_ft3": float(route.total_volume_ft3 or 0),
+            "current_ask":    float(route.suggested_price) if route.suggested_price else None,
+            "my_thread":      my_thread,
+        })
+    return result
+
+
+@app.get("/api/v1/transport/routes/{route_id}/negotiation")
+async def transport_route_negotiation(
+    route_id:     str,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """Detalle de una ruta en negociación para esta empresa: el ask público + solo el hilo propio."""
+    tc    = get_current_transport_company(current_user, db)
+    route = db.get(RouteHeader, uuid.UUID(route_id))
+    if not route:
+        raise HTTPException(status_code=404, detail="Ruta no encontrada")
+    negotiation = serialize_negotiation(route, db)
+    negotiation["threads"] = [t for t in negotiation["threads"] if t["transport_company_id"] == str(tc.id)]
+    return negotiation
 
 
 @app.post("/api/v1/transport/routes/{route_id}/counter-offer")
@@ -3363,16 +3480,15 @@ async def transport_counter_offer(
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
-    """La empresa de transporte hace una contraoferta sobre el precio sugerido."""
+    """La empresa de transporte hace/actualiza su propia contraoferta — no afecta los hilos de otras empresas."""
     tc    = get_current_transport_company(current_user, db)
     route = db.get(RouteHeader, uuid.UUID(route_id))
-    if not route or route.transport_company_id != tc.id:
-        raise HTTPException(status_code=403, detail="Esta ruta no está asignada a tu empresa")
+    _require_open_marketplace_route(route)
 
-    # Marcar ofertas pendientes previas como superseded
     prev = db.execute(
         select(RoutePriceOffer).where(
             RoutePriceOffer.route_header_id == route.id,
+            RoutePriceOffer.transport_company_id == tc.id,
             RoutePriceOffer.status == OfferStatus.PENDING,
         )
     ).scalars().all()
@@ -3380,12 +3496,11 @@ async def transport_counter_offer(
         p.status = OfferStatus.SUPERSEDED
 
     offer = RoutePriceOffer(
-        id=uuid.uuid4(), route_header_id=route.id,
+        id=uuid.uuid4(), route_header_id=route.id, transport_company_id=tc.id,
         offered_by=OfferSource.TRANSPORT, offered_by_user_id=current_user.id,
         amount=data.amount, note=data.note, status=OfferStatus.PENDING,
     )
     db.add(offer)
-    route.negotiation_status = NegotiationStatus.COUNTERED
     db.commit()
     return serialize_negotiation(route, db)
 
@@ -3396,90 +3511,122 @@ async def transport_accept_price(
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
-    """La empresa de transporte acepta el precio sugerido/actual del warehouse, cerrando la negociación."""
+    """
+    La empresa de transporte puja al precio público actual del warehouse.
+    No cierra la negociación — queda como su oferta pendiente en su propio
+    hilo hasta que el warehouse elija un ganador (y luego holding lo apruebe).
+    """
     tc    = get_current_transport_company(current_user, db)
     route = db.get(RouteHeader, uuid.UUID(route_id))
-    if not route or route.transport_company_id != tc.id:
-        raise HTTPException(status_code=403, detail="Esta ruta no está asignada a tu empresa")
+    _require_open_marketplace_route(route)
 
-    final_amount = route.suggested_price or route.gross_pay
-    if not final_amount:
-        raise HTTPException(status_code=400, detail="No hay un precio para aceptar")
+    current_ask = route.suggested_price
+    if not current_ask:
+        raise HTTPException(status_code=400, detail="No hay un precio público para aceptar")
 
-    _close_negotiation(route, float(final_amount), db)
-
-    # Marcar la última oferta del warehouse como accepted
-    last_wh_offer = db.execute(
+    prev = db.execute(
         select(RoutePriceOffer).where(
             RoutePriceOffer.route_header_id == route.id,
-            RoutePriceOffer.offered_by == OfferSource.WAREHOUSE,
+            RoutePriceOffer.transport_company_id == tc.id,
+            RoutePriceOffer.status == OfferStatus.PENDING,
+        )
+    ).scalars().all()
+    for p in prev:
+        p.status = OfferStatus.SUPERSEDED
+
+    offer = RoutePriceOffer(
+        id=uuid.uuid4(), route_header_id=route.id, transport_company_id=tc.id,
+        offered_by=OfferSource.TRANSPORT, offered_by_user_id=current_user.id,
+        amount=current_ask, note="Aceptó el precio público", status=OfferStatus.PENDING,
+    )
+    db.add(offer)
+    db.commit()
+    return serialize_negotiation(route, db)
+
+
+@app.post("/api/v1/warehouse/routes/{route_id}/select-offer/{transport_company_id}")
+async def warehouse_select_offer(
+    route_id:             str,
+    transport_company_id: str,
+    current_user:         User    = Depends(get_current_user),
+    db:                   Session = Depends(get_db),
+    x_company_id:         Optional[str] = Header(None),
+):
+    """
+    El warehouse elige la oferta ganadora de una empresa de transporte entre
+    todas las que pujaron. Esto NO cierra el trato: la ruta pasa a estar
+    "en holding" hasta que alguien con permiso a nivel holding la apruebe
+    (ver /holding-approve). Las ofertas pendientes de las demás empresas
+    quedan fuera de juego (rejected).
+    """
+    company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "pricing", "approve", company.id)
+    route   = db.get(RouteHeader, uuid.UUID(route_id))
+    if not route or route.company_id != company.id:
+        raise HTTPException(status_code=404, detail="Ruta no encontrada")
+    if route.negotiation_status != NegotiationStatus.SUGGESTED:
+        raise HTTPException(status_code=400, detail="La negociación no está abierta a selección en este momento")
+
+    tc_uuid = uuid.UUID(transport_company_id)
+    winning_offer = db.execute(
+        select(RoutePriceOffer).where(
+            RoutePriceOffer.route_header_id == route.id,
+            RoutePriceOffer.transport_company_id == tc_uuid,
+            RoutePriceOffer.status == OfferStatus.PENDING,
         ).order_by(RoutePriceOffer.created_at.desc()).limit(1)
     ).scalar_one_or_none()
-    if last_wh_offer:
-        last_wh_offer.status = OfferStatus.ACCEPTED
+    if not winning_offer:
+        raise HTTPException(status_code=400, detail="Esa empresa de transporte no tiene una oferta pendiente en esta ruta")
+
+    other_pending = db.execute(
+        select(RoutePriceOffer).where(
+            RoutePriceOffer.route_header_id == route.id,
+            RoutePriceOffer.transport_company_id.isnot(None),
+            RoutePriceOffer.transport_company_id != tc_uuid,
+            RoutePriceOffer.status == OfferStatus.PENDING,
+        )
+    ).scalars().all()
+    for o in other_pending:
+        o.status = OfferStatus.REJECTED
+
+    winning_offer.status        = OfferStatus.SELECTED
+    route.pending_offer_id      = winning_offer.id
+    route.negotiation_status    = NegotiationStatus.PENDING_HOLDING_APPROVAL
 
     db.commit()
     return serialize_negotiation(route, db)
 
 
-@app.post("/api/v1/warehouse/routes/{route_id}/respond-offer")
-async def warehouse_respond_offer(
+@app.post("/api/v1/warehouse/routes/{route_id}/holding-approve")
+async def holding_approve_negotiation(
     route_id:     str,
-    data:         RespondOfferRequest,
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
     x_company_id: Optional[str] = Header(None),
 ):
     """
-    El warehouse responde a la contraoferta del transporte:
-    - accept: acepta el monto de la última contraoferta del transporte
-    - counter: propone un nuevo monto
-    - reject: rechaza y cierra la negociación sin acuerdo
+    Aprobación final a nivel holding (alcance global — company_id=None en
+    require_permission): cierra la negociación con el precio de la oferta
+    seleccionada y recién ahí asigna la ruta al transportista ganador.
     """
     company = get_current_company(current_user, db, x_company_id)
-    PRICING_ACTION_PERMISSION = {"accept": "approve", "counter": "edit", "reject": "cancel"}
-    require_permission(
-        current_user, db, "pricing",
-        PRICING_ACTION_PERMISSION.get(data.action, "edit"), company.id,
-    )
+    require_permission(current_user, db, "pricing", "approve", company_id=None)
     route   = db.get(RouteHeader, uuid.UUID(route_id))
     if not route or route.company_id != company.id:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
+    if route.negotiation_status != NegotiationStatus.PENDING_HOLDING_APPROVAL or not route.pending_offer_id:
+        raise HTTPException(status_code=400, detail="Esta ruta no tiene una selección pendiente de aprobación de holding")
 
-    last_offer = db.execute(
-        select(RoutePriceOffer).where(
-            RoutePriceOffer.route_header_id == route.id,
-            RoutePriceOffer.status == OfferStatus.PENDING,
-        ).order_by(RoutePriceOffer.created_at.desc()).limit(1)
-    ).scalar_one_or_none()
+    winning_offer = db.get(RoutePriceOffer, route.pending_offer_id)
+    if not winning_offer:
+        raise HTTPException(status_code=400, detail="La oferta seleccionada ya no existe")
 
-    if data.action == "accept":
-        if not last_offer:
-            raise HTTPException(status_code=400, detail="No hay oferta pendiente para aceptar")
-        _close_negotiation(route, float(last_offer.amount), db)
-        last_offer.status = OfferStatus.ACCEPTED
-
-    elif data.action == "counter":
-        if data.amount is None:
-            raise HTTPException(status_code=400, detail="Falta el monto de la contraoferta")
-        if last_offer:
-            last_offer.status = OfferStatus.SUPERSEDED
-        new_offer = RoutePriceOffer(
-            id=uuid.uuid4(), route_header_id=route.id,
-            offered_by=OfferSource.WAREHOUSE, offered_by_user_id=current_user.id,
-            amount=data.amount, note=data.note, status=OfferStatus.PENDING,
-        )
-        db.add(new_offer)
-        route.suggested_price    = data.amount
-        route.negotiation_status = NegotiationStatus.COUNTERED
-
-    elif data.action == "reject":
-        if last_offer:
-            last_offer.status = OfferStatus.REJECTED
-        route.negotiation_status = NegotiationStatus.NONE
-
-    else:
-        raise HTTPException(status_code=400, detail="Acción inválida — usa accept, counter o reject")
+    _close_negotiation(route, float(winning_offer.amount), db)
+    winning_offer.status       = OfferStatus.ACCEPTED
+    route.transport_company_id = winning_offer.transport_company_id
+    route.holding_approved_by  = current_user.id
+    route.holding_approved_at  = datetime.utcnow()
+    route.pending_offer_id     = None
 
     db.commit()
     return serialize_negotiation(route, db)
