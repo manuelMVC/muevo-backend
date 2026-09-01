@@ -6034,6 +6034,12 @@ async def transport_reject_route(
     transport_company_id para que el dispatcher la reasigne a otra
     empresa, e incrementa el contador de rechazos (usado por el
     algoritmo de matching para penalizar el rating).
+
+    Si la ruta venía de una negociación ya aprobada por holding, el
+    rechazo reabre el marketplace para todos los transportistas en vez
+    de dejarla huérfana — el precio/comisión que se habían fijado quedan
+    revertidos, y cualquier empresa (incluida la que acaba de rechazar)
+    puede volver a pujar.
     """
     tc = get_current_transport_company(current_user, db)
     header = db.get(RouteHeader, uuid.UUID(route_id))
@@ -6043,6 +6049,8 @@ async def transport_reject_route(
     if header.status != RouteStatus.PUBLISHED:
         raise HTTPException(status_code=400, detail="La ruta ya no está disponible para rechazar")
 
+    was_negotiated = header.negotiation_status == NegotiationStatus.ACCEPTED
+
     header.transport_company_id = None
     tc.rejected_routes = (tc.rejected_routes or 0) + 1
     if header.internal_notes:
@@ -6050,8 +6058,19 @@ async def transport_reject_route(
     else:
         header.internal_notes = f"Rechazada por {tc.name}: {reason or 'sin motivo especificado'}"
 
+    if was_negotiated:
+        header.internal_notes      += " (negociación reabierta a todos los transportistas)"
+        header.negotiation_status   = NegotiationStatus.SUGGESTED
+        header.status               = RouteStatus.DRAFT
+        header.holding_approved_by  = None
+        header.holding_approved_at  = None
+        header.pending_offer_id     = None
+        header.gross_pay            = 0
+        header.muevo_commission_amt = 0
+        header.net_pay_estimated    = None
+
     db.commit()
-    return {"status": "rejected", "route_id": str(header.id)}
+    return {"status": "rejected", "route_id": str(header.id), "reopened_negotiation": was_negotiated}
 
 
 @app.get("/api/v1/transport/fleet")
