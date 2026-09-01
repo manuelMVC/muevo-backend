@@ -3627,6 +3627,12 @@ async def holding_approve_negotiation(
     route.holding_approved_by  = current_user.id
     route.holding_approved_at  = datetime.utcnow()
     route.pending_offer_id     = None
+    if route.status == RouteStatus.DRAFT:
+        # Recién ahora la ruta tiene transportista y precio final — pasa a
+        # publicada para que aparezca en "Rutas ofrecidas" del transportista
+        # ganador y pueda aceptarla/asignarle un vehículo (mismo flujo que
+        # offer_batch()).
+        route.status = RouteStatus.PUBLISHED
 
     db.commit()
     return serialize_negotiation(route, db)
