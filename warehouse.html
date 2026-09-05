@@ -624,6 +624,9 @@
     <button class="nav-item" id="navMensajes" onclick="showView('mensajes')">
       <span class="nav-icon">💬</span> Mensajes
     </button>
+    <button class="nav-item" id="navOfertas" onclick="showView('ofertas')">
+      <span class="nav-icon">💬</span> Ofertas por ruta
+    </button>
     <button class="nav-item" id="navTarifas" onclick="showView('tarifas')">
       <span class="nav-icon">💲</span> Tarifas
     </button>
@@ -1131,6 +1134,7 @@ function showView(view) {
     mensajes:       ['Mensajes', 'Catálogo de mensajes estándar — código, descripción y macro'],
     tarifas:        ['Tarifas de servicio', 'Parámetros de precio por km, peso y volumen usados en la sugerencia automática'],
     auditoria:      ['Auditoría', 'Historial de cambios en el sistema — quién, qué y cuándo'],
+    ofertas:        ['Ofertas por ruta', 'Negociaciones de precio activas en todas tus rutas, sin abrir cada una por separado'],
   };
   const [title, sub] = titles[view] || ['', ''];
   document.getElementById('topbarTitle').textContent = title;
@@ -1152,6 +1156,7 @@ function showView(view) {
     mensajes:       renderMensajes,
     tarifas:        renderTarifas,
     auditoria:      renderAuditoria,
+    ofertas:        renderOfertas,
   };
   document.getElementById('content').innerHTML = (renders[view] || (() => ''))();
   if (view === 'usuarios')    setTimeout(loadHoldingUsers, 0);
@@ -1161,6 +1166,7 @@ function showView(view) {
   if (view === 'mensajes')    setTimeout(loadMensajes, 0);
   if (view === 'tarifas')     setTimeout(loadTarifas, 0);
   if (view === 'auditoria')   setTimeout(() => loadAuditoria(0), 0);
+  if (view === 'ofertas')     setTimeout(renderOfertasBody, 0);
   csvStep = 0;
 
   if (view === 'tracking') {
@@ -6878,6 +6884,86 @@ async function toggleTarifa(id, activate) {
   } catch (e) { showToast('Error: ' + e.message, 'warn'); }
 }
 
+// ── Ofertas por ruta (overview de negociaciones activas) ───────────────────────
+let ofertasTab = 'abiertas';
+
+function setOfertasTab(tab) {
+  ofertasTab = tab;
+  renderOfertasBody();
+}
+
+function filteredOfertas() {
+  const all = getActiveRoutes().filter(r => r.negotiation_status && r.negotiation_status !== 'none');
+  const map = { abiertas: 'suggested', holding: 'pending_holding_approval', cerradas: 'accepted' };
+  if (ofertasTab === 'todas') return all;
+  return all.filter(r => r.negotiation_status === map[ofertasTab]);
+}
+
+function ofertaStatusBadge(status) {
+  const map = {
+    suggested:                ['badge-orange', 'Abierto a pujas'],
+    pending_holding_approval: ['badge-orange', 'En holding'],
+    accepted:                 ['badge-green',  'Cerrado'],
+  };
+  const [cls, label] = map[status] || ['badge-muted', status];
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function renderOfertas() {
+  return `
+    <div style="margin-bottom:16px">
+      <div class="section-title">Ofertas por ruta</div>
+      <div class="section-sub">Todas las negociaciones de precio activas, sin tener que abrir cada ruta por separado</div>
+    </div>
+    <div class="tabs" style="margin-bottom:16px">
+      <button class="tab ${ofertasTab==='abiertas'?'active':''}"  onclick="setOfertasTab('abiertas')">Abiertas a pujas</button>
+      <button class="tab ${ofertasTab==='holding'?'active':''}"   onclick="setOfertasTab('holding')">En holding</button>
+      <button class="tab ${ofertasTab==='cerradas'?'active':''}"  onclick="setOfertasTab('cerradas')">Cerradas</button>
+      <button class="tab ${ofertasTab==='todas'?'active':''}"     onclick="setOfertasTab('todas')">Todas</button>
+    </div>
+    <div id="ofertasBody"></div>
+  `;
+}
+
+function renderOfertasBody() {
+  const body = document.getElementById('ofertasBody');
+  if (!body) return;
+  const rows = filteredOfertas();
+  body.innerHTML = `
+    <div class="table-wrap" style="overflow-x:auto">
+      <table style="min-width:760px">
+        <thead>
+          <tr>
+            <th>Ruta</th>
+            <th>Estado</th>
+            <th style="text-align:right">Precio público</th>
+            <th style="text-align:right">Precio actual</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows.length === 0 ? `
+            <tr><td colspan="5" style="text-align:center;padding:32px;color:var(--muted)">Sin rutas en esta categoría</td></tr>
+          ` : rows.map(r => `
+            <tr style="border-bottom:1px solid var(--border)">
+              <td style="padding:10px 8px">
+                <div style="font-weight:500">${r.title}</div>
+                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${r.num}</div>
+              </td>
+              <td style="padding:10px 8px">${ofertaStatusBadge(r.negotiation_status)}</td>
+              <td style="text-align:right;padding:10px 8px;font-size:13px">${r.suggested_price != null ? fmt$(r.suggested_price) : '—'}</td>
+              <td style="text-align:right;padding:10px 8px;font-size:13px;color:var(--orange);font-weight:600">${fmt$(r.gross || 0)}</td>
+              <td style="padding:10px 8px">
+                <button class="btn btn-ghost" style="font-size:12px" onclick="openNegotiationPanel('${r.id}')">Ver ofertas</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 // ── Auditoría ────────────────────────────────────────────────────────────────
 let auditoriaList    = [];
 let auditoriaOffset  = 0;
@@ -7391,6 +7477,7 @@ function mapRealRoute(r) {
     mode: r.service_mode === 'mensajeria' ? 'Mensajería' : r.service_mode === 'logistica' ? 'Logística' : r.service_mode === 'paqueteria' ? 'Paquetería' : 'Empleados',
     status: r.status === 'in_progress' ? 'in_progress' : r.status === 'completed' ? 'completed' : r.status === 'published' || r.status === 'assigned' ? 'scheduled' : r.status,
     negotiation_status: r.negotiation_status || 'none',
+    suggested_price: r.suggested_price,
     date: r.scheduled_date ? new Date(r.scheduled_date).toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }) : '—',
     time: r.scheduled_start && r.scheduled_end
       ? `${new Date(r.scheduled_start).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})} – ${new Date(r.scheduled_end).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}`

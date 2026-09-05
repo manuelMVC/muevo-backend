@@ -998,6 +998,8 @@ function renderDashboard() {
     ${offered.map(r => offeredRouteCard(r)).join('')}
     ` : ''}
 
+    ${marketplaceDashboardWidget()}
+
     <div class="section-hdr" style="margin-top:8px">
       <div>
         <div class="section-title">Rutas en curso</div>
@@ -1783,6 +1785,51 @@ async function refreshMarketplace() {
     REAL_MARKETPLACE = await apiGet('/transport/marketplace');
   }
   if (currentView === 'negociacion') document.getElementById('content').innerHTML = renderNegociacion();
+  if (currentView === 'dashboard')   document.getElementById('content').innerHTML = renderDashboard();
+}
+
+function marketplaceDashboardWidget() {
+  const routes = getMarketplaceRoutes();
+  if (routes.length === 0) return '';
+  const preview = routes.slice(0, 3);
+  return `
+    <div class="section-hdr" style="margin-top:8px">
+      <div>
+        <div class="section-title">💬 Rutas abiertas a pujas</div>
+        <div class="section-sub">${routes.length} ruta${routes.length===1?'':'s'} del marketplace de negociación</div>
+      </div>
+      <button class="btn btn-ghost" onclick="showView('negociacion')">Ver todas →</button>
+    </div>
+    ${preview.map(r => marketplaceDashboardCard(r)).join('')}
+  `;
+}
+
+function marketplaceDashboardCard(r) {
+  const lastMine = r.my_thread ? r.my_thread.offers[r.my_thread.offers.length - 1] : null;
+  const canBid   = !lastMine || lastMine.status !== 'pending';
+  return `
+    <div class="card" style="margin-bottom:10px">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
+        <div style="flex:1">
+          <div style="font-size:12px;color:var(--muted);font-family:var(--font-mono);margin-bottom:4px">${r.route_number}</div>
+          <div class="card-title">${r.title}</div>
+          <div class="card-sub">${r.total_stops} parada${r.total_stops===1?'':'s'} · ${r.total_weight_lbs} lbs</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:16px">
+          <div style="font-size:18px;font-weight:600;color:var(--orange)">${r.current_ask != null ? fmt$(r.current_ask) : '—'}</div>
+          <div style="font-size:11px;color:var(--muted)">precio público</div>
+        </div>
+      </div>
+      ${canBid ? `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-primary" style="font-size:12px" onclick="acceptMarketAsk('${r.route_id}')">✓ Aceptar precio</button>
+          <input id="counterAmount-${r.route_id}" type="number" step="0.01" placeholder="Monto"
+            style="width:90px;padding:6px 8px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:12px">
+          <button class="btn btn-ghost" style="font-size:12px" onclick="sendMarketCounter('${r.route_id}')">Contraofertar</button>
+        </div>
+      ` : `<div style="font-size:12px;color:var(--muted)">⏳ Tu oferta de ${fmt$(lastMine.amount)} está pendiente de que el warehouse elija un ganador</div>`}
+    </div>
+  `;
 }
 
 function renderNegociacion() {
