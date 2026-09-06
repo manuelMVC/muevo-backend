@@ -3326,6 +3326,28 @@ def calculate_suggested_price(route: RouteHeader, svc: "ServiceType") -> float:
     return round(price, 2)
 
 
+def _apply_formula_price(route: RouteHeader, svc: Optional["ServiceType"]) -> None:
+    """
+    Fija el precio inicial de una ruta recién creada con la fórmula de
+    calculate_suggested_price(), para que gross_pay no arranque en $0 —
+    a partir de ahí el warehouse puede dejarlo así o abrir la negociación
+    (suggest-price) para intentar conseguir una oferta mejor de algún
+    transportista. No toca negotiation_status (queda 'none': todavía no
+    se negoció nada, esto es solo el precio de partida).
+
+    Requiere que route.total_weight_lbs/total_volume_ft3 ya reflejen los
+    triggers de Postgres (hacer db.refresh(route) después de crear sus
+    paradas/ítems y antes de llamar a esta función).
+    """
+    if not svc:
+        return
+    price = calculate_suggested_price(route, svc)
+    route.gross_pay            = price
+    route.muevo_commission_pct = 5.00
+    route.muevo_commission_amt = round(price * 0.05, 2)
+    route.net_pay_estimated    = round(price * 0.95, 2)
+
+
 def serialize_offer(o: RoutePriceOffer, db: Session) -> dict:
     user = db.get(User, o.offered_by_user_id) if o.offered_by_user_id else None
     tc   = db.get(TransportCompany, o.transport_company_id) if o.transport_company_id else None
@@ -4117,6 +4139,12 @@ async def confirm_batch(
         # Propagar client_code a la ruta si todas las paradas son del mismo cliente
         unique_clients = set(c for c in stop_client_codes if c)
         route.client_code = unique_clients.pop() if len(unique_clients) == 1 else None
+
+        # Precio inicial = fórmula de precio sugerido (peso/volumen ya
+        # agregados por los triggers de Postgres tras crear las paradas)
+        db.refresh(route)
+        _apply_formula_price(route, svc_type)
+
         created_routes.append(route)
 
     # ── Crear RouteBatch ─────────────────────────────────────────────────────
@@ -4284,6 +4312,9 @@ async def add_route_to_batch(
         status=BatchItemStatus.PENDING,
     ))
 
+    db.flush()
+    db.refresh(route)
+    _apply_formula_price(route, svc_type)  # precio inicial = fórmula de precio sugerido
     db.commit()
     db.refresh(route)
     return serialize_route_header(route)

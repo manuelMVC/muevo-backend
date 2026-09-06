@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import uuid
 from contextvars import ContextVar
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from enum import Enum as PyEnum
 from typing import Optional
@@ -2104,7 +2104,7 @@ _AUDIT_NOISY_COLUMNS = {
 def _audit_serialize(value):
     if isinstance(value, uuid.UUID):
         return str(value)
-    if isinstance(value, datetime):
+    if isinstance(value, (datetime, date)):
         return value.isoformat()
     if isinstance(value, PyEnum):
         return value.value
