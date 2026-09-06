@@ -3348,6 +3348,29 @@ def _apply_formula_price(route: RouteHeader, svc: Optional["ServiceType"]) -> No
     route.net_pay_estimated    = round(price * 0.95, 2)
 
 
+def _open_route_marketplace(route: RouteHeader, current_user: User, db: Session) -> None:
+    """
+    Abre el marketplace de negociación de una ruta usando su precio actual
+    (gross_pay, ya fijado por _apply_formula_price al crearla) como ask
+    público inicial — mismo efecto que suggest-price, pero disparado
+    automáticamente al aprobar el lote en vez de exigir un paso manual
+    aparte. No hace nada si la ruta ya tiene una negociación en curso o
+    cerrada (no pisa un suggest-price manual hecho antes de aprobar).
+    """
+    if route.negotiation_status != NegotiationStatus.NONE:
+        return
+    amount = float(route.gross_pay or 0)
+    if amount <= 0:
+        return
+    route.suggested_price    = amount
+    route.negotiation_status = NegotiationStatus.SUGGESTED
+    db.add(RoutePriceOffer(
+        id=uuid.uuid4(), route_header_id=route.id, transport_company_id=None,
+        offered_by=OfferSource.WAREHOUSE, offered_by_user_id=current_user.id,
+        amount=amount, note="Precio inicial al aprobar el lote", status=OfferStatus.PENDING,
+    ))
+
+
 def serialize_offer(o: RoutePriceOffer, db: Session) -> dict:
     user = db.get(User, o.offered_by_user_id) if o.offered_by_user_id else None
     tc   = db.get(TransportCompany, o.transport_company_id) if o.transport_company_id else None
@@ -4994,6 +5017,14 @@ async def change_batch_status(
                 detail="No se puede aprobar el lote — hay rutas sin precio fijado (cerrá la "
                        "negociación primero): " + ", ".join(routes_without_price)
             )
+
+        # Al aprobar, las rutas quedan disponibles en el marketplace para
+        # que cualquier transportista pueda pujar sobre su precio actual.
+        routes_to_open = db.execute(
+            select(RouteHeader).where(RouteHeader.id.in_(route_ids))
+        ).scalars().all()
+        for route in routes_to_open:
+            _open_route_marketplace(route, current_user, db)
 
     # Anular un lote ya aprobado es más serio que cancelar un borrador — exige motivo
     if data.status == "cancelled" and current_status == "approved":
