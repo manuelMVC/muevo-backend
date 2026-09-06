@@ -3416,11 +3416,30 @@ def serialize_negotiation(route: RouteHeader, db: Session) -> dict:
     threads = []
     for tc_id in threads_order:
         tc = db.get(TransportCompany, tc_id)
+        routes_with_us = db.execute(
+            select(func.count(RouteHeader.id)).where(
+                RouteHeader.company_id == route.company_id,
+                RouteHeader.transport_company_id == tc_id,
+            )
+        ).scalar()
         threads.append({
             "transport_company_id":   str(tc_id),
             "transport_company_name": tc.name if tc else None,
             "avg_rating":             float(tc.avg_rating or 0) if tc else None,
             "on_time_pct":            float(tc.on_time_pct or 0) if tc else None,
+            # Info adicional para que el warehouse pueda evaluar al
+            # transportista antes de elegir su oferta — no solo el monto.
+            "is_verified":            tc.is_verified if tc else False,
+            "total_routes":           tc.total_routes if tc else 0,
+            "completed_routes":       tc.completed_routes if tc else 0,
+            "rejected_routes":        tc.rejected_routes if tc else 0,
+            "routes_with_us":         routes_with_us or 0,
+            "contact_name":           tc.contact_name if tc else None,
+            "contact_phone":          tc.contact_phone if tc else None,
+            "city":                   tc.city if tc else None,
+            "state":                  tc.state if tc else None,
+            "dot_number":             tc.dot_number if tc else None,
+            "mc_number":              tc.mc_number if tc else None,
             "offers":                 [serialize_offer(o, db) for o in threads_offers[tc_id]],
         })
 

@@ -7171,8 +7171,14 @@ async function openNegotiationPanel(routeId) {
       ],
       threads: [
         { transport_company_id:'tc1', transport_company_name:'Rapid Courier Orlando LLC', avg_rating:4.6, on_time_pct:92,
+          is_verified:true, total_routes:48, completed_routes:45, rejected_routes:1, routes_with_us:12,
+          contact_name:'Andrea Fuentes', contact_phone:'+1 407 555 0142', city:'Orlando', state:'FL',
+          dot_number:'3456789', mc_number:'987654',
           offers:[{ id:'o2', transport_company_id:'tc1', offered_by:'transport', user_name:'Andrea Fuentes', amount:110.00, note:'La ruta cruza zona de peaje, necesitamos ajustar', status:'pending', created_at:'2026-08-01T14:30:00' }] },
         { transport_company_id:'tc2', transport_company_name:'Sunshine Logistics', avg_rating:4.2, on_time_pct:88,
+          is_verified:false, total_routes:6, completed_routes:5, rejected_routes:0, routes_with_us:0,
+          contact_name:'Miguel Torres', contact_phone:'+1 407 555 0198', city:'Kissimmee', state:'FL',
+          dot_number:null, mc_number:null,
           offers:[{ id:'o3', transport_company_id:'tc2', offered_by:'transport', user_name:'Miguel Torres', amount:99.00, note:null, status:'pending', created_at:'2026-08-01T15:10:00' }] },
       ],
       pending_holding_approval: null,
@@ -7281,11 +7287,31 @@ function renderNegotiationPanel() {
             <div style="padding:10px;margin-bottom:8px;background:var(--card2);border-radius:8px;border:1px solid var(--border)">
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                 <div>
-                  <div style="font-size:13px;font-weight:600;color:var(--white)">${t.transport_company_name || 'Transportista'}</div>
-                  <div style="font-size:10.5px;color:var(--muted)">★ ${t.avg_rating?.toFixed(1) ?? '—'} · ${t.on_time_pct != null ? t.on_time_pct.toFixed(0)+'% a tiempo' : 'sin historial'}</div>
+                  <div style="font-size:13px;font-weight:600;color:var(--white);display:flex;align-items:center;gap:6px">
+                    ${t.transport_company_name || 'Transportista'}
+                    ${t.is_verified
+                      ? '<span class="badge badge-green" style="font-size:9px">✓ Verificado</span>'
+                      : '<span class="badge badge-muted" style="font-size:9px">Sin verificar</span>'}
+                  </div>
+                  <div style="font-size:10.5px;color:var(--muted)">
+                    ★ ${t.avg_rating?.toFixed(1) ?? '—'} · ${t.on_time_pct != null ? t.on_time_pct.toFixed(0)+'% a tiempo' : 'sin historial'}
+                    · ${t.completed_routes ?? 0} completada${t.completed_routes===1?'':'s'}${t.rejected_routes ? ` · ${t.rejected_routes} rechazada${t.rejected_routes===1?'':'s'}` : ''}
+                    · ${t.routes_with_us ? `${t.routes_with_us} con nosotros` : 'nueva para nosotros'}
+                  </div>
                 </div>
                 ${canSelect ? `<button class="btn btn-primary" style="font-size:12px" onclick="selectOffer('${t.transport_company_id}')">Seleccionar esta oferta</button>` : ''}
               </div>
+              <details style="margin-bottom:8px">
+                <summary style="cursor:pointer;font-size:11px;color:var(--muted)">Más información del transportista</summary>
+                <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.7">
+                  ${t.contact_name ? `Contacto: <span style="color:var(--white)">${t.contact_name}</span>${t.contact_phone ? ' · '+t.contact_phone : ''}<br>` : ''}
+                  ${t.city || t.state ? `Base de operación: <span style="color:var(--white)">${[t.city, t.state].filter(Boolean).join(', ')}</span><br>` : ''}
+                  ${t.dot_number ? `DOT: ${t.dot_number}<br>` : ''}
+                  ${t.mc_number ? `MC: ${t.mc_number}<br>` : ''}
+                  Rutas totales: ${t.total_routes ?? 0} · Completadas: ${t.completed_routes ?? 0} · Rechazadas: ${t.rejected_routes ?? 0}<br>
+                  Rutas con esta empresa: ${t.routes_with_us ?? 0}
+                </div>
+              </details>
               ${t.offers.map(renderOfferRow).join('')}
             </div>
           `;
