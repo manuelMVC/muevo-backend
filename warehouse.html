@@ -7513,7 +7513,7 @@ function mapRealRoute(r) {
     gross: r.gross_pay || 0, commission: (r.gross_pay||0) - (r.net_pay||0), net: r.net_pay || 0,
     transportista: r.transport_company?.name || r.transport_company_name || r.transport_company || 'Sin asignar',
     transportista_rating: 4.8,
-    vehicle: '', driver: '',
+    vehicle: r.vehicle_plate || '', driver: r.driver_name || '',
     shipment: r.total_packages > 0 ? {
       total_packages: r.total_packages, total_weight_lbs: r.total_weight_lbs,
       total_volume_ft3: r.total_volume_ft3, stackable: true,

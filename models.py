@@ -1117,6 +1117,7 @@ class RouteHeader(Base):
     origin_warehouse    = relationship("Warehouse",         foreign_keys=[origin_warehouse_id])
     service_type_rel    = relationship("ServiceType",       foreign_keys=[service_type_id], viewonly=True)
     transport_company   = relationship("TransportCompany",  foreign_keys=[transport_company_id])
+    vehicle             = relationship("Vehicle",           foreign_keys=[vehicle_id])
     details             = relationship("RouteDetail", back_populates="route_header",
                                        cascade="all, delete-orphan", order_by="RouteDetail.sequence_order")
 

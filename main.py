@@ -5517,12 +5517,22 @@ def serialize_route_header(rh: "RouteHeader") -> dict:
         "requires_insurance":  rh.requires_insurance,
         # Financiero
         "gross_pay":           float(rh.gross_pay),
+        "net_pay":             float(rh.net_pay_actual if rh.net_pay_actual is not None
+                                      else (rh.net_pay_estimated or 0)),
         "negotiation_status":  rh.negotiation_status.value if hasattr(rh.negotiation_status, 'value') else rh.negotiation_status,
         "suggested_price":     float(rh.suggested_price) if rh.suggested_price else None,
         "margin_pct":          float(rh.margin_pct or 0),
         "company_name":        rh.company.name if rh.company else None,
         "origin_warehouse":    rh.origin_warehouse.name if rh.origin_warehouse else None,
         "driver_notes":        rh.driver_notes,
+        # Transportista / vehículo / conductor asignados (si los hay)
+        "transport_company_id":   str(rh.transport_company_id) if rh.transport_company_id else None,
+        "transport_company_name": rh.transport_company.name if rh.transport_company else None,
+        "vehicle_id":          str(rh.vehicle_id) if rh.vehicle_id else None,
+        "vehicle_plate":       rh.vehicle.plate if rh.vehicle else None,
+        "driver_id":           str(rh.vehicle.driver_id) if rh.vehicle and rh.vehicle.driver_id else None,
+        "driver_name":         (rh.vehicle.driver.user.full_name
+                                 if rh.vehicle and rh.vehicle.driver and rh.vehicle.driver.user else None),
         "stops":               [serialize_route_detail(d) for d in (rh.details or [])],
     }
 
