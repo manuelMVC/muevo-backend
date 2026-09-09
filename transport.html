@@ -954,7 +954,8 @@ function renderDashboard() {
   const scheduled = allRoutes.filter(r => r.status === 'scheduled' || r.status === 'assigned');
   const completed = allRoutes.filter(r => r.status === 'completed');
   const totalNet  = allRoutes.filter(r => r.status === 'completed').reduce((s,r) => s + r.net, 0);
-  const onlineVehicles = FLEET.filter(v => v.driver_online).length;
+  const fleet     = useRealData && REAL_FLEET ? REAL_FLEET : FLEET;
+  const onlineVehicles = fleet.filter(v => v.driver_online).length;
 
   return `
     <div class="kpi-grid">
@@ -970,7 +971,7 @@ function renderDashboard() {
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Vehículos en línea</div>
-        <div class="kpi-value green">${onlineVehicles}/${FLEET.length}</div>
+        <div class="kpi-value green">${onlineVehicles}/${fleet.length}</div>
         <div class="kpi-sub">Flota disponible</div>
       </div>
       <div class="kpi-card">
