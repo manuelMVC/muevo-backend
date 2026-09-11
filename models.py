@@ -2054,6 +2054,38 @@ class HoldingUserProfile(Base):
         Index("ix_hup_company_id",      "company_id"),
     )
 
+# ─── NOTIFICACIONES ─────────────────────────────────────────────────────────
+# Notificación in-app (+ email) para usuarios del warehouse y del portal
+# transportista — separado de notify_batch_client (que es para el contacto
+# externo del cliente, no para usuarios internos de la plataforma).
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id                    = uuid_pk()
+    user_id               = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    type                  = Column(String(60), nullable=False)
+    # string libre (no enum de Postgres) — ej. "marketplace_opened",
+    # "offer_received", "offer_selected", "offer_not_selected",
+    # "holding_approved", "route_offered_direct", "route_accepted",
+    # "route_rejected", "pending_holding_approval", "marketplace_reopened"
+    title                 = Column(String(200), nullable=False)
+    body                  = Column(Text, nullable=True)
+    entity_type           = Column(String(50), nullable=True)   # ej. "route_header", "route_batch"
+    entity_id             = Column(String(100), nullable=True)  # genérico, igual que audit_logs.record_id
+    company_id            = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True)
+    transport_company_id  = Column(UUID(as_uuid=True), ForeignKey("transport_companies.id"), nullable=True)
+    is_read               = Column(Boolean, default=False, nullable=False)
+    created_at            = Column(DateTime(timezone=True), server_default=func.now())
+    read_at               = Column(DateTime(timezone=True), nullable=True)
+
+    user = relationship("User", foreign_keys=[user_id])
+
+    __table_args__ = (
+        Index("ix_notifications_user_unread",  "user_id", "is_read"),
+        Index("ix_notifications_user_created", "user_id", "created_at"),
+    )
+
 # ─── AUDITORÍA ──────────────────────────────────────────────────────────────
 # Captura automática de cualquier insert/update/delete que pase por el ORM,
 # vía el listener before_flush al final de este archivo. No requiere que

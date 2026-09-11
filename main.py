@@ -78,6 +78,8 @@ from models import (
     Warehouse,
     # Auditoría
     AuditLog, AuditAction, current_audit_user_id,
+    # Notificaciones
+    Notification,
 )
 
 # ─── Config ───────────────────────────────────────────────────────────────────
@@ -1405,6 +1407,147 @@ async def notify_batch_client(
 
     html = email_html(subject, body_lines)
     await send_email(client.email, subject, html)
+
+
+# ─── Notificaciones (usuarios internos — warehouse y transportista) ──────────
+# Distinto de notify_batch_client: esto es para los usuarios de la plataforma
+# (admins de company / admins de empresa de transporte), no para el contacto
+# externo del cliente. Cada notificación queda persistida (para la campanita
+# in-app) y además dispara un email best-effort al mismo usuario.
+
+async def create_notification(
+    db: Session, user_id: uuid.UUID, type: str, title: str, body: str,
+    entity_type: Optional[str] = None, entity_id: Optional[uuid.UUID] = None,
+    company_id: Optional[uuid.UUID] = None, transport_company_id: Optional[uuid.UUID] = None,
+) -> None:
+    db.add(Notification(
+        id=uuid.uuid4(), user_id=user_id, type=type, title=title, body=body,
+        entity_type=entity_type, entity_id=str(entity_id) if entity_id else None,
+        company_id=company_id, transport_company_id=transport_company_id,
+    ))
+    user = db.get(User, user_id)
+    if user and user.email:
+        try:
+            await send_email(user.email, title, email_html(title, [body] if body else []))
+        except Exception as e:
+            print(f"[NOTIFY EMAIL ERROR] {user.email}: {e}")
+
+
+async def notify_transport_company(
+    db: Session, transport_company_id: uuid.UUID, type: str, title: str, body: str,
+    entity_type: Optional[str] = None, entity_id: Optional[uuid.UUID] = None,
+) -> None:
+    admin_user_ids = db.execute(
+        select(TransportCompanyAdmin.user_id).where(TransportCompanyAdmin.transport_company_id == transport_company_id)
+    ).scalars().all()
+    for uid in admin_user_ids:
+        await create_notification(db, uid, type, title, body, entity_type, entity_id,
+                                   transport_company_id=transport_company_id)
+
+
+async def notify_all_active_transport_companies(
+    db: Session, type: str, title: str, body: str,
+    entity_type: Optional[str] = None, entity_id: Optional[uuid.UUID] = None,
+) -> None:
+    tc_ids = db.execute(select(TransportCompany.id).where(TransportCompany.is_active == True)).scalars().all()
+    for tc_id in tc_ids:
+        await notify_transport_company(db, tc_id, type, title, body, entity_type, entity_id)
+
+
+async def notify_company_admins(
+    db: Session, company_id: uuid.UUID, type: str, title: str, body: str,
+    entity_type: Optional[str] = None, entity_id: Optional[uuid.UUID] = None,
+) -> None:
+    user_ids = set(db.execute(
+        select(HoldingUserCompany.holding_user_id).where(HoldingUserCompany.company_id == company_id)
+    ).scalars().all())
+    # HoldingUserCompany.holding_user_id -> HoldingUser.id, no directamente User.id
+    holding_user_ids = user_ids
+    resolved_user_ids = set()
+    if holding_user_ids:
+        resolved_user_ids.update(db.execute(
+            select(HoldingUser.user_id).where(HoldingUser.id.in_(holding_user_ids))
+        ).scalars().all())
+    resolved_user_ids.update(db.execute(
+        select(CompanyAdmin.user_id).where(CompanyAdmin.company_id == company_id)
+    ).scalars().all())
+    for uid in resolved_user_ids:
+        await create_notification(db, uid, type, title, body, entity_type, entity_id, company_id=company_id)
+
+
+def serialize_notification(n: Notification) -> dict:
+    return {
+        "id":                    str(n.id),
+        "type":                  n.type,
+        "title":                 n.title,
+        "body":                  n.body,
+        "entity_type":           n.entity_type,
+        "entity_id":             n.entity_id,
+        "is_read":               n.is_read,
+        "created_at":            n.created_at.isoformat() if n.created_at else None,
+        "read_at":               n.read_at.isoformat() if n.read_at else None,
+    }
+
+
+@app.get("/api/v1/notifications")
+async def list_notifications(
+    unread_only:  bool = False,
+    limit:        int = 30,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """Notificaciones del usuario autenticado — nunca las de otro usuario."""
+    limit = max(1, min(limit, 100))
+    query = select(Notification).where(Notification.user_id == current_user.id)
+    if unread_only:
+        query = query.where(Notification.is_read == False)
+    rows = db.execute(query.order_by(Notification.created_at.desc()).limit(limit)).scalars().all()
+    return [serialize_notification(n) for n in rows]
+
+
+@app.get("/api/v1/notifications/unread-count")
+async def notifications_unread_count(
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    count = db.execute(
+        select(func.count(Notification.id)).where(
+            Notification.user_id == current_user.id, Notification.is_read == False
+        )
+    ).scalar()
+    return {"unread_count": count or 0}
+
+
+@app.post("/api/v1/notifications/{notification_id}/read")
+async def mark_notification_read(
+    notification_id: str,
+    current_user:     User    = Depends(get_current_user),
+    db:                Session = Depends(get_db),
+):
+    n = db.get(Notification, uuid.UUID(notification_id))
+    if not n or n.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada")
+    if not n.is_read:
+        n.is_read = True
+        n.read_at = datetime.utcnow()
+        db.commit()
+    return serialize_notification(n)
+
+
+@app.post("/api/v1/notifications/read-all")
+async def mark_all_notifications_read(
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    rows = db.execute(
+        select(Notification).where(Notification.user_id == current_user.id, Notification.is_read == False)
+    ).scalars().all()
+    now = datetime.utcnow()
+    for n in rows:
+        n.is_read = True
+        n.read_at = now
+    db.commit()
+    return {"status": "ok", "marked": len(rows)}
 
 
 # ─── Batch Clients CRUD ───────────────────────────────────────────────────────
@@ -3648,6 +3791,12 @@ async def transport_counter_offer(
         amount=data.amount, note=data.note, status=OfferStatus.PENDING,
     )
     db.add(offer)
+    await notify_company_admins(
+        db, route.company_id, "offer_received",
+        f"Nueva oferta de {tc.name} — ruta {route.route_number}",
+        f"{tc.name} contraofertó {float(data.amount)} para la ruta {route.route_number}.",
+        entity_type="route_header", entity_id=route.id,
+    )
     db.commit()
     return serialize_negotiation(route, db)
 
@@ -3687,6 +3836,12 @@ async def transport_accept_price(
         amount=current_ask, note="Aceptó el precio público", status=OfferStatus.PENDING,
     )
     db.add(offer)
+    await notify_company_admins(
+        db, route.company_id, "offer_received",
+        f"Nueva oferta de {tc.name} — ruta {route.route_number}",
+        f"{tc.name} aceptó el precio público ({float(current_ask)}) para la ruta {route.route_number}.",
+        entity_type="route_header", entity_id=route.id,
+    )
     db.commit()
     return serialize_negotiation(route, db)
 
@@ -3733,12 +3888,36 @@ async def warehouse_select_offer(
             RoutePriceOffer.status == OfferStatus.PENDING,
         )
     ).scalars().all()
+    losing_tc_ids = {o.transport_company_id for o in other_pending}
     for o in other_pending:
         o.status = OfferStatus.REJECTED
 
     winning_offer.status        = OfferStatus.SELECTED
     route.pending_offer_id      = winning_offer.id
     route.negotiation_status    = NegotiationStatus.PENDING_HOLDING_APPROVAL
+
+    winning_tc = db.get(TransportCompany, tc_uuid)
+    await notify_transport_company(
+        db, tc_uuid, "offer_selected",
+        f"Tu oferta fue seleccionada — ruta {route.route_number}",
+        f"El warehouse eligió tu oferta de {float(winning_offer.amount)} para la ruta {route.route_number}. "
+        f"Queda pendiente de aprobación de holding.",
+        entity_type="route_header", entity_id=route.id,
+    )
+    for losing_tc_id in losing_tc_ids:
+        await notify_transport_company(
+            db, losing_tc_id, "offer_not_selected",
+            f"Tu oferta no fue seleccionada — ruta {route.route_number}",
+            f"El warehouse eligió otra oferta para la ruta {route.route_number}.",
+            entity_type="route_header", entity_id=route.id,
+        )
+    await notify_company_admins(
+        db, company.id, "pending_holding_approval",
+        f"Ruta {route.route_number} en holding — pendiente de aprobación",
+        f"Se eligió la oferta de {winning_tc.name if winning_tc else 'un transportista'} "
+        f"({float(winning_offer.amount)}) — falta la aprobación de holding para cerrar el trato.",
+        entity_type="route_header", entity_id=route.id,
+    )
 
     db.commit()
     return serialize_negotiation(route, db)
@@ -3780,6 +3959,15 @@ async def holding_approve_negotiation(
         # ganador y pueda aceptarla/asignarle un vehículo (mismo flujo que
         # offer_batch()).
         route.status = RouteStatus.PUBLISHED
+
+    if winning_offer.transport_company_id:
+        await notify_transport_company(
+            db, winning_offer.transport_company_id, "holding_approved",
+            f"¡Ganaste la negociación! Ruta {route.route_number}",
+            f"Holding aprobó tu oferta de {float(winning_offer.amount)} para la ruta {route.route_number} — "
+            f"aceptala y asigná un vehículo.",
+            entity_type="route_header", entity_id=route.id,
+        )
 
     db.commit()
     return serialize_negotiation(route, db)
@@ -4905,6 +5093,14 @@ async def offer_batch(
     if data.expires_at:
         batch.expires_at = datetime.fromisoformat(data.expires_at)
 
+    await notify_transport_company(
+        db, tc_id, "route_offered_direct",
+        f"Nuevo lote ofrecido — {batch.batch_number}",
+        f"Se te ofreció el lote {batch.batch_number} directamente ({len(pending_items)} "
+        f"ruta{'s' if len(pending_items) != 1 else ''}) — revisalo en \"Rutas ofrecidas\".",
+        entity_type="route_batch", entity_id=batch.id,
+    )
+
     db.commit()
     return {"status": "offered", "batch_id": batch_id, "items_offered": len(pending_items)}
 
@@ -4947,6 +5143,22 @@ async def respond_batch_item(
         tc.rejected_routes = (tc.rejected_routes or 0) + 1
     else:
         raise HTTPException(status_code=400, detail="Acción inválida — usa 'accept' o 'reject'")
+
+    if data.action == "accept":
+        await notify_company_admins(
+            db, route.company_id, "route_accepted",
+            f"{tc.name} aceptó la ruta {route.route_number}",
+            f"{tc.name} aceptó la ruta ofrecida directamente" +
+            (f" y le asignó un vehículo." if data.vehicle_id else "."),
+            entity_type="route_header", entity_id=route.id,
+        )
+    else:
+        await notify_company_admins(
+            db, route.company_id, "route_rejected",
+            f"{tc.name} rechazó la ruta {route.route_number}",
+            f"{tc.name} rechazó la ruta ofrecida directamente — queda libre para reasignar.",
+            entity_type="route_header", entity_id=route.id,
+        )
 
     # Recalcular status del lote completo
     _recalculate_batch_status(item.batch_id, db)
@@ -5042,8 +5254,19 @@ async def change_batch_status(
         routes_to_open = db.execute(
             select(RouteHeader).where(RouteHeader.id.in_(route_ids))
         ).scalars().all()
+        newly_opened = 0
         for route in routes_to_open:
+            was_none = route.negotiation_status == NegotiationStatus.NONE
             _open_route_marketplace(route, current_user, db)
+            if was_none and route.negotiation_status == NegotiationStatus.SUGGESTED:
+                newly_opened += 1
+        if newly_opened > 0:
+            await notify_all_active_transport_companies(
+                db, "marketplace_opened",
+                f"{newly_opened} ruta{'s' if newly_opened != 1 else ''} nueva{'s' if newly_opened != 1 else ''} disponible{'s' if newly_opened != 1 else ''} para pujar",
+                f"El lote {batch.batch_number} fue aprobado — {newly_opened} de sus rutas están abiertas a ofertas.",
+                entity_type="route_batch", entity_id=batch.id,
+            )
 
     # Anular un lote ya aprobado es más serio que cancelar un borrador — exige motivo
     if data.status == "cancelled" and current_status == "approved":
@@ -6242,6 +6465,26 @@ async def transport_reject_route(
         header.gross_pay            = 0
         header.muevo_commission_amt = 0
         header.net_pay_estimated    = None
+
+        await notify_company_admins(
+            db, header.company_id, "route_rejected",
+            f"{tc.name} rechazó la ruta negociada {header.route_number}",
+            f"{tc.name} rechazó la ruta ya aprobada por holding — el marketplace se reabrió para todos los transportistas.",
+            entity_type="route_header", entity_id=header.id,
+        )
+        await notify_all_active_transport_companies(
+            db, "marketplace_reopened",
+            f"Ruta reabierta a pujas — {header.route_number}",
+            f"La ruta {header.route_number} volvió a estar disponible para ofertas.",
+            entity_type="route_header", entity_id=header.id,
+        )
+    else:
+        await notify_company_admins(
+            db, header.company_id, "route_rejected",
+            f"{tc.name} rechazó la ruta {header.route_number}",
+            f"{tc.name} rechazó la ruta ofrecida — queda libre para reasignar.",
+            entity_type="route_header", entity_id=header.id,
+        )
 
     db.commit()
     return {"status": "rejected", "route_id": str(header.id), "reopened_negotiation": was_negotiated}

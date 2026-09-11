@@ -686,6 +686,28 @@
       </div>
     </div>
     <div class="topbar-actions">
+      <div style="position:relative;margin-right:4px">
+        <button id="notifBellBtn" onclick="toggleNotificationPanel()" title="Notificaciones"
+          style="background:none;border:1px solid var(--border);border-radius:8px;
+                 padding:6px 10px;cursor:pointer;font-size:16px;color:var(--muted);
+                 position:relative;transition:all .15s"
+          onmouseover="this.style.color='var(--white)'"
+          onmouseout="this.style.color='var(--muted)'">
+          🔔
+          <span id="notifBadge" style="display:none;position:absolute;top:-3px;right:-3px;background:var(--orange);
+                color:#111;font-size:9.5px;font-weight:700;border-radius:9px;min-width:15px;height:15px;
+                line-height:15px;text-align:center;padding:0 2px"></span>
+        </button>
+        <div id="notifPanel" style="display:none;position:absolute;top:42px;right:0;width:340px;max-height:440px;
+             overflow-y:auto;background:var(--card);border:1px solid var(--border);border-radius:10px;
+             box-shadow:0 10px 30px rgba(0,0,0,.35);z-index:1000">
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--border)">
+            <span style="font-size:13px;font-weight:600;color:var(--white)">Notificaciones</span>
+            <button onclick="markAllNotificationsRead()" style="background:none;border:none;color:var(--orange);font-size:11px;cursor:pointer;padding:0">Marcar todas leídas</button>
+          </div>
+          <div id="notifList"></div>
+        </div>
+      </div>
       <button id="themeToggleBtn" onclick="toggleTheme()" title="Cambiar tema"
         style="background:none;border:1px solid var(--border);border-radius:8px;
                padding:6px 10px;cursor:pointer;font-size:16px;color:var(--muted);
@@ -1612,6 +1634,106 @@ function showToast(msg, type='info') {
 }
 
 
+// ── Notificaciones ───────────────────────────────────────────────────────────
+let notifPollInterval = null;
+
+function timeAgo(iso) {
+  if (!iso) return '';
+  const diffSec = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diffSec < 60) return 'ahora';
+  if (diffSec < 3600) return Math.floor(diffSec / 60) + ' min';
+  if (diffSec < 86400) return Math.floor(diffSec / 3600) + ' h';
+  return Math.floor(diffSec / 86400) + ' d';
+}
+
+async function loadNotificationBadge() {
+  if (!useRealData) return;
+  try {
+    const r = await apiGet('/notifications/unread-count');
+    const badge = document.getElementById('notifBadge');
+    if (!badge) return;
+    if (r.unread_count > 0) {
+      badge.textContent = r.unread_count > 99 ? '99+' : r.unread_count;
+      badge.style.display = 'block';
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch (e) { /* silencioso */ }
+}
+
+function startNotificationPolling() {
+  loadNotificationBadge();
+  if (notifPollInterval) clearInterval(notifPollInterval);
+  notifPollInterval = setInterval(loadNotificationBadge, 30000);
+}
+
+async function toggleNotificationPanel() {
+  const panel = document.getElementById('notifPanel');
+  if (!panel) return;
+  const isOpen = panel.style.display === 'block';
+  panel.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) await renderNotificationList();
+}
+
+document.addEventListener('click', (e) => {
+  const panel = document.getElementById('notifPanel');
+  const btn = document.getElementById('notifBellBtn');
+  if (!panel || panel.style.display !== 'block') return;
+  if (!panel.contains(e.target) && !btn.contains(e.target)) panel.style.display = 'none';
+});
+
+async function renderNotificationList() {
+  const list = document.getElementById('notifList');
+  if (!list) return;
+  if (!useRealData) {
+    list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px">Sin notificaciones (modo demo)</div>';
+    return;
+  }
+  list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px">Cargando...</div>';
+  try {
+    const items = await apiGet('/notifications?limit=20');
+    if (items.length === 0) {
+      list.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px">No tenés notificaciones</div>';
+      return;
+    }
+    list.innerHTML = items.map(n => `
+      <div onclick="openNotification('${n.id}','${n.entity_type||''}','${n.entity_id||''}')"
+        style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;${n.is_read?'opacity:.55':''}">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+          <span style="font-size:12.5px;font-weight:600;color:var(--white)">${n.title}</span>
+          ${!n.is_read ? '<span style="width:7px;height:7px;border-radius:50%;background:var(--orange);flex-shrink:0;margin-top:4px"></span>' : ''}
+        </div>
+        ${n.body ? `<div style="font-size:11.5px;color:var(--muted);margin-top:2px">${n.body}</div>` : ''}
+        <div style="font-size:10px;color:var(--muted);margin-top:4px">${timeAgo(n.created_at)}</div>
+      </div>
+    `).join('');
+  } catch (e) {
+    list.innerHTML = `<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px">Error: ${e.message}</div>`;
+  }
+}
+
+async function openNotification(id, entityType, entityId) {
+  try { await apiPost(`/notifications/${id}/read`, {}); } catch (e) {}
+  loadNotificationBadge();
+  const panel = document.getElementById('notifPanel');
+  if (panel) panel.style.display = 'none';
+  if (entityType === 'route_header') {
+    // La ruta puede no estar asignada a esta empresa todavía (ej. sigue en
+    // marketplace abierto) — la Negociación es el destino seguro siempre.
+    showView('negociacion');
+  } else if (entityType === 'route_batch') {
+    showView('rutas');
+  }
+}
+
+async function markAllNotificationsRead() {
+  try {
+    await apiPost('/notifications/read-all', {});
+    await renderNotificationList();
+    loadNotificationBadge();
+  } catch (e) { showToast('Error: ' + e.message, 'warn'); }
+}
+
 // ── Theme (dark / light) ───────────────────────────────────────────────────
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
@@ -2216,7 +2338,7 @@ function disconnectTrackingWS() {
   }
   authToken = savedToken;
   useRealData = true;
-  loadRealData().then(() => showView('dashboard'));
+  loadRealData().then(() => { showView('dashboard'); startNotificationPolling(); });
 })();
 
 </script>
