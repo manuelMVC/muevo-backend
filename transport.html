@@ -931,6 +931,7 @@ function fmt$(n)    { return '$' + n.toFixed(2); }
 // ── Views ─────────────────────────────────────────────────────────────────
 let currentView = 'dashboard';
 let activeTab   = 'todas';
+let dashRouteFilter = 'todos';
 
 function showView(view) {
   currentView = view;
@@ -979,28 +980,67 @@ function renderDashboard() {
   const fleet     = useRealData && REAL_FLEET ? REAL_FLEET : FLEET;
   const onlineVehicles = fleet.filter(v => v.driver_online).length;
 
-  return `
-    <div class="kpi-grid">
+  const html = `
+    <!-- KPIs resumen -->
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:20px">
+
+      <!-- Bloque 1: Total rutas -->
       <div class="kpi-card">
-        <div class="kpi-label">Rutas ofrecidas</div>
-        <div class="kpi-value ${offered.length>0?'orange':''}">${offered.length}</div>
-        <div class="kpi-sub ${offered.length>0?'up':''}">${offered.length>0?'⏳ Esperan tu respuesta':'Sin pendientes'}</div>
+        <div class="kpi-label">Total rutas</div>
+        <div class="kpi-value">${allRoutes.length}</div>
+        <div class="kpi-sub" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
+          ${[
+            { key:'offered',     label:'Ofrecida',    color:'var(--yellow)' },
+            { key:'scheduled',   label:'Programada',  color:'var(--blue)'   },
+            { key:'in_progress', label:'En curso',     color:'var(--orange)' },
+            { key:'completed',   label:'Completada',  color:'var(--green)'  },
+            { key:'cancelled',   label:'Cancelada',   color:'var(--red)'    },
+          ].map(s => ({ ...s, count: allRoutes.filter(r=>r.status===s.key).length }))
+           .filter(s => s.count > 0)
+           .map(s => `<span style="color:${s.color};font-size:11px">${s.count} ${s.label}</span>`)
+           .join('<span style="color:var(--border);font-size:11px"> · </span>')}
+        </div>
       </div>
-      <div class="kpi-card">
-        <div class="kpi-label">Rutas en curso</div>
-        <div class="kpi-value orange">${active.length}</div>
-        <div class="kpi-sub up">↑ En ejecución ahora</div>
-      </div>
+
+      <!-- Bloque 2: Vehículos en línea -->
       <div class="kpi-card">
         <div class="kpi-label">Vehículos en línea</div>
         <div class="kpi-value green">${onlineVehicles}/${fleet.length}</div>
-        <div class="kpi-sub">Flota disponible</div>
+        <div class="kpi-sub" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
+          ${[
+            { key:'en_ruta',       label:'En ruta',       color:'var(--orange)', count: fleet.filter(v=>v.driver_online && v.active_route_id).length },
+            { key:'disponible',    label:'Disponible',    color:'var(--green)',  count: fleet.filter(v=>v.driver_online && !v.active_route_id).length },
+            { key:'desconectado',  label:'Desconectado',  color:'var(--muted)',  count: fleet.filter(v=>v.driver_name && !v.driver_online).length },
+            { key:'sin_conductor', label:'Sin conductor', color:'var(--muted)',  count: fleet.filter(v=>!v.driver_name).length },
+          ].filter(s => s.count > 0)
+           .map(s => `<span style="color:${s.color};font-size:11px">${s.count} ${s.label}</span>`)
+           .join('<span style="color:var(--border);font-size:11px"> · </span>')}
+        </div>
       </div>
+
+      <!-- Bloque 3: Ingreso neto acumulado -->
       <div class="kpi-card">
-        <div class="kpi-label">Ingreso neto esta semana</div>
+        <div class="kpi-label">Ingreso neto acumulado</div>
         <div class="kpi-value orange">${fmt$(totalNet)}</div>
-        <div class="kpi-sub">Ya descontada la comisión Muevo</div>
+        <div class="kpi-sub">Ya descontada la comisión Muevo · rutas completadas</div>
       </div>
+
+      <!-- Bloque 4: Gráfico torta — estados de rutas -->
+      <div class="kpi-card" style="padding:12px">
+        <div class="kpi-label" style="margin-bottom:6px">Estados de rutas</div>
+        <canvas id="pieChartRutasTransp" width="140" height="100"
+          style="display:block;margin:0 auto"></canvas>
+        <div id="legendRutasTransp" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 8px"></div>
+      </div>
+
+      <!-- Bloque 5: Gráfico barras — estado de flota -->
+      <div class="kpi-card" style="padding:12px">
+        <div class="kpi-label" style="margin-bottom:6px">Estado de flota</div>
+        <canvas id="barChartFlota" width="160" height="100"
+          style="display:block;margin:0 auto"></canvas>
+        <div id="legendFlota" style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px 8px"></div>
+      </div>
+
     </div>
 
     ${offered.length > 0 ? `
@@ -1011,103 +1051,403 @@ function renderDashboard() {
         El dispatcher te asignó ${offered.length===1?'esta ruta':'estas rutas'} — aceptá o rechazá antes de que pase a otra empresa.
       </div>
     </div>
-
-    <div class="section-hdr">
-      <div>
-        <div class="section-title">Rutas ofrecidas — requieren acción</div>
-        <div class="section-sub">Aceptá asignando un vehículo, o rechazá si no podés cubrirla</div>
-      </div>
-    </div>
-    ${offered.map(r => offeredRouteCard(r)).join('')}
     ` : ''}
 
     ${marketplaceDashboardWidget()}
 
     <div class="section-hdr" style="margin-top:8px">
       <div>
-        <div class="section-title">Rutas en curso</div>
-        <div class="section-sub">Actualizado hace 30 segundos</div>
+        <div class="section-title">Rutas</div>
+        <div class="section-sub">Estado de todas tus rutas asignadas</div>
       </div>
       <button class="btn btn-ghost" onclick="showView('tracking')">Ver tracking de flota →</button>
     </div>
 
-    ${active.length > 0 ? active.map(r => dashRouteCard(r)).join('') : '<div class="card" style="text-align:center;color:var(--muted);padding:24px">No hay rutas en curso en este momento.</div>'}
+    ${renderDashboardRouteMatrix(allRoutes, offered, scheduled, active, completed)}
+  `;
 
-    <div class="section-hdr" style="margin-top:8px">
-      <div class="section-title">Próximas rutas asignadas</div>
-      <button class="btn btn-ghost" onclick="showView('rutas')">Ver todas →</button>
+  // Inicializar gráficos después del paint
+  setTimeout(() => renderTransportDashboardCharts(allRoutes, fleet), 80);
+  return html;
+}
+
+function setDashRouteFilter(key) {
+  dashRouteFilter = key;
+  document.getElementById('content').innerHTML = renderDashboard();
+}
+
+function renderDashboardRouteMatrix(allRoutes, offered, scheduled, active, completed) {
+  const cancelled = allRoutes.filter(r => r.status === 'cancelled');
+
+  const FILTERS = [
+    { key:'todos',       label:'Todas',       count: allRoutes.length },
+    { key:'offered',     label:'Ofrecidas',   count: offered.length   },
+    { key:'scheduled',   label:'Programadas', count: scheduled.length },
+    { key:'in_progress', label:'En curso',    count: active.length    },
+    { key:'completed',   label:'Completadas', count: completed.length },
+    { key:'cancelled',   label:'Canceladas',  count: cancelled.length },
+  ].filter(f => f.key === 'todos' || f.count > 0);
+
+  if (!FILTERS.find(f => f.key === dashRouteFilter)) dashRouteFilter = 'todos';
+
+  const filtered = dashRouteFilter === 'todos' ? allRoutes
+    : dashRouteFilter === 'scheduled' ? scheduled
+    : allRoutes.filter(r => r.status === dashRouteFilter);
+
+  return `
+    <!-- Filtros por estado -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:16px;row-gap:8px">
+      ${FILTERS.map(f => `
+        <button onclick="setDashRouteFilter('${f.key}')"
+          class="btn ${dashRouteFilter===f.key?'btn-primary':'btn-ghost'}"
+          style="font-size:12px;padding:5px 12px;flex-shrink:0">
+          ${f.label}${f.count > 0 ? ` <span style="opacity:.7">(${f.count})</span>` : ''}
+        </button>
+      `).join('')}
     </div>
 
-    ${scheduled.map(r => dashRouteCard(r)).join('')}
+    <!-- Matriz de rutas -->
+    <div class="table-wrap" style="overflow-x:auto">
+      <table style="min-width:900px;font-size:12px">
+        <thead>
+          <tr style="font-size:11px">
+            <th style="min-width:170px;padding:7px 8px">Ruta</th>
+            <th style="min-width:90px;padding:7px 8px">Tipo</th>
+            <th style="min-width:90px;padding:7px 8px">Fecha</th>
+            <th style="min-width:150px;padding:7px 8px">Vehículo / Conductor</th>
+            <th style="min-width:90px;padding:7px 8px">Paradas</th>
+            <th style="min-width:110px;padding:7px 8px">Estado</th>
+            <th style="text-align:right;min-width:80px;padding:7px 8px">Neto</th>
+            <th style="min-width:140px;padding:7px 8px"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filtered.length === 0 ? `
+            <tr><td colspan="8" style="text-align:center;padding:32px;color:var(--muted)">
+              No hay rutas en este estado
+            </td></tr>
+          ` : filtered.map(r => `
+            <tr style="cursor:pointer;font-size:12px" onclick="openRoute('${r.id}')">
+              <td style="padding:8px">
+                <div style="font-weight:600;color:var(--white)">${r.title}</div>
+                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${r.num}</div>
+              </td>
+              <td style="padding:8px">${modeBadge(r.mode)}</td>
+              <td style="padding:8px;color:var(--muted)">
+                <div style="font-size:12px">${r.date}</div>
+                <div style="font-size:11px">${r.time}</div>
+              </td>
+              <td style="padding:8px">
+                <div style="font-size:12px">${r.vehicle || '<span style="color:var(--muted)">Sin vehículo</span>'}</div>
+                <div style="font-size:11px;color:var(--muted)">${r.driver || 'Sin asignar'}</div>
+              </td>
+              <td style="padding:8px">
+                <div style="font-size:12px">${r.stops_done}/${r.stops_total}</div>
+                <div style="width:50px;height:3px;background:var(--border);border-radius:2px;margin-top:4px">
+                  <div style="width:${pct(r.stops_done,r.stops_total)}%;height:100%;background:var(--orange);border-radius:2px"></div>
+                </div>
+              </td>
+              <td style="padding:8px">${statusBadge(r.status)}</td>
+              <td style="text-align:right;padding:8px;font-weight:600;color:var(--orange)">${fmt$(r.net)}</td>
+              <td onclick="event.stopPropagation()" style="padding:8px;white-space:nowrap">
+                <div style="display:flex;gap:4px;align-items:center;justify-content:flex-end">
+                  ${r.status === 'offered' ? `
+                    <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;color:var(--red,#D85A30)"
+                      onclick="event.stopPropagation();rejectRoute('${r.id}')">✕ Rechazar</button>
+                    <button class="btn btn-primary" style="font-size:11px;padding:3px 8px"
+                      onclick="event.stopPropagation();openAcceptModal('${r.id}')">✓ Aceptar</button>
+                  ` : `
+                    <span style="font-size:11px;color:var(--orange)">Ver detalle →</span>
+                  `}
+                </div>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
-function offeredRouteCard(r) {
-  return `
-    <div class="card" style="margin-bottom:10px;border-color:var(--yellow-bdr,#854F0B)">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
-        <div style="flex:1">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-            <span style="font-size:12px;color:var(--muted);font-family:var(--font-mono)">${r.num}</span>
-            ${statusBadge(r.status)}
-            ${modeBadge(r.mode)}
-          </div>
-          <div class="card-title">${r.title}</div>
-          <div class="card-sub">Cliente: ${r.client} · ${r.stops_total} parada${r.stops_total===1?'':'s'}</div>
-        </div>
-        <div style="text-align:right;flex-shrink:0;margin-left:16px">
-          <div style="font-size:18px;font-weight:600;color:var(--orange)">${fmt$(r.net)}</div>
-          <div style="font-size:11px;color:var(--muted)">neto · ${r.km} km</div>
-        </div>
-      </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
-        <span class="badge badge-muted">📅 ${r.date}</span>
-        <span class="badge badge-muted">🕐 ${r.time}</span>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost" style="flex:1" onclick="openRoute('${r.id}')">Ver detalle</button>
-        <button class="btn btn-ghost" style="color:var(--red,#D85A30)" onclick="rejectRoute('${r.id}')">✕ Rechazar</button>
-        <button class="btn btn-primary" style="flex:1" onclick="openAcceptModal('${r.id}')">✓ Aceptar ruta</button>
-      </div>
-    </div>
-  `;
+function shadeColor(hex, percent) {
+  // percent negativo oscurece, positivo aclara
+  const f = parseInt(hex.slice(1), 16);
+  const t = percent < 0 ? 0 : 255;
+  const p = Math.abs(percent);
+  const R = f >> 16, G = (f >> 8) & 0x00FF, B = f & 0x0000FF;
+  const nR = Math.round((t - R) * p) + R;
+  const nG = Math.round((t - G) * p) + G;
+  const nB = Math.round((t - B) * p) + B;
+  return `#${(0x1000000 + nR*0x10000 + nG*0x100 + nB).toString(16).slice(1)}`;
 }
 
-function dashRouteCard(r) {
-  const pctDone = pct(r.stops_done, r.stops_total);
-  return `
-    <div class="card" style="margin-bottom:10px;cursor:pointer" onclick="openRoute('${r.id}')">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
-        <div style="flex:1">
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-            <span style="font-size:12px;color:var(--muted);font-family:var(--font-mono)">${r.num}</span>
-            ${statusBadge(r.status)}
-            ${modeBadge(r.mode)}
-          </div>
-          <div class="card-title">${r.title}</div>
-          <div class="card-sub">${r.client} · ${r.vehicle || 'Sin vehículo asignado'}${r.driver ? ' · ' + r.driver : ''}</div>
-        </div>
-        <div style="text-align:right;flex-shrink:0;margin-left:16px">
-          <div style="font-size:18px;font-weight:600;color:var(--orange)">${fmt$(r.net)}</div>
-          <div style="font-size:11px;color:var(--muted)">neto · ${r.km} km</div>
-        </div>
-      </div>
-      <div class="prog-wrap" style="margin-bottom:8px">
-        <div class="prog-label">
-          <span>${r.stops_done} de ${r.stops_total} paradas completadas</span>
-          <span>${pctDone}%</span>
-        </div>
-        <div class="prog-track">
-          <div class="prog-fill ${r.status==='completed'?'green':''}" style="width:${pctDone}%"></div>
-        </div>
-      </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-        <span class="badge badge-muted">📅 ${r.date}</span>
-        <span class="badge badge-muted">🕐 ${r.time}</span>
-        <span style="margin-left:auto;font-size:12px;color:var(--orange)">Ver detalle →</span>
-      </div>
-    </div>
-  `;
+function renderTransportDashboardCharts(allRoutes, fleet) {
+  const isDark      = document.documentElement.getAttribute('data-theme') !== 'light';
+  const borderColor = isDark ? '#1C1C1C' : '#fff';
+  const mutedColor  = isDark ? '#666' : '#aaa';
+
+  const ROUTE_STATES = [
+    { key:'offered',     label:'Ofrecida',   color:'#F1C40F' },
+    { key:'scheduled',   label:'Program.',   color:'#2E86DE' },
+    { key:'in_progress', label:'En curso',   color:'#F47B20' },
+    { key:'completed',   label:'Complet.',   color:'#27AE60' },
+    { key:'cancelled',   label:'Cancelada',  color:'#E74C3C' },
+  ].map(s => ({ ...s, count: allRoutes.filter(r=>r.status===s.key).length }))
+   .filter(s => s.count > 0);
+
+  const FLEET_STATES = [
+    { key:'en_ruta',       label:'En ruta',       color:'#F47B20', count: fleet.filter(v=>v.driver_online && v.active_route_id).length },
+    { key:'disponible',    label:'Disponible',    color:'#27AE60', count: fleet.filter(v=>v.driver_online && !v.active_route_id).length },
+    { key:'desconectado',  label:'Desconect.',    color:'#8A8A8A', count: fleet.filter(v=>v.driver_name && !v.driver_online).length },
+    { key:'sin_conductor', label:'Sin conduct.',  color:'#555555', count: fleet.filter(v=>!v.driver_name).length },
+  ].filter(s => s.count > 0);
+
+  const pie = document.getElementById('pieChartRutasTransp');
+  if (pie && ROUTE_STATES.length > 0) setupPieChart(pie, ROUTE_STATES, borderColor, mutedColor, 'legendRutasTransp');
+
+  const bar = document.getElementById('barChartFlota');
+  if (bar && FLEET_STATES.length > 0) setupBarChart(bar, FLEET_STATES, mutedColor, 'legendFlota');
+}
+
+// ── Torta interactiva: ilumina la porción bajo el cursor ─────────────────────
+function setupPieChart(canvas, DATA, borderColor, mutedColor, legendId) {
+  const W = canvas.width, H = canvas.height;
+  const cx = W/2, cy = H/2;
+  const rx = Math.min(W/2, H/2) - 8;
+  const ry = rx * 0.55;
+  const tot = DATA.reduce((s,d)=>s+d.count,0);
+
+  let a0 = -Math.PI/2;
+  const slices = DATA.map(d => {
+    const a1 = a0 + (d.count/tot)*2*Math.PI;
+    const seg = { ...d, a0, a1 };
+    a0 = a1;
+    return seg;
+  });
+
+  function draw(hoverIdx) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,W,H);
+
+    // Disco plano (sin extrusión) — solo la tapa con gradiente de iluminación
+    slices.forEach((s, i) => {
+      const isHover = hoverIdx === i;
+      const dim = hoverIdx !== null && !isHover;
+      // Explode sutil hacia afuera al hacer hover
+      let ox = 0, oy = 0;
+      if (isHover) {
+        const mid = (s.a0 + s.a1) / 2;
+        ox = Math.cos(mid) * 4;
+        oy = Math.sin(mid) * 2;
+      }
+      ctx.save();
+      ctx.translate(ox, oy);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.ellipse(cx, cy, rx, ry, 0, s.a0, s.a1);
+      ctx.closePath();
+
+      if (isHover) {
+        ctx.shadowColor = s.color;
+        ctx.shadowBlur = 14;
+      }
+      const grad = ctx.createRadialGradient(cx - rx*0.3, cy - ry*0.3, 2, cx, cy, rx);
+      grad.addColorStop(0, shadeColor(s.color, dim ? 0.05 : (isHover ? 0.4 : 0.25)));
+      grad.addColorStop(1, dim ? shadeColor(s.color, -0.15) : s.color);
+      ctx.fillStyle = grad;
+      ctx.globalAlpha = dim ? 0.55 : 1;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = isHover ? '#fff' : borderColor;
+      ctx.lineWidth = isHover ? 2 : 1.5;
+      ctx.stroke();
+      ctx.restore();
+    });
+  }
+
+  function updateLegend(hoverIdx) {
+    const legEl = document.getElementById(legendId);
+    if (!legEl) return;
+    legEl.innerHTML = slices.map((d, i) => `
+      <span style="display:flex;align-items:center;gap:3px;font-size:10px;color:${hoverIdx===i?d.color:mutedColor};
+                   font-weight:${hoverIdx===i?'700':'400'};transition:color .1s">
+        <span style="width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,${shadeColor(d.color,0.2)},${d.color});
+                     flex-shrink:0;display:inline-block;box-shadow:0 1px 2px rgba(0,0,0,.3)"></span>
+        ${d.label} <b style="color:${d.color}">${d.count}</b>
+      </span>`).join('');
+  }
+
+  function hitTest(mx, my) {
+    const dx = (mx - cx) / rx, dy = (my - cy) / ry;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist > 1.15) return null;
+    let ang = Math.atan2(my - cy, mx - cx);
+    for (const s of slices) {
+      let a0 = s.a0, a1 = s.a1, a = ang;
+      while (a < a0) a += 2*Math.PI;
+      while (a1 < a0) a1 += 2*Math.PI;
+      if (a >= a0 && a <= a1) return slices.indexOf(s);
+    }
+    return null;
+  }
+
+  let currentHover = null;
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const my = (e.clientY - rect.top)  * scaleY;
+    const idx = hitTest(mx, my);
+    if (idx !== currentHover) {
+      currentHover = idx;
+      canvas.style.cursor = idx !== null ? 'pointer' : 'default';
+      draw(currentHover);
+      updateLegend(currentHover);
+    }
+  });
+  canvas.addEventListener('mouseleave', () => {
+    if (currentHover !== null) {
+      currentHover = null;
+      canvas.style.cursor = 'default';
+      draw(null);
+      updateLegend(null);
+    }
+  });
+
+  draw(null);
+  updateLegend(null);
+}
+
+// ── Barras interactivas: ilumina la barra bajo el cursor ─────────────────────
+function setupBarChart(canvas, DATA, mutedColor, legendId) {
+  const W = canvas.width, H = canvas.height;
+  const depth  = 6;
+  const maxVal = Math.max(...DATA.map(d=>d.count), 1);
+  const padL=6, padB=20, padT=14, padR=10;
+  const chartH = H - padB - padT;
+  const chartW = W - padL - padR - depth;
+  const n = DATA.length;
+  const barW = Math.max(8, Math.floor(chartW/n) - 6);
+  const spacing = (chartW - barW*n) / (n+1);
+
+  const bars = DATA.map((d, i) => {
+    const bH = (d.count/maxVal) * chartH;
+    const bX = padL + spacing + i*(barW+spacing);
+    const bY = padT + chartH - bH;
+    return { ...d, bX, bY, barW, bH };
+  });
+
+  function draw(hoverIdx) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle = 'rgba(128,128,128,.3)'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(padL, H-padB); ctx.lineTo(W-padR, H-padB); ctx.stroke();
+
+    bars.forEach((b, i) => {
+      const isHover = hoverIdx === i;
+      const dim = hoverIdx !== null && !isHover;
+      const lift = isHover ? 3 : 0;               // eleva la barra al hacer hover
+      const bY = b.bY - lift;
+      const top   = shadeColor(b.color, dim ? 0.05 : (isHover ? 0.42 : 0.28));
+      const front = dim ? shadeColor(b.color, -0.1) : b.color;
+      const side  = shadeColor(b.color, dim ? -0.45 : (isHover ? -0.15 : -0.30));
+
+      ctx.globalAlpha = dim ? 0.45 : 1;
+
+      // Sombra en el piso
+      ctx.fillStyle = 'rgba(0,0,0,.15)';
+      ctx.beginPath();
+      ctx.ellipse(b.bX+barW/2+depth/2, H-padB+2, barW/2+2, 2.5, 0, 0, Math.PI*2);
+      ctx.fill();
+
+      if (isHover) { ctx.shadowColor = b.color; ctx.shadowBlur = 12; }
+
+      // Cara lateral
+      ctx.fillStyle = side;
+      ctx.beginPath();
+      ctx.moveTo(b.bX+barW, bY);
+      ctx.lineTo(b.bX+barW+depth, bY-depth);
+      ctx.lineTo(b.bX+barW+depth, H-padB-depth);
+      ctx.lineTo(b.bX+barW, H-padB);
+      ctx.closePath(); ctx.fill();
+
+      // Cara frontal
+      const grad = ctx.createLinearGradient(0, bY, 0, H-padB);
+      grad.addColorStop(0, shadeColor(front, isHover ? 0.2 : 0.12));
+      grad.addColorStop(1, shadeColor(front, -0.08));
+      ctx.fillStyle = grad;
+      ctx.fillRect(b.bX, bY, barW, H-padB-bY);
+
+      // Cara superior
+      ctx.fillStyle = top;
+      ctx.beginPath();
+      ctx.moveTo(b.bX, bY);
+      ctx.lineTo(b.bX+depth, bY-depth);
+      ctx.lineTo(b.bX+barW+depth, bY-depth);
+      ctx.lineTo(b.bX+barW, bY);
+      ctx.closePath(); ctx.fill();
+
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = isHover ? 'rgba(255,255,255,.6)' : 'rgba(255,255,255,.25)';
+      ctx.lineWidth = isHover ? 1.3 : 0.8;
+      ctx.beginPath(); ctx.moveTo(b.bX, bY); ctx.lineTo(b.bX+depth, bY-depth); ctx.stroke();
+
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = isHover ? '#fff' : mutedColor;
+      ctx.font = isHover ? 'bold 10px system-ui' : 'bold 9px system-ui';
+      ctx.textAlign = 'center';
+      if (b.count > 0) ctx.fillText(b.count, b.bX+barW/2+depth/2, bY-depth-3);
+    });
+  }
+
+  function updateLegend(hoverIdx) {
+    const legEl = document.getElementById(legendId);
+    if (!legEl) return;
+    legEl.innerHTML = bars.map((d, i) => `
+      <span style="display:flex;align-items:center;gap:3px;font-size:10px;color:${hoverIdx===i?d.color:mutedColor};
+                   font-weight:${hoverIdx===i?'700':'400'};transition:color .1s">
+        <span style="width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,${shadeColor(d.color,0.2)},${d.color});
+                     flex-shrink:0;display:inline-block;box-shadow:0 1px 2px rgba(0,0,0,.3)"></span>
+        ${d.label} <b style="color:${d.color}">${d.count}</b>
+      </span>`).join('');
+  }
+
+  function hitTest(mx, my) {
+    for (let i = 0; i < bars.length; i++) {
+      const b = bars[i];
+      if (mx >= b.bX - 2 && mx <= b.bX + barW + depth + 2 && my >= padT - 10 && my <= H - padB + 4) {
+        return i;
+      }
+    }
+    return null;
+  }
+
+  let currentHover = null;
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width, scaleY = canvas.height / rect.height;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const my = (e.clientY - rect.top)  * scaleY;
+    const idx = hitTest(mx, my);
+    if (idx !== currentHover) {
+      currentHover = idx;
+      canvas.style.cursor = idx !== null ? 'pointer' : 'default';
+      draw(currentHover);
+      updateLegend(currentHover);
+    }
+  });
+  canvas.addEventListener('mouseleave', () => {
+    if (currentHover !== null) {
+      currentHover = null;
+      canvas.style.cursor = 'default';
+      draw(null);
+      updateLegend(null);
+    }
+  });
+
+  draw(null);
+  updateLegend(null);
 }
 
 // ── Rutas ──────────────────────────────────────────────────────────────────
