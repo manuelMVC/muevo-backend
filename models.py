@@ -200,13 +200,15 @@ class User(Base):
 class Driver(Base):
     """
     Perfil extendido del conductor. Contiene métricas, estado online
-    y la relación con sus vehículos y certificaciones.
+    y la relación con sus certificaciones. Se asigna a rutas (route_headers.driver_id).
     """
     __tablename__ = "drivers"
 
     id                  = uuid_pk()
     user_id             = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"),
                                  unique=True, nullable=False)
+    # Empresa de transporte a la que pertenece (el vehículo ya no lo vincula)
+    transport_company_id = Column(UUID(as_uuid=True), ForeignKey("transport_companies.id"), nullable=True)
 
     # Estado operativo
     is_online           = Column(Boolean, default=False, nullable=False)
@@ -236,7 +238,6 @@ class Driver(Base):
 
     # Relaciones
     user                = relationship("User",          back_populates="driver")
-    vehicles            = relationship("Vehicle",        back_populates="driver", cascade="all, delete-orphan")
     certifications      = relationship("Certification",  back_populates="driver", cascade="all, delete-orphan")
     routes              = relationship("Route",          back_populates="driver")
     earnings            = relationship("Earning",        back_populates="driver")
@@ -326,14 +327,11 @@ class Vehicle(Base):
     Vehículos registrados por la empresa de transporte (modelo B2B2B).
     Una empresa de transporte puede tener múltiples vehículos en su flota.
     El tipo de vehículo determina qué contratos corporativos puede ejecutar.
-    driver_id se mantiene nullable para compatibilidad con el modelo anterior
-    de conductor independiente; transport_company_id es el modelo vigente.
+    El conductor no cuelga del vehículo: se asigna por ruta (route_headers.driver_id).
     """
     __tablename__ = "vehicles"
 
     id                   = uuid_pk()
-    driver_id             = Column(UUID(as_uuid=True), ForeignKey("drivers.id", ondelete="CASCADE"),
-                                  nullable=True)
     transport_company_id  = Column(UUID(as_uuid=True), ForeignKey("transport_companies.id", ondelete="CASCADE"),
                                   nullable=True)
     is_active              = Column(Boolean, default=True, nullable=False)
@@ -373,14 +371,12 @@ class Vehicle(Base):
     updated_at        = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relaciones
-    driver              = relationship("Driver",            back_populates="vehicles")
     transport_company   = relationship("TransportCompany",  back_populates="vehicles")
     routes              = relationship("Route",             back_populates="vehicle")
     vehicle_type_config = relationship("VehicleTypeConfig", back_populates="vehicles",
                                        foreign_keys=[vehicle_type_code])
 
     __table_args__ = (
-        Index("ix_vehicles_driver_id", "driver_id"),
         Index("ix_vehicles_plate",     "plate"),
         CheckConstraint("year >= 2000 AND year <= 2030", name="ck_vehicle_year"),
     )
@@ -1028,6 +1024,7 @@ class RouteHeader(Base):
     # Asignación (dispatcher)
     transport_company_id    = Column(UUID(as_uuid=True), ForeignKey("transport_companies.id"), nullable=True)
     vehicle_id               = Column(UUID(as_uuid=True), ForeignKey("vehicles.id"), nullable=True)
+    driver_id                = Column(UUID(as_uuid=True), ForeignKey("drivers.id"),  nullable=True)
     dispatched_by            = Column(UUID(as_uuid=True), ForeignKey("users.id"),    nullable=True)
     dispatch_mode            = Column(String(20), default="manual", nullable=False)
     # manual | marketplace_auto | direct_negotiation
@@ -1118,6 +1115,7 @@ class RouteHeader(Base):
     service_type_rel    = relationship("ServiceType",       foreign_keys=[service_type_id], viewonly=True)
     transport_company   = relationship("TransportCompany",  foreign_keys=[transport_company_id])
     vehicle             = relationship("Vehicle",           foreign_keys=[vehicle_id])
+    driver              = relationship("Driver",            foreign_keys=[driver_id])
     details             = relationship("RouteDetail", back_populates="route_header",
                                        cascade="all, delete-orphan", order_by="RouteDetail.sequence_order")
 

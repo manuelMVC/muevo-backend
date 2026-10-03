@@ -48,7 +48,7 @@ from dispatcher import Stop as DispatchStop, plan_stops, planned_route_to_dict
 from models import (
     Base, User, Driver, Vehicle, Route, Stop, Delivery,
     Earning, DriverMetric, Company,
-    UserRole, RouteStatus, StopStatus, PodType,
+    UserRole, RouteStatus, StopStatus, PodType, VehicleType,
     # Modelo multi-holding / multi-warehouse (vigente para /api/v1/routes)
     Holding, Warehouse, TransportCompany,
     RouteHeader, RouteDetail, ShipmentItem, CompanyAdmin, TransportCompanyAdmin,
@@ -336,12 +336,24 @@ async def health(db: Session = Depends(get_db)):
 def resolve_user_portal(user: User, db: Session) -> dict:
     """
     Determina a qué portal pertenece un usuario autenticado.
-    Prioridad: holding_user > transport_admin > driver.
+    Prioridad: admin de Muevo > transport_admin > holding_user > company_admin (legacy) > driver.
 
     Para holding users devuelve la lista de compañías accesibles.
     Si solo tiene una compañía, redirige directo. Si tiene más de una,
     login.html mostrará el selector de compañía antes de entrar al portal.
     """
+    # ── Personal administrativo de Muevo (portal de administración) ──────────
+    if is_muevo_admin(user):
+        return {"portal": "muevo", "redirect": "/admin.html", "is_muevo_admin": True}
+
+    # ── Transport admin (va antes que holding_user: los usuarios de transporte
+    #    también tienen HoldingUser, solo para colgar su perfil RBAC) ─────────
+    tc_admin = db.execute(
+        select(TransportCompanyAdmin).where(TransportCompanyAdmin.user_id == user.id)
+    ).scalar_one_or_none()
+    if tc_admin:
+        return {"portal": "transport", "redirect": "/transport.html"}
+
     # ── Holding user (warehouse portal) ──────────────────────────────────────
     holding_user = db.execute(
         select(HoldingUser).where(
@@ -405,13 +417,6 @@ def resolve_user_portal(user: User, db: Session) -> dict:
                            "can_view": True, "can_operate": True, "can_invoice": True, "is_admin": True}],
             "auto_company": {"id": str(company_admin.company_id), "name": company.name if company else ""},
         }
-
-    # ── Transport admin ───────────────────────────────────────────────────────
-    tc_admin = db.execute(
-        select(TransportCompanyAdmin).where(TransportCompanyAdmin.user_id == user.id)
-    ).scalar_one_or_none()
-    if tc_admin:
-        return {"portal": "transport", "redirect": "/transport.html"}
 
     # ── Driver ────────────────────────────────────────────────────────────────
     driver = db.execute(
@@ -731,15 +736,14 @@ async def update_location(
     db.commit()
 
     # Transmitir la posición a las companies con una ruta activa de este conductor
-    vehicle = db.execute(
-        select(Vehicle).where(Vehicle.driver_id == driver.id, Vehicle.is_active == True)
-    ).scalar_one_or_none()
-    if vehicle and vehicle.transport_company_id:
-        active_routes = db.execute(
-            select(RouteHeader)
-            .where(RouteHeader.vehicle_id == vehicle.id)
-            .where(RouteHeader.status == RouteStatus.IN_PROGRESS)
-        ).scalars().all()
+    active_routes = db.execute(
+        select(RouteHeader)
+        .where(RouteHeader.driver_id == driver.id)
+        .where(RouteHeader.status == RouteStatus.IN_PROGRESS)
+    ).scalars().all()
+    vehicle = db.get(Vehicle, active_routes[0].vehicle_id) if active_routes and active_routes[0].vehicle_id else None
+    fleet_company_id = driver.transport_company_id or (vehicle.transport_company_id if vehicle else None)
+    if fleet_company_id:
         for route in active_routes:
             await tracking_manager.broadcast(str(route.company_id), {
                 "type":      "driver_location",
@@ -754,10 +758,10 @@ async def update_location(
         # (independiente de si hay ruta activa — el dueño de la flota
         # quiere ver sus vehículos en el mapa en todo momento).
         active_route = active_routes[0] if active_routes else None
-        await tracking_manager.broadcast(f"fleet-{vehicle.transport_company_id}", {
+        await tracking_manager.broadcast(f"fleet-{fleet_company_id}", {
             "type":         "vehicle_location",
-            "vehicle_id":   str(vehicle.id),
-            "plate":        vehicle.plate,
+            "vehicle_id":   str(vehicle.id) if vehicle else None,
+            "plate":        vehicle.plate if vehicle else None,
             "route_id":     str(active_route.id) if active_route else None,
             "route_number": active_route.route_number if active_route else None,
             "lat":          data.lat,
@@ -843,11 +847,7 @@ async def list_routes(
     if not driver:
         raise HTTPException(status_code=404, detail="Perfil de conductor no encontrado")
 
-    # El conductor pertenece a una empresa de transporte vía su vehículo asignado
-    vehicle = db.execute(
-        select(Vehicle).where(Vehicle.driver_id == driver.id, Vehicle.is_active == True)
-    ).scalar_one_or_none()
-    transport_company_id = vehicle.transport_company_id if vehicle else None
+    transport_company_id = driver.transport_company_id
 
     query = select(RouteHeader)
     if transport_company_id:
@@ -891,12 +891,8 @@ async def accept_route(
     driver = db.execute(
         select(Driver).where(Driver.user_id == current_user.id)
     ).scalar_one_or_none()
-    vehicle = db.execute(
-        select(Vehicle).where(Vehicle.driver_id == driver.id, Vehicle.is_active == True)
-    ).scalar_one_or_none()
-
-    header.vehicle_id           = vehicle.id if vehicle else None
-    header.transport_company_id = vehicle.transport_company_id if vehicle else header.transport_company_id
+    header.driver_id            = driver.id
+    header.transport_company_id = driver.transport_company_id or header.transport_company_id
     # Solo pasar a ASSIGNED si efectivamente hay una empresa de transporte asociada
     header.status = RouteStatus.ASSIGNED if header.transport_company_id else RouteStatus.PUBLISHED
     db.commit()
@@ -1860,6 +1856,25 @@ def require_super_admin(hu: HoldingUser):
         raise HTTPException(status_code=403, detail="Se requiere rol de super-admin del holding")
 
 
+def is_muevo_admin(user: User) -> bool:
+    """Personal administrativo de Muevo: users.role == muevo_admin."""
+    return user.role == UserRole.MUEVO_ADMIN
+
+
+def get_admin_scope(current_user: User, db: Session) -> Optional[HoldingUser]:
+    """HoldingUser del usuario, o None si es admin de Muevo (alcance: todos los holdings)."""
+    if is_muevo_admin(current_user):
+        return None
+    return get_current_holding_user(current_user, db)
+
+
+def require_platform_admin(current_user: User, db: Session) -> None:
+    """Admin de Muevo o super-admin de un holding."""
+    if is_muevo_admin(current_user):
+        return
+    require_super_admin(get_current_holding_user(current_user, db))
+
+
 def require_permission(
     current_user: User, db: Session, module: str, action: str,
     company_id: Optional[uuid.UUID] = None,
@@ -1868,7 +1883,7 @@ def require_permission(
     Verifica que el usuario tenga el permiso '{module}.{action}' a través de
     algún perfil que tenga asignado (ver HoldingUserProfile / ProfilePermission).
 
-    - super_admin del holding siempre pasa.
+    - super_admin del holding y admin de Muevo (users.role = muevo_admin) siempre pasan.
     - Un HoldingUserProfile con company_id=NULL aplica a todo el holding;
       con company_id=X aplica solo a esa compañía.
     - Si el usuario no tiene ningún HoldingUserProfile asignado (todavía no
@@ -1877,6 +1892,8 @@ def require_permission(
       (get_current_company / HoldingUserCompany / CompanyAdmin). Esto evita
       romper cuentas que aún no tienen un perfil formal asignado.
     """
+    if is_muevo_admin(current_user):
+        return
     hu = get_current_holding_user(current_user, db)
     if hu.is_super_admin:
         return
@@ -2264,6 +2281,7 @@ async def create_profile(
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
+    require_platform_admin(current_user, db)
     existing = db.execute(select(Profile).where(Profile.code == data.code)).scalar_one_or_none()
     if existing:
         raise HTTPException(status_code=400, detail=f"Ya existe un perfil con código '{data.code}'")
@@ -2289,6 +2307,7 @@ async def update_profile(
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
+    require_platform_admin(current_user, db)
     profile = db.get(Profile, uuid.UUID(profile_id))
     if not profile:
         raise HTTPException(status_code=404, detail="Perfil no encontrado")
@@ -2315,6 +2334,7 @@ async def update_profile(
 
 class CompanyCreate(BaseModel):
     name:               str
+    holding_id:         Optional[str] = None   # solo para admin de Muevo con más de un holding
     industry:           Optional[str] = None
     contact_email:      Optional[str] = None
     contact_phone:      Optional[str] = None
@@ -2367,12 +2387,12 @@ async def admin_list_companies(
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
-    """Lista compañías del holding del usuario autenticado."""
-    hu = get_current_holding_user(current_user, db)
-    companies = db.execute(
-        select(Company).where(Company.holding_id == hu.holding_id)
-        .order_by(Company.name)
-    ).scalars().all()
+    """Lista compañías del holding del usuario autenticado (todas, si es admin de Muevo)."""
+    hu = get_admin_scope(current_user, db)
+    query = select(Company).order_by(Company.name)
+    if hu is not None:
+        query = query.where(Company.holding_id == hu.holding_id)
+    companies = db.execute(query).scalars().all()
     return [serialize_company(c, db) for c in companies]
 
 
@@ -2382,11 +2402,20 @@ async def admin_create_company(
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
-    hu = get_current_holding_user(current_user, db)
-    require_super_admin(hu)
+    require_platform_admin(current_user, db)
+    hu = get_admin_scope(current_user, db)
+    if hu is not None:
+        holding_id = hu.holding_id
+    elif data.holding_id:
+        holding_id = uuid.UUID(data.holding_id)
+    else:
+        holdings = db.execute(select(Holding.id)).scalars().all()
+        if len(holdings) != 1:
+            raise HTTPException(status_code=400, detail="Indicá holding_id: hay más de un holding")
+        holding_id = holdings[0]
 
     company = Company(
-        id=uuid.uuid4(), holding_id=hu.holding_id,
+        id=uuid.uuid4(), holding_id=holding_id,
         name=data.name, industry=data.industry,
         contact_email=data.contact_email,
         city=data.city, state=data.state, country=data.country,
@@ -2408,9 +2437,9 @@ async def admin_update_company(
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
-    hu = get_current_holding_user(current_user, db)
+    hu = get_admin_scope(current_user, db)
     company = db.get(Company, uuid.UUID(company_id))
-    if not company or company.holding_id != hu.holding_id:
+    if not company or (hu is not None and company.holding_id != hu.holding_id):
         raise HTTPException(status_code=404, detail="Compañía no encontrada")
 
     if data.name               is not None: company.name               = data.name
@@ -2472,9 +2501,9 @@ async def admin_list_warehouses(
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
-    hu = get_current_holding_user(current_user, db)
+    hu = get_admin_scope(current_user, db)
     company = db.get(Company, uuid.UUID(company_id))
-    if not company or company.holding_id != hu.holding_id:
+    if not company or (hu is not None and company.holding_id != hu.holding_id):
         raise HTTPException(status_code=404, detail="Compañía no encontrada")
 
     warehouses = db.execute(
@@ -2491,9 +2520,9 @@ async def admin_create_warehouse(
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
-    hu = get_current_holding_user(current_user, db)
+    hu = get_admin_scope(current_user, db)
     company = db.get(Company, uuid.UUID(company_id))
-    if not company or company.holding_id != hu.holding_id:
+    if not company or (hu is not None and company.holding_id != hu.holding_id):
         raise HTTPException(status_code=404, detail="Compañía no encontrada")
 
     existing = db.execute(
@@ -2527,9 +2556,9 @@ async def admin_update_warehouse(
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
-    hu = get_current_holding_user(current_user, db)
+    hu = get_admin_scope(current_user, db)
     company = db.get(Company, uuid.UUID(company_id))
-    if not company or company.holding_id != hu.holding_id:
+    if not company or (hu is not None and company.holding_id != hu.holding_id):
         raise HTTPException(status_code=404, detail="Compañía no encontrada")
 
     wh = db.get(Warehouse, uuid.UUID(warehouse_id))
@@ -2597,8 +2626,7 @@ async def assign_profile(
     db:           Session = Depends(get_db),
 ):
     """Asigna un perfil a un usuario del holding."""
-    hu = get_current_holding_user(current_user, db)
-    require_super_admin(hu)
+    require_platform_admin(current_user, db)
 
     assignment = HoldingUserProfile(
         id=uuid.uuid4(),
@@ -2620,8 +2648,7 @@ async def remove_profile_assignment(
     db:            Session = Depends(get_db),
 ):
     """Elimina una asignación de perfil."""
-    hu = get_current_holding_user(current_user, db)
-    require_super_admin(hu)
+    require_platform_admin(current_user, db)
 
     assignment = db.get(HoldingUserProfile, uuid.UUID(assignment_id))
     if not assignment:
@@ -3772,6 +3799,7 @@ async def transport_counter_offer(
 ):
     """La empresa de transporte hace/actualiza su propia contraoferta — no afecta los hilos de otras empresas."""
     tc    = get_current_transport_company(current_user, db)
+    require_transport_permission(current_user, db, "pricing", "create")
     route = db.get(RouteHeader, uuid.UUID(route_id))
     _require_open_marketplace_route(route)
 
@@ -3813,6 +3841,7 @@ async def transport_accept_price(
     hilo hasta que el warehouse elija un ganador (y luego holding lo apruebe).
     """
     tc    = get_current_transport_company(current_user, db)
+    require_transport_permission(current_user, db, "pricing", "create")
     route = db.get(RouteHeader, uuid.UUID(route_id))
     _require_open_marketplace_route(route)
 
@@ -5460,12 +5489,10 @@ async def report_incident(
         if route:
             push_tokens = []
             # Conductor
-            if route.vehicle_id:
-                vehicle = db.get(Vehicle, route.vehicle_id)
-                if vehicle and vehicle.driver_id:
-                    driver = db.get(Driver, vehicle.driver_id)
-                    if driver and driver.stripe_account_id:  # token guardado aquí por ahora
-                        push_tokens.append(driver.stripe_account_id)
+            if route.driver_id:
+                driver = db.get(Driver, route.driver_id)
+                if driver and driver.stripe_account_id:  # token guardado aquí por ahora
+                    push_tokens.append(driver.stripe_account_id)
             # Admin warehouse
             wh_admin = db.execute(
                 select(CompanyAdmin).where(CompanyAdmin.company_id == route.company_id)
@@ -5753,9 +5780,9 @@ def serialize_route_header(rh: "RouteHeader") -> dict:
         "transport_company_name": rh.transport_company.name if rh.transport_company else None,
         "vehicle_id":          str(rh.vehicle_id) if rh.vehicle_id else None,
         "vehicle_plate":       rh.vehicle.plate if rh.vehicle else None,
-        "driver_id":           str(rh.vehicle.driver_id) if rh.vehicle and rh.vehicle.driver_id else None,
-        "driver_name":         (rh.vehicle.driver.user.full_name
-                                 if rh.vehicle and rh.vehicle.driver and rh.vehicle.driver.user else None),
+        "driver_id":           str(rh.driver_id) if rh.driver_id else None,
+        "driver_name":         (rh.driver.user.full_name
+                                 if rh.driver and rh.driver.user else None),
         "stops":               [serialize_route_detail(d) for d in (rh.details or [])],
     }
 
@@ -5933,11 +5960,11 @@ async def seed_routes(db: Session = Depends(get_db)):
         db.add(transport_co)
         db.flush()
 
+    if not driver.transport_company_id:
+        driver.transport_company_id = transport_co.id
     vehicle = db.execute(
-        select(Vehicle).where(Vehicle.driver_id == driver.id, Vehicle.is_active == True)
-    ).scalar_one_or_none()
-    if vehicle and not vehicle.transport_company_id:
-        vehicle.transport_company_id = transport_co.id
+        select(Vehicle).where(Vehicle.transport_company_id == transport_co.id, Vehicle.is_active == True)
+    ).scalars().first()
 
     # ── Warehouse de origen ──────────────────────────────────────────────────
     warehouse = db.execute(
@@ -5955,7 +5982,7 @@ async def seed_routes(db: Session = Depends(get_db)):
     # ── RUTA 1 — Mensajería con detalle de envío completo ───────────────────
     header1 = RouteHeader(
         id=uuid.uuid4(), company_id=company.id, origin_warehouse_id=warehouse.id,
-        transport_company_id=transport_co.id, vehicle_id=vehicle.id if vehicle else None,
+        transport_company_id=transport_co.id, vehicle_id=vehicle.id if vehicle else None, driver_id=driver.id,
         route_number="ORL-2026-000001", title="Ruta Bufetes Legales — Manhattan",
         service_mode="mensajeria", status="published", source="manual",
         scheduled_date=now, scheduled_start=now.replace(hour=10, minute=0),
@@ -6009,7 +6036,7 @@ async def seed_routes(db: Session = Depends(get_db)):
     # ── RUTA 2 — Transporte de empleados (sin shipment items, modo empleados) ─
     header2 = RouteHeader(
         id=uuid.uuid4(), company_id=company.id, origin_warehouse_id=warehouse.id,
-        transport_company_id=transport_co.id, vehicle_id=vehicle.id if vehicle else None,
+        transport_company_id=transport_co.id, vehicle_id=vehicle.id if vehicle else None, driver_id=driver.id,
         route_number="ORL-2026-000002", title="Transporte Empleados — Brooklyn Tech Hub",
         service_mode="empleados", status="published", source="manual",
         scheduled_date=now, scheduled_start=now.replace(hour=8, minute=0),
@@ -6291,11 +6318,7 @@ async def warehouse_route_tracking(
     if not header or header.company_id != company.id:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
 
-    driver = None
-    if header.vehicle_id:
-        vehicle = db.get(Vehicle, header.vehicle_id)
-        if vehicle and vehicle.driver_id:
-            driver = db.get(Driver, vehicle.driver_id)
+    driver = db.get(Driver, header.driver_id) if header.driver_id else None
 
     return {
         "route_id": str(header.id),
@@ -6322,6 +6345,35 @@ def get_current_transport_company(current_user: User, db: Session) -> "Transport
     if not tc:
         raise HTTPException(status_code=404, detail="Empresa de transporte no encontrada")
     return tc
+
+
+def require_transport_permission(current_user: User, db: Session, module: str, action: str) -> None:
+    """
+    Permisos RBAC para usuarios de empresas de transporte. Usa el mismo
+    mecanismo que el warehouse (holding_user_profiles -> profile_permissions).
+    Fail-open como require_permission(): sin HoldingUser o sin perfil asignado
+    pasa, para no romper cuentas anteriores al sistema de perfiles.
+    """
+    if is_muevo_admin(current_user):
+        return
+    hu = db.execute(
+        select(HoldingUser).where(HoldingUser.user_id == current_user.id, HoldingUser.is_active == True)
+    ).scalar_one_or_none()
+    if not hu:
+        return
+    profile_ids = db.execute(
+        select(HoldingUserProfile.profile_id).where(HoldingUserProfile.holding_user_id == hu.id)
+    ).scalars().all()
+    if not profile_ids:
+        return
+    code = f"{module}.{action}"
+    exists = db.execute(
+        select(Permission.id)
+        .join(ProfilePermission, ProfilePermission.permission_id == Permission.id)
+        .where(ProfilePermission.profile_id.in_(profile_ids), Permission.code == code)
+    ).first()
+    if not exists:
+        raise HTTPException(status_code=403, detail=f"Sin permiso '{code}' para esta acción")
 
 
 @app.get("/api/v1/transport/dashboard")
@@ -6391,6 +6443,7 @@ async def transport_list_routes(
 async def transport_accept_route(
     route_id:     str,
     vehicle_id:   Optional[str] = None,
+    driver_id:    Optional[str] = None,
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
@@ -6399,8 +6452,10 @@ async def transport_accept_route(
     Si se especifica vehicle_id, lo asigna de inmediato (debe pertenecer a
     esta empresa); si no, la ruta queda aceptada a nivel empresa pero sin
     vehículo concreto todavía (un conductor la tomará desde la app Drive).
+    driver_id (opcional) asigna el conductor de esta ruta; debe ser de esta empresa.
     """
     tc = get_current_transport_company(current_user, db)
+    require_transport_permission(current_user, db, "routes", "approve")
     header = db.get(RouteHeader, uuid.UUID(route_id))
 
     if not header or header.transport_company_id != tc.id:
@@ -6414,6 +6469,12 @@ async def transport_accept_route(
             raise HTTPException(status_code=400, detail="El vehículo no pertenece a tu empresa")
         header.vehicle_id = vehicle.id
         header.status = RouteStatus.ASSIGNED
+
+    if driver_id:
+        driver = db.get(Driver, uuid.UUID(driver_id))
+        if not driver or driver.transport_company_id != tc.id:
+            raise HTTPException(status_code=400, detail="El conductor no pertenece a tu empresa")
+        header.driver_id = driver.id
 
     db.commit()
     return {"status": "accepted", "route_id": str(header.id), "route_status": header.status.value}
@@ -6439,6 +6500,7 @@ async def transport_reject_route(
     puede volver a pujar.
     """
     tc = get_current_transport_company(current_user, db)
+    require_transport_permission(current_user, db, "routes", "cancel")
     header = db.get(RouteHeader, uuid.UUID(route_id))
 
     if not header or header.transport_company_id != tc.id:
@@ -6495,7 +6557,7 @@ async def transport_list_fleet(
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
 ):
-    """Lista la flota de vehículos de la empresa, con su conductor asignado (si tiene)."""
+    """Lista la flota de vehículos de la empresa. El conductor de un vehículo es el de su ruta en curso o asignada."""
     tc = get_current_transport_company(current_user, db)
 
     vehicles = db.execute(
@@ -6504,20 +6566,26 @@ async def transport_list_fleet(
 
     result = []
     for v in vehicles:
+        active_route = db.execute(
+            select(RouteHeader)
+            .where(RouteHeader.vehicle_id == v.id)
+            .where(RouteHeader.status == RouteStatus.IN_PROGRESS)
+        ).scalars().first()
+        current_route = active_route or db.execute(
+            select(RouteHeader)
+            .where(RouteHeader.vehicle_id == v.id)
+            .where(RouteHeader.status == RouteStatus.ASSIGNED)
+            .order_by(RouteHeader.scheduled_date)
+        ).scalars().first()
+
         driver_name, driver_rating, driver_online = None, None, False
-        if v.driver_id:
-            driver = db.get(Driver, v.driver_id)
+        if current_route and current_route.driver_id:
+            driver = db.get(Driver, current_route.driver_id)
             if driver:
                 user = db.get(User, driver.user_id)
                 driver_name = user.full_name if user else None
                 driver_rating = float(driver.avg_rating or 0)
                 driver_online = driver.is_online
-
-        active_route = db.execute(
-            select(RouteHeader)
-            .where(RouteHeader.vehicle_id == v.id)
-            .where(RouteHeader.status == RouteStatus.IN_PROGRESS)
-        ).scalar_one_or_none()
 
         result.append({
             "id": str(v.id), "plate": v.plate, "make": v.make, "model": v.model,
@@ -6526,6 +6594,31 @@ async def transport_list_fleet(
             "driver_name": driver_name, "driver_rating": driver_rating, "driver_online": driver_online,
             "active_route_id": str(active_route.id) if active_route else None,
             "active_route_number": active_route.route_number if active_route else None,
+        })
+    return result
+
+
+@app.get("/api/v1/transport/drivers")
+async def transport_list_drivers(
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """Conductores de la empresa de transporte, para asignarlos a una ruta al aceptarla."""
+    tc = get_current_transport_company(current_user, db)
+    drivers = db.execute(
+        select(Driver).where(Driver.transport_company_id == tc.id)
+    ).scalars().all()
+    result = []
+    for d in drivers:
+        user = db.get(User, d.user_id)
+        busy = db.execute(
+            select(RouteHeader.id)
+            .where(RouteHeader.driver_id == d.id)
+            .where(RouteHeader.status == RouteStatus.IN_PROGRESS)
+        ).first() is not None
+        result.append({
+            "id": str(d.id), "name": user.full_name if user else None,
+            "rating": float(d.avg_rating or 0), "is_online": d.is_online, "on_route": busy,
         })
     return result
 
@@ -6551,6 +6644,7 @@ async def transport_add_vehicle(
 ):
     """Agrega un vehículo nuevo a la flota de la empresa de transporte."""
     tc = get_current_transport_company(current_user, db)
+    require_transport_permission(current_user, db, "fleet", "create")
 
     existing = db.execute(
         select(Vehicle).where(Vehicle.plate == data.plate)
@@ -6562,7 +6656,7 @@ async def transport_add_vehicle(
     vtype = data.vehicle_type if data.vehicle_type in valid_types else "furgoneta"
 
     vehicle = Vehicle(
-        id=uuid.uuid4(), transport_company_id=tc.id, driver_id=None, is_active=True,
+        id=uuid.uuid4(), transport_company_id=tc.id, is_active=True,
         vehicle_type=vtype, make=data.make, model=data.model, year=data.year, color=data.color,
         plate=data.plate, payload_kg=data.payload_kg, volume_m3=data.volume_m3,
         passenger_seats=data.passenger_seats, fuel_type=data.fuel_type,
@@ -6586,19 +6680,19 @@ async def transport_fleet_tracking(
     tc = get_current_transport_company(current_user, db)
 
     vehicles = db.execute(
-        select(Vehicle).where(Vehicle.transport_company_id == tc.id).where(Vehicle.driver_id.isnot(None))
+        select(Vehicle).where(Vehicle.transport_company_id == tc.id)
     ).scalars().all()
 
     result = []
     for v in vehicles:
-        driver = db.get(Driver, v.driver_id) if v.driver_id else None
-        if not driver or driver.current_lat is None:
-            continue
         active_route = db.execute(
             select(RouteHeader)
             .where(RouteHeader.vehicle_id == v.id)
             .where(RouteHeader.status == RouteStatus.IN_PROGRESS)
-        ).scalar_one_or_none()
+        ).scalars().first()
+        driver = db.get(Driver, active_route.driver_id) if active_route and active_route.driver_id else None
+        if not driver or driver.current_lat is None:
+            continue
         result.append({
             "vehicle_id": str(v.id), "plate": v.plate,
             "lat": driver.current_lat, "lng": driver.current_lng,
@@ -6617,6 +6711,7 @@ async def transport_billing(
 ):
     """Facturación consolidada de la empresa de transporte — rutas completadas con su desglose de pago."""
     tc = get_current_transport_company(current_user, db)
+    require_transport_permission(current_user, db, "billing", "view")
 
     headers = db.execute(
         select(RouteHeader)
@@ -6824,8 +6919,7 @@ async def notify_driver(
     if not header:
         raise HTTPException(status_code=404, detail="Ruta no encontrada")
 
-    vehicle = db.get(Vehicle, header.vehicle_id) if header.vehicle_id else None
-    driver  = db.get(Driver, vehicle.driver_id) if vehicle and vehicle.driver_id else None
+    driver = db.get(Driver, header.driver_id) if header.driver_id else None
     if not driver:
         raise HTTPException(status_code=404, detail="Conductor no encontrado")
 

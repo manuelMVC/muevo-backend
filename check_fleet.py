@@ -4,7 +4,7 @@ conn = psycopg2.connect(host='localhost', dbname='muevodb', user='postgres', pas
 cur = conn.cursor()
 
 cur.execute("""
-    SELECT v.id, v.plate, v.is_active, v.driver_id, v.transport_company_id
+    SELECT v.id, v.plate, v.is_active, v.transport_company_id
     FROM vehicles v
     JOIN transport_companies tc ON v.transport_company_id = tc.id
     WHERE tc.name = 'Rapid Courier Orlando LLC'

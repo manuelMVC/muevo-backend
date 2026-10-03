@@ -23,22 +23,23 @@ print("Transport Company ID:", tc_id)
 vehicle_id = str(uuid.uuid4())
 cur.execute("""
     INSERT INTO vehicles (
-        id, driver_id, transport_company_id, is_active,
+        id, transport_company_id, is_active,
         vehicle_type, make, model, year, color, plate
     ) VALUES (
-        %s, %s, %s, TRUE,
+        %s, %s, TRUE,
         'furgoneta', 'Ford', 'Transit', 2021, 'Blanco', 'FL-RCO-001'
     )
-""", (vehicle_id, driver_id, tc_id))
+""", (vehicle_id, tc_id))
+cur.execute("UPDATE drivers SET transport_company_id = %s WHERE id = %s", (tc_id, driver_id))
 
 print("Vehicle created:", vehicle_id)
 
 # Link this vehicle to the existing route_headers that don't have a vehicle yet
 cur.execute("""
     UPDATE route_headers
-    SET vehicle_id = %s
+    SET vehicle_id = %s, driver_id = %s
     WHERE transport_company_id = %s AND vehicle_id IS NULL
-""", (vehicle_id, tc_id))
+""", (vehicle_id, driver_id, tc_id))
 print("Routes updated:", cur.rowcount)
 
 conn.close()

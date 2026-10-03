@@ -50,7 +50,7 @@ from models import (
     Company, Warehouse, User, UserRole, RouteHeader, RouteDetail, ShipmentItem,
     RouteBatch, RouteBatchItem, BatchClient, ServiceType,
     BatchStatus, BatchItemStatus, RouteStatus, StopStatus, ServiceMode,
-    TransportCompany, TransportCompanyAdmin, Vehicle,
+    TransportCompany, TransportCompanyAdmin, Vehicle, Driver,
     RoutePriceOffer, OfferSource, OfferStatus, NegotiationStatus,
 )
 from main import (
@@ -179,6 +179,12 @@ with Session(engine) as db:
     ).scalars().first()
     tc2_user = db.execute(select(User).where(User.email == "sunshine@muevo.app")).scalar_one_or_none()
     tc1_vehicles = db.execute(select(Vehicle).where(Vehicle.transport_company_id == tc1.id)).scalars().all()
+    # Conductor de la empresa 1 (driver@muevo.app): ahora se asigna por ruta, no por vehículo
+    tc1_driver = db.execute(
+        select(Driver).join(User, User.id == Driver.user_id).where(User.email == "driver@muevo.app")
+    ).scalars().first()
+    if tc1_driver and not tc1_driver.transport_company_id:
+        tc1_driver.transport_company_id = tc1.id
     print(f"✓ Transportistas: {tc1.name} (verificado) / {tc2.name} (sin verificar)")
 
     # ── Helpers de creación (reusan la lógica real de main.py) ──────────────
@@ -328,6 +334,8 @@ with Session(engine) as db:
     ruta_en_curso.completed_stops = 1
     if tc1_vehicles:
         ruta_en_curso.vehicle_id = tc1_vehicles[0].id
+    if tc1_driver:
+        ruta_en_curso.driver_id = tc1_driver.id
     ruta_en_curso.details[0].status = StopStatus.COMPLETED
     ruta_publicada.transport_company_id = tc1.id
     ruta_publicada.status = RouteStatus.PUBLISHED
@@ -346,6 +354,8 @@ with Session(engine) as db:
         r.completed_stops = r.total_stops
         if tc1_vehicles:
             r.vehicle_id = tc1_vehicles[0].id
+        if tc1_driver:
+            r.driver_id = tc1_driver.id
         for d in r.details:
             d.status = StopStatus.COMPLETED
 

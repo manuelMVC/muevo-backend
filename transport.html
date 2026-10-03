@@ -2161,6 +2161,7 @@ let REAL_DASHBOARD = null;
 let REAL_ROUTES = null;
 let REAL_BILLING = null;
 let REAL_FLEET = null;
+let REAL_DRIVERS = null;
 let REAL_VEHICLE_TYPES_TC = null;
 let REAL_MARKETPLACE = null;
 
@@ -2170,6 +2171,7 @@ async function loadRealData() {
     REAL_ROUTES = await apiGet('/transport/routes');
     REAL_BILLING = await apiGet('/transport/billing');
     REAL_FLEET = await apiGet('/transport/fleet');
+    REAL_DRIVERS = await apiGet('/transport/drivers');
     REAL_VEHICLE_TYPES_TC = await apiGet('/vehicle-types?habilitado=true');
     REAL_MARKETPLACE = await apiGet('/transport/marketplace');
   } catch (e) {
@@ -2419,35 +2421,37 @@ function openAcceptModal(routeId) {
   if (!r) return;
   const fleet = useRealData && REAL_FLEET ? REAL_FLEET : FLEET;
   const available = fleet.filter(v => v.is_active !== false && !v.active_route_id);
+  const drivers = useRealData && REAL_DRIVERS ? REAL_DRIVERS : [];
 
   document.getElementById('stopModalTitle').textContent = `Aceptar ${r.num}`;
   document.getElementById('stopModalSub').textContent = r.title;
-  document.getElementById('stopModalBody').innerHTML = `
-    <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Elegí qué vehículo de tu flota va a cubrir esta ruta.</p>
-    ${available.length === 0 ? '<div class="alert warn"><div class="alert-icon">⚠️</div><div class="alert-body">No tenés vehículos disponibles en este momento.</div></div>' :
-      available.map(v => `
-        <div class="card" style="margin-bottom:8px;cursor:pointer" onclick="confirmAccept('${routeId}','${v.id}')">
-          <div style="display:flex;justify-content:space-between;align-items:center">
-            <div>
-              <div style="font-weight:500;font-size:13px">${v.plate} — ${v.make} ${v.model}</div>
-              <div style="font-size:11px;color:var(--muted)">${v.driver_name || 'Sin conductor'} ${v.driver_rating ? '· ★ '+v.driver_rating : ''}</div>
-            </div>
-            <span class="badge badge-green">Elegir →</span>
-          </div>
-        </div>
-      `).join('')}
+  document.getElementById('stopModalBody').innerHTML = available.length === 0
+    ? '<div class="alert warn"><div class="alert-icon">⚠️</div><div class="alert-body">No tenés vehículos disponibles en este momento.</div></div>'
+    : `
+    <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Elegí el vehículo y el conductor que van a cubrir esta ruta. El conductor se asigna a esta ruta, no al vehículo.</p>
+    <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px" for="acceptVehicle">Vehículo</label>
+    <select id="acceptVehicle" style="width:100%;margin-bottom:12px;padding:8px;background:var(--card);color:var(--white);border:1px solid var(--border);border-radius:8px">
+      ${available.map(v => `<option value="${v.id}">${v.plate} — ${v.make} ${v.model}</option>`).join('')}
+    </select>
+    ${useRealData ? `
+    <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px" for="acceptDriver">Conductor</label>
+    <select id="acceptDriver" style="width:100%;margin-bottom:16px;padding:8px;background:var(--card);color:var(--white);border:1px solid var(--border);border-radius:8px">
+      <option value="">Sin asignar todavía</option>
+      ${drivers.map(d => `<option value="${d.id}" ${d.on_route ? 'disabled' : ''}>${d.name}${d.rating ? ' · ★ ' + d.rating : ''}${d.on_route ? ' (en ruta)' : ''}</option>`).join('')}
+    </select>` : ''}
+    <button class="btn btn-primary" style="width:100%" onclick="confirmAccept('${routeId}', document.getElementById('acceptVehicle').value, (document.getElementById('acceptDriver') || {}).value || '')">✓ Aceptar ruta</button>
   `;
   document.getElementById('stopModalOverlay').style.display = 'block';
   document.getElementById('stopModal').style.display = 'block';
 }
 
-async function confirmAccept(routeId, vehicleId) {
+async function confirmAccept(routeId, vehicleId, driverId) {
   closeStopModal();
   if (useRealData) {
     try {
-      await apiPost(`/transport/routes/${routeId}/accept?vehicle_id=${vehicleId}`, {});
+      await apiPost(`/transport/routes/${routeId}/accept?vehicle_id=${vehicleId}${driverId ? '&driver_id=' + driverId : ''}`, {});
       await loadRealData();
-      showToast('Ruta aceptada y vehículo asignado', 'success');
+      showToast(driverId ? 'Ruta aceptada con vehículo y conductor' : 'Ruta aceptada y vehículo asignado', 'success');
     } catch (e) {
       showToast('Error al aceptar: ' + e.message, 'warn');
       return;

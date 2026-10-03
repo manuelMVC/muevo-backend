@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Muevo — Administración</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0D0D0D; --card: #1C1C1C; --orange: #F47B20; --white: #F8FAFB; --muted: #8A8A8A;
+    --border: rgba(255,255,255,0.07); --green: #27AE60; --red: #E74C3C; --radius: 10px;
+    --font: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;
+  }
+  [data-theme="light"] {
+    --bg: #F4F4F2; --card: #FFFFFF; --white: #1A1A1A; --muted: #6B6B6B; --border: rgba(0,0,0,0.09);
+  }
+  body { background: var(--bg); color: var(--white); font-family: var(--font); font-size: 14px; }
+  header { display: flex; align-items: center; gap: 16px; padding: 14px 28px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  header .brand { font-weight: 600; font-size: 16px; }
+  header .brand small { color: var(--orange); font-weight: 500; margin-left: 8px; font-size: 11px; letter-spacing: .5px; text-transform: uppercase; }
+  header .spacer { flex: 1; }
+  header .who { color: var(--muted); font-size: 12px; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--white); padding: 6px 12px; }
+  button.primary { background: var(--orange); border-color: var(--orange); color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  nav { display: flex; gap: 6px; padding: 12px 28px 0; }
+  nav button.active { background: var(--orange); border-color: var(--orange); color: #fff; }
+  main { padding: 20px 28px 48px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+  .card h3 { font-size: 13px; margin-bottom: 10px; }
+  .wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
+  td.mono, .mono { font-family: 'SF Mono', 'Fira Code', Consolas, monospace; font-size: 12px; }
+  .muted { color: var(--muted); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; border: 1px solid var(--border); color: var(--muted); }
+  .badge.ok { color: var(--green); border-color: var(--green); }
+  form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; align-items: end; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--muted); }
+  input { font: inherit; background: transparent; color: var(--white); border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; }
+  .error { color: var(--red); margin-bottom: 12px; }
+  .toolbar { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">muevo<small>Administración</small></div>
+  <div class="spacer"></div>
+  <span class="who" id="who"></span>
+  <button id="themeBtn" title="Cambiar tema">Tema</button>
+  <button id="logoutBtn">Cerrar sesión</button>
+</header>
+<nav id="tabs">
+  <button data-tab="companies" class="active">Compañías</button>
+  <button data-tab="profiles">Perfiles</button>
+  <button data-tab="audit">Auditoría</button>
+</nav>
+<main>
+  <div id="error" class="error" hidden></div>
+  <div id="view"></div>
+</main>
+
+<script>
+const API = '/api/v1';
+const token = sessionStorage.getItem('muevo_token');
+if (!token) window.location.href = '/login.html';
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+async function api(path, opts = {}) {
+  const res = await fetch(API + path, {
+    ...opts,
+    headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', ...(opts.headers || {}) },
+  });
+  if (res.status === 401) { sessionStorage.clear(); window.location.href = '/login.html'; throw new Error('Sesión vencida'); }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || ('Error ' + res.status));
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+function showError(msg) { $('error').textContent = msg || ''; $('error').hidden = !msg; }
+
+// ── Compañías ───────────────────────────────────────────────────────────────
+async function renderCompanies() {
+  const companies = await api('/admin/companies');
+  $('view').innerHTML = `
+    <div class="card">
+      <h3>Nueva compañía</h3>
+      <form id="companyForm">
+        <label>Nombre<input id="cName" required></label>
+        <label>Industria<input id="cIndustry"></label>
+        <label>Email de contacto<input id="cEmail" type="email"></label>
+        <label>Ciudad<input id="cCity"></label>
+        <label>Estado<input id="cState"></label>
+        <button class="primary" type="submit">Crear</button>
+      </form>
+    </div>
+    <div class="card wrap">
+      <h3>${companies.length} compañías</h3>
+      <table>
+        <thead><tr><th>Nombre</th><th>Industria</th><th>Ciudad</th><th>Contacto</th><th>Warehouses</th></tr></thead>
+        <tbody>${companies.map(c => `
+          <tr>
+            <td>${esc(c.name)}</td>
+            <td class="muted">${esc(c.industry) || '—'}</td>
+            <td class="muted">${esc([c.city, c.state].filter(Boolean).join(', ')) || '—'}</td>
+            <td class="muted">${esc(c.contact_email) || '—'}</td>
+            <td class="mono">${c.warehouse_count ?? '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  $('companyForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    showError('');
+    try {
+      await api('/admin/companies', { method: 'POST', body: JSON.stringify({
+        name: $('cName').value.trim(), industry: $('cIndustry').value.trim() || null,
+        contact_email: $('cEmail').value.trim() || null,
+        city: $('cCity').value.trim() || null, state: $('cState').value.trim() || null,
+      })});
+      renderCompanies();
+    } catch (err) { showError(err.message); }
+  });
+}
+
+// ── Perfiles ────────────────────────────────────────────────────────────────
+async function renderProfiles() {
+  const profiles = await api('/admin/profiles');
+  $('view').innerHTML = `
+    <div class="card wrap">
+      <h3>${profiles.length} perfiles</h3>
+      <table>
+        <thead><tr><th>Código</th><th>Nombre</th><th>Permisos</th><th>Tipo</th><th>Estado</th></tr></thead>
+        <tbody>${profiles.map(p => `
+          <tr>
+            <td class="mono">${esc(p.code)}</td>
+            <td>${esc(p.name)}<div class="muted">${esc(p.description) || ''}</div></td>
+            <td class="mono">${(p.permissions || p.permission_ids || []).length}</td>
+            <td>${p.is_system ? '<span class="badge">sistema</span>' : '<span class="badge ok">propio</span>'}</td>
+            <td>${p.is_active === false ? '<span class="badge">inactivo</span>' : '<span class="badge ok">activo</span>'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+// ── Auditoría ───────────────────────────────────────────────────────────────
+async function renderAudit() {
+  $('view').innerHTML = `
+    <div class="toolbar">
+      <input id="aTable" placeholder="Tabla (ej. route_headers)">
+      <button id="aGo" class="primary">Buscar</button>
+    </div>
+    <div class="card wrap" id="auditBox">Cargando…</div>`;
+  async function load() {
+    const t = $('aTable').value.trim();
+    const rows = await api('/admin/audit-logs?limit=50' + (t ? '&table_name=' + encodeURIComponent(t) : ''));
+    $('auditBox').innerHTML = rows.length ? `
+      <table>
+        <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Tabla</th><th>Registro</th></tr></thead>
+        <tbody>${rows.map(a => `
+          <tr>
+            <td class="mono">${esc((a.created_at || '').replace('T', ' ').slice(0, 19))}</td>
+            <td>${a.changed_by ? esc(a.changed_by.name) : '<span class="muted">sistema</span>'}</td>
+            <td><span class="badge">${esc(a.action)}</span></td>
+            <td class="mono">${esc(a.table_name)}</td>
+            <td class="mono muted">${esc(String(a.record_id).slice(0, 8))}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : '<span class="muted">Sin registros.</span>';
+  }
+  $('aGo').addEventListener('click', () => load().catch(e => showError(e.message)));
+  await load();
+}
+
+const views = { companies: renderCompanies, profiles: renderProfiles, audit: renderAudit };
+
+async function show(tab) {
+  showError('');
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  try { await views[tab](); } catch (e) { $('view').innerHTML = ''; showError(e.message); }
+}
+
+document.querySelectorAll('#tabs button').forEach(b => b.addEventListener('click', () => show(b.dataset.tab)));
+$('logoutBtn').addEventListener('click', () => { sessionStorage.clear(); window.location.href = '/login.html'; });
+$('themeBtn').addEventListener('click', () => {
+  const next = (document.documentElement.getAttribute('data-theme') || 'dark') === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem('muevo_theme', next); } catch (e) {}
+});
+try { document.documentElement.setAttribute('data-theme', localStorage.getItem('muevo_theme') || 'dark'); } catch (e) {}
+
+try { const u = JSON.parse(sessionStorage.getItem('muevo_user') || '{}'); $('who').textContent = u.full_name || u.email || ''; } catch (e) {}
+show('companies');
+</script>
+</body>
+</html>
