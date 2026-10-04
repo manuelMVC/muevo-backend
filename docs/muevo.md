@@ -1,7 +1,7 @@
 # Muevo — Resumen del proyecto
 
 **Plataforma B2B2B de logística para el mercado hispano de EE.UU.**
-Documento vivo — última actualización: 5 de octubre de 2026
+Documento vivo — última actualización: 4 de octubre de 2026
 
 ---
 
@@ -17,10 +17,11 @@ C:\Claude\
 │   ├── transport.html      (portal empresa de transporte)
 │   ├── admin.html          (portal de administración de Muevo — versión mínima: compañías, perfiles, auditoría)
 │   ├── login.html          (login unificado)
-│   ├── alembic\versions\   (31 migraciones — 001 a 031)
+│   ├── alembic\versions\   (32 migraciones — 001 a 032)
 │   ├── seed_initial_data.py (bootstrap: holding→company→warehouse→usuario admin)
 │   ├── seed_security_extensions.py (módulos/permisos nuevos + asigna perfiles)
 │   ├── seed_test_profile_users.py (1 usuario de prueba por cada perfil de seguridad del warehouse)
+│   ├── seed_geography.py   (EE.UU., 50 estados y sus 29.537 ciudades desde data\us_geography.json; completa ciudad de paradas existentes)
 │   ├── seed_transport_profiles.py (perfiles RBAC de transporte + 3 usuarios de prueba de transporte)
 │   ├── reset_operational_data.py (borra lotes/rutas/paradas/ofertas/clientes de prueba — no toca tenant/usuarios/RBAC)
 │   ├── seed_demo_data.py   (datos de demo — 8 lotes, 16 rutas, cubre cada estado de negociación)
@@ -140,6 +141,16 @@ El código de cliente que el warehouse asigna a cada parada (ej: `CLI-001`) es t
 - **Aceptar una ruta** (`POST /transport/routes/{id}/accept`) acepta `vehicle_id` y `driver_id` opcionales; el conductor debe ser de la empresa. El modal de `transport.html` tiene un selector de vehículo y otro de conductor. Nuevo endpoint `GET /transport/drivers`.
 - **Flota:** el conductor que se muestra para un vehículo es el de su ruta en curso o asignada; un vehículo sin ruta aparece sin conductor. El tracking de flota solo incluye vehículos con una ruta en curso.
 - **Pendiente:** un conductor puede estar asignado a varias rutas a la vez; no hay validación de solapamiento de horarios (el modal solo deshabilita a quien ya está en una ruta en curso).
+
+### 4.1.2 Geografía: país > estado > ciudad (octubre 2026, migración `032_geography`)
+Tablas `countries`, `states` y `cities` para armar rutas por zona. Antes país/estado/ciudad eran texto libre en `companies`, `warehouses`, `transport_companies` y `route_details`, y en los datos de demo las paradas tenían ciudad y estado vacíos.
+- **Datos cargados** (`seed_geography.py`, desde `data/us_geography.json`, generado de los códigos postales de GeoNames, licencia CC BY 4.0): EE.UU., sus 50 estados y 29.537 ciudades de todos los estados. Son los lugares postales, o sea todo lo que tiene código postal, no solo municipios (por eso hay barrios y localidades además de ciudades). Cada estado tiene entre cientos y unas 1.800 entradas; Pensilvania (1.786), Nueva York (1.610) y Texas (1.469) son los que más tienen. Washington D.C. y los territorios no están cargados.
+- **`cities.zip_codes`** guarda los códigos postales de cada ciudad, así que la ciudad de una parada se resuelve por su zip. `name_normalized` unifica variantes ("Saint Petersburg" y "St. Petersburg", mayúsculas, acentos).
+- **`resolve_city()`** (en `main.py`) resuelve la ciudad de una parada en este orden: código postal, nombre de ciudad + estado, y por último la ciudad más cercana a lat/lng (hasta 40 km; compara contra el centro de cada lugar postal, así que cerca de un límite puede elegir el lugar vecino. El zip es lo confiable). Al guardar una parada nueva, una ciudad que no existe dentro de un estado conocido se crea sola.
+- **`route_details.city_id` y `warehouses.city_id`** apuntan a `cities`; los textos `city`/`state` se conservan y ahora se completan. La migración de datos dejó las 55 paradas existentes con ciudad (Orlando y Altamonte Springs).
+- **Armado de rutas por zona:** `POST /warehouse/batches/plan` acepta `agrupar_por` (`ciudad`, `estado` o `pais`) y planifica por separado dentro de cada zona; cada ruta propuesta trae su `zona` (ciudad/estado/país). Las paradas que no se pueden ubicar quedan en un grupo aparte. Sin `agrupar_por` funciona como antes. Las paradas aceptan `ciudad` y `estado` opcionales.
+- **Consulta:** `GET /geo/countries`, `/geo/states` y `/geo/cities?state=FL&q=ora`.
+- **Pendiente:** la pantalla de carga de lotes de `warehouse.html` todavía no expone `agrupar_por` ni muestra la zona de cada ruta.
 
 ### 4.2 Dispatcher automático de rutas
 - Algoritmo k-means geográfico (sklearn) que agrupa paradas sueltas en rutas óptimas
@@ -262,7 +273,7 @@ Todo el ciclo de negociación/despacho construido esta sesión era 100% "pull" �
 ## 6. Estado actual (octubre 2026)
 
 ### Completado
-- Backend: 31 migraciones Alembic aplicadas, ~42 tablas
+- Backend: 32 migraciones Alembic aplicadas, 45 tablas
 - Portal warehouse: dashboard, lotes (con anulación con motivo y validación de precio al aprobar), rutas (con CRUD en borrador y paradas multi-ítem), clientes, incidencias, negociación de precios multi-transportista con sugerencia automática y aprobación de holding (con pantalla propia "Ofertas por ruta" para verlas todas juntas), tarifas de servicio administrables, escaneo de inventario, recepción de mercancía (inbound)
 - Portal transportista: marketplace de negociación de precios (antes no tenía ninguna UI de negociación) — incluye un widget en el Dashboard para pujar sin salir de ahí; Dashboard con cards + gráficos y matriz de rutas por estado, alineado con el del warehouse (ver [4.7](#47-negociación-de-precios-route_price_offers))
 - App móvil: pantallas base del portal warehouse
@@ -275,9 +286,11 @@ Todo el ciclo de negociación/despacho construido esta sesión era 100% "pull" �
 - **Conductor por ruta** (octubre 2026, ver [4.1.1](#411-conductor-por-ruta-no-por-vehículo-octubre-2026-migración-031_driver_per_route)): `vehicles.driver_id` eliminado; el conductor se asigna a cada ruta y pertenece a una empresa de transporte. El modal de aceptar ruta elige vehículo y conductor
 - **Documentación técnica actualizada** (octubre 2026): diccionario de datos regenerado desde el esquema real (42 tablas, 11 dominios) y DFD multinivel (contexto, 11 procesos, detalle de acceso, planificación, negociación, ejecución, avisos y auditoría, más matriz proceso × almacén) publicado como artifact
 - **Usuarios de prueba** (contraseña de todos: `muevo123`): warehouse — `carlos@` y `super.admin@` (Super Admin), `company.admin@`, `warehouse.admin@`, `operator@`, `viewer@`, `billing.manager@`; transporte — `transport@` (Rapid Courier Orlando, verificada) y `sunshine@` (Sunshine Logistics, sin verificar) como Admin de Transporte, más `transport.dispatcher@`, `transport.billing@` y `transport.viewer@` en Rapid Courier; Muevo — `admin@muevo.app`; todos con dominio `@muevo.app`. `driver@muevo.app` es solo de la app móvil
+- **Geografía país > estado > ciudad** (octubre 2026, ver [4.1.2](#412-geografía-país--estado--ciudad-octubre-2026-migración-032_geography)): EE.UU., 50 estados y 29.537 ciudades; las rutas se pueden armar por ciudad, estado o país
 - **Notificaciones in-app + email en ambos portales** (ver [4.11](#411-notificaciones-notifications--septiembre-2026)): todo el ciclo de negociación/despacho (marketplace se abre, ofertas, holding, aceptar/rechazar rutas) avisa a los usuarios correspondientes — campanita con polling, sin necesidad de refrescar la pantalla a mano
 
 ### Pendiente / próximos pasos
+- Geografía: `warehouse.html` no expone todavía el agrupamiento por zona ni los selectores de país/estado/ciudad; `companies` y `transport_companies` siguen con ciudad y estado en texto libre
 - Portal admin: la sección "Tarifas" (dentro de `warehouse.html`) ya cubre el catálogo de tipos de servicio; falta gestión de tipos de vehículo y el resto de catálogos restantes
 - `admin.html` es una versión mínima: el backend ya soporta editar perfiles, crear y editar warehouses y asignar perfiles a usuarios (`/admin/users/profiles`), pero la pantalla todavía no los expone
 - Un conductor puede estar asignado a varias rutas a la vez: no hay validación de solapamiento de horarios (el modal solo deshabilita a quien ya está en una ruta en curso)
@@ -299,7 +312,7 @@ Todo el ciclo de negociación/despacho construido esta sesión era 100% "pull" �
 ## 7. Convenciones del proyecto
 
 - **Scripts `fix_*.py`** — se usan para corregir datos inconsistentes en la base ya poblada (ej: rutas sin tipo de vehículo, lotes sin numerar). Se prefieren sobre migraciones de datos dentro de Alembic porque son más fáciles de auditar y re-ejecutar de forma idempotente durante desarrollo activo.
-- **Numeración de migraciones secuencial de 3 dígitos** (`001` a `031` actualmente) con nombre descriptivo del cambio.
+- **Numeración de migraciones secuencial de 3 dígitos** (`001` a `032` actualmente) con nombre descriptivo del cambio.
 - **Español en UI y comentarios de negocio, inglés en nombres de variables/funciones técnicas** — refleja que el equipo de producto/negocio es hispanohablante pero el código sigue convención internacional.
 - **Bootstrap de una base nueva**: `seed_initial_data.py` (holding → company → warehouse → usuario admin) va primero y es idempotente; recién después corren `seed_demo_data.py` y `seed_incident_types.py`, que asumen que ya existe al menos una `Company`. Los catálogos base (`service_types`, `vehicle_types`) no necesitan seed aparte — ya vienen sembrados por las migraciones `012`/`013`. `seed_security_extensions.py` puede correr en cualquier momento después de `seed_initial_data.py` — agrega módulos/permisos nuevos y le asigna un perfil por defecto a los `HoldingUser` que todavía no tengan uno. `seed_test_profile_users.py` es opcional y solo sirve para pruebas manuales — crea un usuario (`muevo123`) por cada uno de los 6 perfiles de seguridad, todos con acceso a la primera `Company` que encuentre.
 - **`.vscode/` versionado** (`launch.json`, `settings.json`, `extensions.json`) — intérprete apuntando al `.venv` del proyecto y una configuración de debug que levanta `uvicorn main:app --reload` con F5, para no depender de que cada desarrollador arme su propio setup.
