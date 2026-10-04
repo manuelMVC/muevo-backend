@@ -44,13 +44,13 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import create_engine, text, select, update, func, delete as sa_delete
 from sqlalchemy.orm import Session, sessionmaker
 
-from dispatcher import Stop as DispatchStop, plan_stops, planned_route_to_dict
+from dispatcher import Stop as DispatchStop, plan_stops, planned_route_to_dict, ROUTE_COLORS
 from models import (
     Base, User, Driver, Vehicle, Route, Stop, Delivery,
     Earning, DriverMetric, Company,
     UserRole, RouteStatus, StopStatus, PodType, VehicleType,
     # Modelo multi-holding / multi-warehouse (vigente para /api/v1/routes)
-    Holding, Warehouse, TransportCompany,
+    Holding, Warehouse, TransportCompany, Country, State, City,
     RouteHeader, RouteDetail, ShipmentItem, CompanyAdmin, TransportCompanyAdmin,
     # Batches e incidencias
     RouteBatch, RouteBatchItem, IncidentType, Incident,
@@ -4017,11 +4017,132 @@ class StopItemInput(BaseModel):
     declared_value: float = Field(0, ge=0)
 
 
+# ─── Geografía: país > estado > ciudad ───────────────────────────────────────
+
+def normalize_place_name(name: str) -> str:
+    """Minúsculas, sin acentos ni signos; unifica 'Saint/St.' y 'Fort/Ft.' para comparar nombres de ciudad."""
+    import unicodedata
+    text = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode().lower()
+    text = re.sub(r"[^a-z0-9 ]+", " ", text)
+    words = [{"saint": "st", "ft": "fort", "mt": "mount"}.get(w, w) for w in text.split()]
+    return " ".join(words)
+
+
+def _distance_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    from math import radians, sin, cos, asin, sqrt
+    dlat, dlng = radians(lat2 - lat1), radians(lng2 - lng1)
+    a = sin(dlat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlng / 2) ** 2
+    return 6371 * 2 * asin(sqrt(a))
+
+
+def find_state(db: Session, state: Optional[str], country_iso2: str = "US") -> Optional["State"]:
+    """Estado por código ('FL') o nombre ('Florida') dentro de un país."""
+    if not state or not state.strip():
+        return None
+    value = state.strip()
+    country = db.execute(select(Country).where(Country.iso2 == country_iso2.upper())).scalar_one_or_none()
+    if not country:
+        return None
+    return db.execute(
+        select(State).where(
+            State.country_id == country.id,
+            (func.upper(State.code) == value.upper()) | (func.lower(State.name) == value.lower()),
+        )
+    ).scalars().first()
+
+
+def resolve_city(
+    db: Session, *, zip_code: Optional[str] = None, city: Optional[str] = None,
+    state: Optional[str] = None, country: str = "US",
+    lat: Optional[float] = None, lng: Optional[float] = None,
+    create: bool = False, max_km: float = 40.0,
+) -> Optional["City"]:
+    """
+    Resuelve la ciudad de una parada. Orden: código postal, nombre + estado,
+    y por último la ciudad más cercana a lat/lng (hasta max_km).
+    Con create=True, un nombre de ciudad nuevo dentro de un estado conocido se da de alta.
+    """
+    st = find_state(db, state, country)
+
+    zip5 = re.sub(r"\D", "", zip_code or "")[:5]
+    if len(zip5) == 5:
+        query = select(City).where(City.zip_codes.any(zip5))
+        if st:
+            found = db.execute(query.where(City.state_id == st.id)).scalars().first()
+            if found:
+                return found
+        found = db.execute(query).scalars().first()
+        if found:
+            return found
+
+    if city and city.strip() and st:
+        norm = normalize_place_name(city)
+        found = db.execute(
+            select(City).where(City.state_id == st.id, City.name_normalized == norm)
+        ).scalar_one_or_none()
+        if found:
+            return found
+        if create:
+            found = City(id=uuid.uuid4(), state_id=st.id, name=city.strip(), name_normalized=norm,
+                         lat=lat, lng=lng, zip_codes=[])
+            db.add(found)
+            db.flush()
+            return found
+
+    if lat is not None and lng is not None and (lat or lng):
+        nearest = db.execute(
+            select(City).where(City.lat.isnot(None))
+            .order_by((City.lat - lat) * (City.lat - lat) + (City.lng - lng) * (City.lng - lng))
+            .limit(1)
+        ).scalar_one_or_none()
+        if nearest and _distance_km(lat, lng, nearest.lat, nearest.lng) <= max_km:
+            return nearest
+    return None
+
+
+def _zone_of(city: Optional["City"]) -> dict:
+    """País / estado / ciudad de una ciudad resuelta (None si no se pudo resolver)."""
+    if not city:
+        return {"ciudad": None, "estado": None, "pais": None}
+    return {"ciudad": city.name, "estado": city.state.code, "pais": city.state.country.iso2}
+
+
+@app.get("/api/v1/geo/countries")
+async def geo_countries(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    rows = db.execute(select(Country).where(Country.is_active == True).order_by(Country.name)).scalars().all()
+    return [{"id": str(c.id), "iso2": c.iso2, "iso3": c.iso3, "name": c.name} for c in rows]
+
+
+@app.get("/api/v1/geo/states")
+async def geo_states(country: str = "US", current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    rows = db.execute(
+        select(State).join(Country).where(Country.iso2 == country.upper(), State.is_active == True).order_by(State.name)
+    ).scalars().all()
+    return [{"id": str(s.id), "code": s.code, "name": s.name} for s in rows]
+
+
+@app.get("/api/v1/geo/cities")
+async def geo_cities(
+    state: str, country: str = "US", q: Optional[str] = None, limit: int = 100,
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    st = find_state(db, state, country)
+    if not st:
+        raise HTTPException(status_code=404, detail="Estado no encontrado")
+    query = select(City).where(City.state_id == st.id, City.is_active == True)
+    if q and q.strip():
+        query = query.where(City.name_normalized.like(f"%{normalize_place_name(q)}%"))
+    rows = db.execute(query.order_by(City.name).limit(max(1, min(limit, 500)))).scalars().all()
+    return [{"id": str(c.id), "name": c.name, "state": st.code, "lat": c.lat, "lng": c.lng, "zip_codes": c.zip_codes} for c in rows]
+
+
 class StopInput(BaseModel):
     """Una parada individual ingresada via CSV o formulario manual."""
     destino:         str   = Field(min_length=1)
     direccion:       str   = Field(min_length=1)
     codigo_postal:   str   = ""
+    ciudad:          str   = ""
+    estado:          str   = ""    # código ('FL') o nombre ('Florida')
     lat:             float = Field(ge=-90, le=90)
     lng:             float = Field(ge=-180, le=180)
     peso_lbs:        float = Field(ge=0)
@@ -4046,6 +4167,7 @@ class DispatchPlanRequest(BaseModel):
     peso_max_lbs:        float
     volumen_max_ft3:     float
     max_stops_per_route: int   = 12
+    agrupar_por:         Optional[str] = None   # None | "ciudad" | "estado" | "pais": arma rutas dentro de cada zona
     paradas:             list[StopInput] = Field(min_length=1)
     # Sin max_length estático — el tope de filas es configurable por compañía
     # (Company.max_csv_rows) y se valida dentro de plan_batch().
@@ -4212,6 +4334,7 @@ async def plan_batch(
     stops = [
         DispatchStop(
             destino=p.destino, direccion=p.direccion, codigo_postal=p.codigo_postal,
+            ciudad=p.ciudad, estado=p.estado,
             lat=p.lat, lng=p.lng,
             peso_lbs=p.peso_lbs, volumen_ft3=p.volumen_ft3,
             hora_limite=p.hora_limite,
@@ -4224,21 +4347,59 @@ async def plan_batch(
         for p in data.paradas
     ]
 
-    planned = plan_stops(
-        stops=stops,
-        peso_max_lbs=data.peso_max_lbs,
-        volumen_max_ft3=data.volumen_max_ft3,
-        max_stops_per_route=data.max_stops_per_route,
-    )
+    if data.agrupar_por not in (None, "ciudad", "estado", "pais"):
+        raise HTTPException(status_code=400, detail="agrupar_por debe ser 'ciudad', 'estado' o 'pais'")
+
+    # Zona de cada parada: se informa siempre que se pueda y se usa para agrupar si se pidió
+    cities_by_temp = {
+        s.temp_id: resolve_city(db, zip_code=s.codigo_postal, city=s.ciudad, state=s.estado,
+                                lat=s.lat, lng=s.lng)
+        for s in stops
+    }
+
+    def zone_key(stop):
+        if not data.agrupar_por:
+            return "todas"
+        c = cities_by_temp[stop.temp_id]
+        if not c:
+            return None
+        return {"ciudad": c.id, "estado": c.state_id, "pais": c.state.country_id}[data.agrupar_por]
+
+    partitions: dict = {}
+    for s_ in stops:
+        partitions.setdefault(zone_key(s_), []).append(s_)
+
+    planned = []
+    zones_of_route = []
+    for key, part in sorted(partitions.items(), key=lambda kv: (kv[0] is None, str(kv[0]))):
+        sub = plan_stops(
+            stops=part,
+            peso_max_lbs=data.peso_max_lbs,
+            volumen_max_ft3=data.volumen_max_ft3,
+            max_stops_per_route=data.max_stops_per_route,
+        )
+        zone = {"ciudad": None, "estado": None, "pais": None}
+        if data.agrupar_por:
+            zone = _zone_of(cities_by_temp[part[0].temp_id])
+            if data.agrupar_por == "estado":
+                zone["ciudad"] = None
+            elif data.agrupar_por == "pais":
+                zone["ciudad"] = zone["estado"] = None
+        for r in sub:
+            r.route_index = len(planned)
+            r.color = ROUTE_COLORS[len(planned) % len(ROUTE_COLORS)]
+            planned.append(r)
+            zones_of_route.append(zone)
 
     return {
         "total_paradas": len(stops),
         "total_rutas":   len(planned),
+        "agrupar_por":   data.agrupar_por,
         "vehicle_type":  data.vehicle_type,
         "service_type":  data.service_type,
         "peso_max_lbs":  data.peso_max_lbs,
         "volumen_max_ft3": data.volumen_max_ft3,
-        "rutas": [planned_route_to_dict(r) for r in planned],
+        "rutas": [{**planned_route_to_dict(r), "zona": z} for r, z in zip(planned, zones_of_route)],
     }
 
 
@@ -4259,14 +4420,20 @@ def _create_route_detail(db: Session, route_header_id, seq: int, stop: dict, eta
         if items_data else stop.get("valor_declarado", 0)
     )
 
+    geo_city = resolve_city(
+        db, zip_code=stop.get("codigo_postal"), city=stop.get("ciudad"), state=stop.get("estado"),
+        lat=stop.get("lat"), lng=stop.get("lng"), create=True,
+    )
+
     detail = RouteDetail(
         id=uuid.uuid4(),
         route_header_id=route_header_id,
         sequence_order=seq,
         company_name=stop.get("destino", ""),
         address_line1=stop.get("direccion", ""),
-        city="",
-        state="",
+        city=geo_city.name if geo_city else (stop.get("ciudad") or ""),
+        state=geo_city.state.code if geo_city else (stop.get("estado") or ""),
+        city_id=geo_city.id if geo_city else None,
         zip_code=stop.get("codigo_postal") or None,
         codigo_cliente=stop.get("codigo_cliente") or None,
         lat=stop.get("lat"),

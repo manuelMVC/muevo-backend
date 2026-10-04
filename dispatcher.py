@@ -44,6 +44,8 @@ class Stop:
     destino:         str   = ""
     direccion:       str   = ""
     codigo_postal:   str   = ""
+    ciudad:          str   = ""
+    estado:          str   = ""
     lat:             float = 0.0
     lng:             float = 0.0
 
@@ -251,6 +253,8 @@ def planned_route_to_dict(route: PlannedRoute) -> dict:
                 "destino":         s.destino,
                 "direccion":       s.direccion,
                 "codigo_postal":   s.codigo_postal,
+                "ciudad":          s.ciudad,
+                "estado":          s.estado,
                 "lat":             s.lat,
                 "lng":             s.lng,
                 "peso_lbs":        s.peso_lbs,

@@ -698,6 +698,7 @@ class Warehouse(Base):
     address_line2         = Column(String(255), nullable=True)
     city                  = Column(String(100), nullable=False)
     state                 = Column(String(50),  nullable=False)
+    city_id               = Column(UUID(as_uuid=True), ForeignKey("cities.id", ondelete="SET NULL"), nullable=True)
     zip_code              = Column(String(20),  nullable=True)
     country               = Column(String(50),  default="US", nullable=False)
     lat                   = Column(Float, nullable=True)
@@ -1156,6 +1157,7 @@ class RouteDetail(Base):
     address_line2                       = Column(String(255), nullable=True)
     city                                  = Column(String(100), nullable=False)
     state                                 = Column(String(50), nullable=False)
+    city_id                               = Column(UUID(as_uuid=True), ForeignKey("cities.id", ondelete="SET NULL"), nullable=True)
     zip_code                              = Column(String(20), nullable=True)
     lat                                     = Column(Float, nullable=True)
     lng                                      = Column(Float, nullable=True)
@@ -2050,6 +2052,60 @@ class HoldingUserProfile(Base):
         Index("ix_hup_holding_user_id", "holding_user_id"),
         Index("ix_hup_profile_id",      "profile_id"),
         Index("ix_hup_company_id",      "company_id"),
+    )
+
+# ─── GEOGRAFÍA ──────────────────────────────────────────────────────────────
+# País > estado > ciudad, para armar rutas por zona. Las paradas y los
+# warehouses apuntan a cities (city_id); los textos city/state se conservan.
+
+class Country(Base):
+    __tablename__ = "countries"
+
+    id        = uuid_pk()
+    iso2      = Column(String(2),   unique=True, nullable=False)
+    iso3      = Column(String(3),   unique=True, nullable=False)
+    name      = Column(String(120), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+
+    states = relationship("State", back_populates="country", cascade="all, delete-orphan")
+
+
+class State(Base):
+    __tablename__ = "states"
+
+    id         = uuid_pk()
+    country_id = Column(UUID(as_uuid=True), ForeignKey("countries.id", ondelete="CASCADE"), nullable=False)
+    code       = Column(String(10),  nullable=False)     # ej. "FL"
+    name       = Column(String(120), nullable=False)
+    is_active  = Column(Boolean, default=True, nullable=False)
+
+    country = relationship("Country", back_populates="states")
+    cities  = relationship("City", back_populates="state", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("country_id", "code", name="uq_state_country_code"),
+        Index("ix_states_country_id", "country_id"),
+    )
+
+
+class City(Base):
+    __tablename__ = "cities"
+
+    id              = uuid_pk()
+    state_id        = Column(UUID(as_uuid=True), ForeignKey("states.id", ondelete="CASCADE"), nullable=False)
+    name            = Column(String(120), nullable=False)
+    name_normalized = Column(String(120), nullable=False)   # minúsculas, sin acentos ni signos
+    lat             = Column(Float, nullable=True)
+    lng             = Column(Float, nullable=True)
+    zip_codes       = Column(ARRAY(String(10)), nullable=False, default=list)
+    is_active       = Column(Boolean, default=True, nullable=False)
+
+    state = relationship("State", back_populates="cities")
+
+    __table_args__ = (
+        UniqueConstraint("state_id", "name_normalized", name="uq_city_state_name"),
+        Index("ix_cities_state_id", "state_id"),
+        Index("ix_cities_name_normalized", "name_normalized"),
     )
 
 # ─── NOTIFICACIONES ─────────────────────────────────────────────────────────
