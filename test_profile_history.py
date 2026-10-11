@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 test_profile_history.py — Prueba de punta a punta del historial de cambios de perfil
-(tabla profile_change_history, migración 032).
+(tabla profile_change_history, migración 033).
 
 Llama a los endpoints REALES con TestClient y los datos reales de la base local,
 pero dentro de UNA transacción externa que se revierte al final: no queda ningún
@@ -11,7 +11,7 @@ Uso:
     cd C:\\claude\\muevo-backend
     .venv\\Scripts\\python test_profile_history.py
 
-Requiere la migración 032 aplicada y los usuarios de demo (admin@, carlos@, operator@, viewer@).
+Requiere la migración 033 aplicada y los usuarios de demo (admin@, carlos@, operator@, viewer@).
 """
 
 import os
@@ -82,7 +82,7 @@ def max_seq():
 
 try:
     print("\n== Preparación ==")
-    check("la tabla profile_change_history existe (migración 032)",
+    check("la tabla profile_change_history existe (migración 033)",
           bool(q("select 1 from information_schema.tables where table_name = 'profile_change_history'")))
     admin, carlos, viewer, operador = (user(e) for e in
                                        ("admin@muevo.app", "carlos@muevo.app", "viewer@muevo.app", "operator@muevo.app"))

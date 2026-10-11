@@ -1,7 +1,7 @@
 """profile change history
 
-Revision ID: 032_profile_change_history
-Revises: 031_driver_per_route
+Revision ID: 033_profile_change_history
+Revises: 032_geography
 Create Date: 2026-10-06
 
 Historial legible de cambios de perfiles y de los usuarios de esos perfiles.
@@ -21,8 +21,8 @@ código, el nombre y el correo).
 from alembic import op
 import sqlalchemy as sa
 
-revision      = '032_profile_change_history'
-down_revision = '031_driver_per_route'
+revision      = '033_profile_change_history'
+down_revision = '032_geography'
 branch_labels = None
 depends_on    = None
 

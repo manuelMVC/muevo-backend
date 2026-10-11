@@ -2176,7 +2176,7 @@ class AuditLog(Base):
 class ProfileChangeHistory(Base):
     """
     Historial legible de cambios de perfiles y de los usuarios de esos perfiles
-    (migración 032). Una fila por cambio: quién, cuándo, qué cambió, valor anterior
+    (migración 033). Una fila por cambio: quién, cuándo, qué cambió, valor anterior
     y valor actual. Lo escribe SOLO el listener _capture_profile_history (al final
     de este archivo); la tabla es de solo lectura (trigger en Postgres).
 
