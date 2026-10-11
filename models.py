@@ -35,6 +35,7 @@ from sqlalchemy import (
     Boolean, Column, DateTime, Float, ForeignKey,
     Integer, Numeric, String, Text, JSON,
     Enum, UniqueConstraint, CheckConstraint, Index, event,
+    BigInteger, Identity,
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.ext.declarative import declarative_base
@@ -2172,6 +2173,43 @@ class AuditLog(Base):
     )
 
 
+class ProfileChangeHistory(Base):
+    """
+    Historial legible de cambios de perfiles y de los usuarios de esos perfiles
+    (migración 033). Una fila por cambio: quién, cuándo, qué cambió, valor anterior
+    y valor actual. Lo escribe SOLO el listener _capture_profile_history (al final
+    de este archivo); la tabla es de solo lectura (trigger en Postgres).
+
+    Sin llaves foráneas a propósito: el historial sobrevive aunque se borre el
+    perfil o el usuario, por eso guarda copias del código, nombre y correo.
+    """
+    __tablename__ = "profile_change_history"
+
+    id                     = uuid_pk()
+    seq                    = Column(BigInteger, Identity(always=True), nullable=False)   # orden dentro de una transacción
+    changed_at             = Column(DateTime(timezone=True), server_default=func.clock_timestamp(), nullable=False)
+    changed_by_user_id     = Column(UUID(as_uuid=True), nullable=True)
+    changed_by_name        = Column(String(255), nullable=True)
+    changed_by_email       = Column(String(255), nullable=True)
+    source                 = Column(String(10), nullable=False, default="api")           # api | sistema
+    entity_type            = Column(String(30), nullable=False)
+    # profile | profile_permission | user_profile | holding_user | user_company_access
+    change_type            = Column(String(40), nullable=False)
+    description            = Column(Text, nullable=False)
+    field_name             = Column(String(60), nullable=True)
+    old_value              = Column(Text, nullable=True)
+    new_value              = Column(Text, nullable=True)
+    profile_id             = Column(UUID(as_uuid=True), nullable=True)
+    profile_code           = Column(String(60), nullable=True)
+    target_holding_user_id = Column(UUID(as_uuid=True), nullable=True)
+    target_user_id         = Column(UUID(as_uuid=True), nullable=True)
+    target_user_email      = Column(String(255), nullable=True)
+    company_id             = Column(UUID(as_uuid=True), nullable=True)
+    company_name           = Column(String(255), nullable=True)
+    record_id              = Column(String(100), nullable=True)
+    details                = Column(JSONB, nullable=True)
+
+
 # Seteado por un middleware en main.py con el usuario autenticado de la
 # request actual (decodifica el JWT best-effort, sin bloquear la request
 # si falta o es inválido). None cuando el cambio no viene de una request
@@ -2186,6 +2224,10 @@ current_audit_user_id: ContextVar[Optional["uuid.UUID"]] = ContextVar(
 _AUDIT_NOISY_COLUMNS = {
     "drivers": {"current_lat", "current_lng", "last_location_at"},
 }
+
+# Tablas que el listener de auditoría NO audita: la propia auditoría y el historial
+# de perfiles (que ya es un registro de cambios; auditarlo duplicaría cada fila).
+_AUDIT_SKIP = (AuditLog, ProfileChangeHistory)
 
 
 def _audit_serialize(value):
@@ -2209,12 +2251,12 @@ def _capture_audit_log(session, flush_context, instances):
     pending = []
 
     for obj in session.new:
-        if isinstance(obj, AuditLog):
+        if isinstance(obj, _AUDIT_SKIP):
             continue
         pending.append((obj, "insert", _audit_snapshot(obj)))
 
     for obj in session.dirty:
-        if isinstance(obj, AuditLog) or obj in session.new or obj in session.deleted:
+        if isinstance(obj, _AUDIT_SKIP) or obj in session.new or obj in session.deleted:
             continue
         if not session.is_modified(obj, include_collections=False):
             continue
@@ -2234,7 +2276,7 @@ def _capture_audit_log(session, flush_context, instances):
         pending.append((obj, "update", diff))
 
     for obj in session.deleted:
-        if isinstance(obj, AuditLog):
+        if isinstance(obj, _AUDIT_SKIP):
             continue
         pending.append((obj, "delete", _audit_snapshot(obj)))
 
@@ -2252,3 +2294,229 @@ def _capture_audit_log(session, flush_context, instances):
             company_id=getattr(obj, "company_id", None),
             changes=changes,
         ))
+
+
+# ─── HISTORIAL DE CAMBIOS DE PERFIL ─────────────────────────────────────────
+# Segundo listener before_flush, independiente del de auditoría: arma filas
+# LEGIBLES en profile_change_history (quién, cuándo, qué cambió, valor anterior y
+# valor actual) cuando cambian los perfiles o los usuarios de esos perfiles:
+#   profiles, profile_permissions, holding_user_profiles,
+#   holding_users y holding_user_companies.
+# Solo ve lo que pasa por el ORM: un DELETE/UPDATE masivo (sa_delete / sa_update),
+# SQL crudo o psql no pasan por aquí — por eso los endpoints de perfiles borran
+# objeto por objeto con db.delete().
+
+_PH_WATCH_COLS = {
+    "profiles":               ("code", "name", "description", "is_active", "is_system"),
+    "holding_user_profiles":  ("profile_id", "company_id", "warehouse_id"),
+    "holding_users":          ("role", "is_super_admin", "is_active"),
+    "holding_user_companies": ("can_view", "can_operate", "can_invoice", "is_admin"),
+}
+
+_PH_LABELS = {
+    ("profiles", "code"): "el código", ("profiles", "name"): "el nombre",
+    ("profiles", "description"): "la descripción", ("profiles", "is_active"): "el estado activo",
+    ("profiles", "is_system"): "la marca de perfil de sistema",
+    ("holding_user_profiles", "profile_id"): "el perfil",
+    ("holding_user_profiles", "company_id"): "el alcance (empresa)",
+    ("holding_user_profiles", "warehouse_id"): "el almacén del alcance",
+    ("holding_users", "role"): "el rol", ("holding_users", "is_super_admin"): "la condición de super admin",
+    ("holding_users", "is_active"): "el estado activo",
+    ("holding_user_companies", "can_view"): "el permiso de ver",
+    ("holding_user_companies", "can_operate"): "el permiso de operar",
+    ("holding_user_companies", "can_invoice"): "el permiso de facturar",
+    ("holding_user_companies", "is_admin"): "el permiso de administrar",
+}
+
+
+def _ph_find(session, cls, pk):
+    """Busca por id: primero entre los objetos pendientes de esta misma transacción, luego en la base."""
+    if pk is None:
+        return None
+    for o in session.new:
+        if isinstance(o, cls) and getattr(o, "id", None) == pk:
+            return o
+    return session.get(cls, pk)
+
+
+def _ph_str(v):
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return "sí" if v else "no"
+    if isinstance(v, PyEnum):
+        return v.value
+    return str(v)
+
+
+def _ph_company_name(session, company_id):
+    if company_id is None:
+        return "todo el holding"
+    c = _ph_find(session, Company, company_id)
+    return c.name if c else f"empresa {company_id}"
+
+
+def _ph_scope(session, company_id, warehouse_id):
+    txt = "todo el holding" if company_id is None else f"empresa {_ph_company_name(session, company_id)}"
+    if warehouse_id is not None:
+        w = _ph_find(session, Warehouse, warehouse_id)
+        txt += f" · almacén {w.name if w else warehouse_id}"
+    return txt
+
+
+def _ph_profile_code(session, profile_id):
+    p = _ph_find(session, Profile, profile_id)
+    return p.code if p else str(profile_id)
+
+
+def _ph_describe(session, actor, obj, action, changed):
+    """Devuelve la lista de filas de historial para un objeto vigilado.
+    action: insert | update | delete. changed: {campo: (antes, después)} solo para update."""
+    t = obj.__tablename__
+    rows = []
+
+    def row(entity_type, change_type, description, *, field=None, old=None, new=None, profile_id=None, profile_code=None,
+            hu=None, user=None, company_id=None, company_name=None, details=None):
+        rows.append(ProfileChangeHistory(
+            id=uuid.uuid4(),
+            changed_by_user_id=actor["id"], changed_by_name=actor["name"], changed_by_email=actor["email"],
+            source=actor["source"], entity_type=entity_type, change_type=change_type, description=description,
+            field_name=field, old_value=_ph_str(old), new_value=_ph_str(new),
+            profile_id=profile_id, profile_code=profile_code,
+            target_holding_user_id=hu.id if hu else None, target_user_id=user.id if user else None,
+            target_user_email=user.email if user else None,
+            company_id=company_id, company_name=company_name,
+            record_id=str(getattr(obj, "id", None)), details=details,
+        ))
+
+    def holding_user_and_user(hu_id):
+        hu = _ph_find(session, HoldingUser, hu_id)
+        user = _ph_find(session, User, hu.user_id) if hu else None
+        return hu, user
+
+    if t == "profiles":
+        code = obj.code
+        if action == "insert":
+            row("profile", "profile_created", f"Se creó el perfil '{code}' ({obj.name})", new=code, profile_id=obj.id, profile_code=code)
+        elif action == "delete":
+            row("profile", "profile_deleted", f"Se eliminó el perfil '{code}' ({obj.name})", old=code, profile_id=obj.id, profile_code=code)
+        else:
+            for f, (old, new) in changed.items():
+                row("profile", "profile_updated", f"Se cambió {_PH_LABELS[(t, f)]} del perfil '{code}'", field=f, old=old, new=new,
+                    profile_id=obj.id, profile_code=code)
+
+    elif t == "profile_permissions":
+        perm = _ph_find(session, Permission, obj.permission_id)
+        pcode = perm.code if perm else str(obj.permission_id)
+        prof_code = _ph_profile_code(session, obj.profile_id)
+        if action == "insert":
+            row("profile_permission", "permission_added", f"Se agregó el permiso '{pcode}' al perfil '{prof_code}'",
+                field="permiso", new=pcode, profile_id=obj.profile_id, profile_code=prof_code, details={"permission_id": str(obj.permission_id)})
+        elif action == "delete":
+            row("profile_permission", "permission_removed", f"Se quitó el permiso '{pcode}' del perfil '{prof_code}'",
+                field="permiso", old=pcode, profile_id=obj.profile_id, profile_code=prof_code, details={"permission_id": str(obj.permission_id)})
+
+    elif t == "holding_user_profiles":
+        hu, user = holding_user_and_user(obj.holding_user_id)
+        who = user.email if user else str(obj.holding_user_id)
+        if action in ("insert", "delete"):
+            prof_code = _ph_profile_code(session, obj.profile_id)
+            scope = _ph_scope(session, obj.company_id, obj.warehouse_id)
+            cname = _ph_company_name(session, obj.company_id) if obj.company_id else None
+            if action == "insert":
+                row("user_profile", "profile_assigned", f"Se asignó el perfil '{prof_code}' a {who} (alcance: {scope})",
+                    field="perfil", new=f"{prof_code} · {scope}", profile_id=obj.profile_id, profile_code=prof_code, hu=hu, user=user,
+                    company_id=obj.company_id, company_name=cname)
+            else:
+                row("user_profile", "profile_unassigned", f"Se quitó el perfil '{prof_code}' a {who} (alcance: {scope})",
+                    field="perfil", old=f"{prof_code} · {scope}", profile_id=obj.profile_id, profile_code=prof_code, hu=hu, user=user,
+                    company_id=obj.company_id, company_name=cname)
+        else:
+            for f, (old, new) in changed.items():
+                if f == "profile_id":
+                    o, n = (_ph_profile_code(session, old) if old else None), _ph_profile_code(session, new)
+                elif f == "company_id":
+                    o, n = _ph_company_name(session, old), _ph_company_name(session, new)
+                else:
+                    wo, wn = _ph_find(session, Warehouse, old), _ph_find(session, Warehouse, new)
+                    o, n = (wo.name if wo else None), (wn.name if wn else None)
+                row("user_profile", "profile_assignment_changed", f"Se cambió {_PH_LABELS[(t, f)]} de {who}: {o or '—'} → {n or '—'}",
+                    field=f, old=o, new=n, profile_id=obj.profile_id, profile_code=_ph_profile_code(session, obj.profile_id), hu=hu, user=user,
+                    company_id=obj.company_id, company_name=_ph_company_name(session, obj.company_id) if obj.company_id else None)
+
+    elif t == "holding_users":
+        user = _ph_find(session, User, obj.user_id)
+        who = user.email if user else str(obj.user_id)
+        if action == "insert":
+            sa_txt = ", super admin" if obj.is_super_admin else ""
+            row("holding_user", "holding_user_created", f"Se dio de alta a {who} en el holding (rol: {obj.role}{sa_txt})",
+                field="rol", new=obj.role, hu=obj, user=user)
+        elif action == "delete":
+            row("holding_user", "holding_user_deleted", f"Se eliminó a {who} del holding", field="rol", old=obj.role, hu=obj, user=user)
+        else:
+            for f, (old, new) in changed.items():
+                row("holding_user", "holding_user_updated", f"Se cambió {_PH_LABELS[(t, f)]} de {who}", field=f, old=old, new=new, hu=obj, user=user)
+
+    elif t == "holding_user_companies":
+        hu, user = holding_user_and_user(obj.holding_user_id)
+        who = user.email if user else str(obj.holding_user_id)
+        cname = _ph_company_name(session, obj.company_id)
+        if action in ("insert", "delete"):
+            flags = (f"ver: {_ph_str(obj.can_view)}, operar: {_ph_str(obj.can_operate)}, "
+                     f"facturar: {_ph_str(obj.can_invoice)}, administrar: {_ph_str(obj.is_admin)}")
+            if action == "insert":
+                row("user_company_access", "company_access_granted", f"Se otorgó a {who} acceso a la empresa '{cname}' ({flags})",
+                    field="acceso", new=flags, hu=hu, user=user, company_id=obj.company_id, company_name=cname)
+            else:
+                row("user_company_access", "company_access_revoked", f"Se quitó a {who} el acceso a la empresa '{cname}'",
+                    field="acceso", old=flags, hu=hu, user=user, company_id=obj.company_id, company_name=cname)
+        else:
+            for f, (old, new) in changed.items():
+                row("user_company_access", "company_access_changed", f"Se cambió {_PH_LABELS[(t, f)]} de {who} en la empresa '{cname}'",
+                    field=f, old=old, new=new, hu=hu, user=user, company_id=obj.company_id, company_name=cname)
+    return rows
+
+
+@event.listens_for(Session, "before_flush")
+def _capture_profile_history(session, flush_context, instances):
+    watched = (Profile, ProfilePermission, HoldingUserProfile, HoldingUser, HoldingUserCompany)
+
+    new_objs = [o for o in session.new if isinstance(o, watched)]
+    del_objs = [o for o in session.deleted if isinstance(o, watched)]
+    dirty_objs = [o for o in session.dirty
+                  if isinstance(o, watched) and o not in session.new and o not in session.deleted
+                  and session.is_modified(o, include_collections=False)]
+    if not (new_objs or del_objs or dirty_objs):
+        return
+
+    with session.no_autoflush:
+        uid = current_audit_user_id.get()
+        actor = {"id": uid, "name": None, "email": None, "source": "api" if uid else "sistema"}
+        if uid:
+            u = session.get(User, uid)
+            if u:
+                actor["name"], actor["email"] = u.full_name, u.email
+
+        rows = []
+        for o in new_objs:
+            rows += _ph_describe(session, actor, o, "insert", None)
+        for o in dirty_objs:
+            cols = _PH_WATCH_COLS.get(o.__tablename__)
+            if not cols:
+                continue
+            changed = {}
+            for c in cols:
+                h = attributes.get_history(o, c)
+                if not h.has_changes():
+                    continue
+                old = h.deleted[0] if h.deleted else None
+                new = h.added[0] if h.added else getattr(o, c)
+                if old != new:
+                    changed[c] = (old, new)
+            if changed:
+                rows += _ph_describe(session, actor, o, "update", changed)
+        for o in del_objs:
+            rows += _ph_describe(session, actor, o, "delete", None)
+
+    for r in rows:
+        session.add(r)

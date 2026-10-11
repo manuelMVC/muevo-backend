@@ -54,6 +54,7 @@
 <nav id="tabs">
   <button data-tab="companies" class="active">Compañías</button>
   <button data-tab="profiles">Perfiles</button>
+  <button data-tab="profileHistory">Historial de perfiles</button>
   <button data-tab="audit">Auditoría</button>
 </nav>
 <main>
@@ -178,7 +179,38 @@ async function renderAudit() {
   await load();
 }
 
-const views = { companies: renderCompanies, profiles: renderProfiles, audit: renderAudit };
+// ── Historial de perfiles ───────────────────────────────────────────────────
+async function renderProfileHistory() {
+  $('view').innerHTML = `
+    <div class="toolbar">
+      <input id="phProfile" placeholder="Perfil (código, ej. operator)">
+      <input id="phUser" placeholder="Usuario afectado (correo)">
+      <button id="phGo" class="primary">Buscar</button>
+    </div>
+    <div class="card wrap" id="phBox">Cargando…</div>`;
+  async function load() {
+    const p = $('phProfile').value.trim(), u = $('phUser').value.trim();
+    const qs = '?limit=100' + (p ? '&profile_code=' + encodeURIComponent(p) : '') + (u ? '&target_user_email=' + encodeURIComponent(u) : '');
+    const rows = await api('/admin/profile-history' + qs);
+    $('phBox').innerHTML = rows.length ? `
+      <table>
+        <thead><tr><th>Fecha</th><th>Persona</th><th>Cambio</th><th>Valor anterior</th><th>Valor actual</th></tr></thead>
+        <tbody>${rows.map(h => `
+          <tr>
+            <td class="mono">${esc((h.changed_at || '').replace('T', ' ').slice(0, 19))}</td>
+            <td>${h.changed_by ? esc(h.changed_by.name || h.changed_by.email) : '<span class="muted">sistema</span>'}</td>
+            <td>${esc(h.description)}<div class="muted mono">${esc(h.change_type)}</div></td>
+            <td class="mono muted">${esc(h.old_value) || '—'}</td>
+            <td class="mono">${esc(h.new_value) || '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : '<span class="muted">Sin cambios registrados.</span>';
+  }
+  $('phGo').addEventListener('click', () => load().catch(e => showError(e.message)));
+  await load();
+}
+
+const views = { companies: renderCompanies, profiles: renderProfiles, profileHistory: renderProfileHistory, audit: renderAudit };
 
 async function show(tab) {
   showError('');

@@ -78,6 +78,8 @@ from models import (
     Warehouse,
     # Auditoría
     AuditLog, AuditAction, current_audit_user_id,
+    # Historial de cambios de perfil
+    ProfileChangeHistory,
     # Notificaciones
     Notification,
 )
@@ -2101,26 +2103,44 @@ async def update_holding_user(
     if data.is_active      is not None: target.is_active      = data.is_active
 
     if data.company_access is not None:
-        # Reemplazar todos los accesos
-        db.execute(
-            sa_delete(HoldingUserCompany).where(HoldingUserCompany.holding_user_id == target.id)
-        )
-        db.flush()
+        # Dejar exactamente los accesos pedidos, aplicando solo la diferencia objeto por objeto
+        # (quitar los que sobran, actualizar banderas, agregar los nuevos). Así los cambios pasan
+        # por el ORM y quedan en la auditoría y en profile_change_history; un DELETE masivo
+        # (sa_delete) no dejaría rastro de qué acceso se quitó.
+        wanted = {}
         for acc_data in data.company_access:
             cid = uuid.UUID(acc_data["company_id"])
             company = db.execute(
                 select(Company).where(Company.id == cid, Company.holding_id == hu.holding_id)
             ).scalar_one_or_none()
-            if not company:
-                continue
-            db.add(HoldingUserCompany(
-                id=uuid.uuid4(), holding_user_id=target.id, company_id=cid,
+            if company:
+                wanted[cid] = acc_data
+        current = {
+            acc.company_id: acc for acc in db.execute(
+                select(HoldingUserCompany).where(HoldingUserCompany.holding_user_id == target.id)
+            ).scalars().all()
+        }
+        for cid, acc in current.items():
+            if cid not in wanted:
+                db.delete(acc)
+        db.flush()
+        for cid, acc_data in wanted.items():
+            flags = dict(
                 can_view=acc_data.get("can_view", True),
                 can_operate=acc_data.get("can_operate", False),
                 can_invoice=acc_data.get("can_invoice", False),
                 is_admin=acc_data.get("is_admin", False),
-                granted_by_id=current_user.id,
-            ))
+            )
+            existing = current.get(cid)
+            if existing:
+                for k, v in flags.items():
+                    if getattr(existing, k) != v:
+                        setattr(existing, k, v)
+            else:
+                db.add(HoldingUserCompany(
+                    id=uuid.uuid4(), holding_user_id=target.id, company_id=cid,
+                    granted_by_id=current_user.id, **flags,
+                ))
 
     db.commit()
     return {"status": "updated", "holding_user_id": holding_user_id}
@@ -2317,12 +2337,21 @@ async def update_profile(
     if data.is_active   is not None: profile.is_active   = data.is_active
 
     if data.permission_ids is not None:
-        # Reemplazar todos los permisos
-        db.execute(sa_delete(ProfilePermission).where(
-            ProfilePermission.profile_id == profile.id))
+        # Dejar exactamente los permisos pedidos. Se borra y agrega SOLO la diferencia, objeto por
+        # objeto (db.delete): así los cambios pasan por el ORM y quedan en la auditoría y en
+        # profile_change_history (un DELETE masivo con sa_delete no deja rastro).
+        wanted = {uuid.UUID(pid) for pid in data.permission_ids}
+        current = {
+            pp.permission_id: pp for pp in db.execute(
+                select(ProfilePermission).where(ProfilePermission.profile_id == profile.id)
+            ).scalars().all()
+        }
+        for perm_id, pp in current.items():
+            if perm_id not in wanted:
+                db.delete(pp)
         db.flush()
-        for pid in data.permission_ids:
-            perm = db.get(Permission, uuid.UUID(pid))
+        for perm_id in wanted - set(current):
+            perm = db.get(Permission, perm_id)
             if perm:
                 db.add(ProfilePermission(id=uuid.uuid4(), profile_id=profile.id,
                                          permission_id=perm.id))
@@ -2655,6 +2684,123 @@ async def remove_profile_assignment(
         raise HTTPException(status_code=404, detail="Asignación no encontrada")
     db.delete(assignment)
     db.commit()
+
+
+class UpdateProfileAssignmentRequest(BaseModel):
+    profile_id:   Optional[str] = None
+    company_id:   Optional[str] = None   # null explícito = todo el holding
+    warehouse_id: Optional[str] = None   # null explícito = sin almacén
+
+
+@app.patch("/api/v1/admin/users/profiles/{assignment_id}")
+async def update_profile_assignment(
+    assignment_id: str,
+    data:          UpdateProfileAssignmentRequest,
+    current_user:  User    = Depends(get_current_user),
+    db:            Session = Depends(get_db),
+):
+    """
+    Cambia el perfil o el alcance (empresa / almacén) de una asignación existente, en un solo paso.
+    Solo se tocan los campos enviados; mandar company_id: null deja el alcance en todo el holding.
+    El cambio queda en profile_change_history con el valor anterior y el actual.
+    """
+    require_platform_admin(current_user, db)
+    assignment = db.get(HoldingUserProfile, uuid.UUID(assignment_id))
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Asignación no encontrada")
+
+    sent = data.model_fields_set
+    if "profile_id" in sent:
+        if not data.profile_id:
+            raise HTTPException(status_code=400, detail="El perfil no puede quedar vacío")
+        profile = db.get(Profile, uuid.UUID(data.profile_id))
+        if not profile:
+            raise HTTPException(status_code=404, detail="Perfil no encontrado")
+        assignment.profile_id = profile.id
+    if "company_id" in sent:
+        if data.company_id:
+            if not db.get(Company, uuid.UUID(data.company_id)):
+                raise HTTPException(status_code=404, detail="Compañía no encontrada")
+            assignment.company_id = uuid.UUID(data.company_id)
+        else:
+            assignment.company_id = None
+    if "warehouse_id" in sent:
+        if data.warehouse_id:
+            if not db.get(Warehouse, uuid.UUID(data.warehouse_id)):
+                raise HTTPException(status_code=404, detail="Almacén no encontrado")
+            assignment.warehouse_id = uuid.UUID(data.warehouse_id)
+        else:
+            assignment.warehouse_id = None
+    db.commit()
+    return {"status": "updated", "id": str(assignment.id)}
+
+
+# ─── Admin — Historial de cambios de perfil ──────────────────────────────────
+
+def serialize_profile_history(h: ProfileChangeHistory) -> dict:
+    return {
+        "id":          str(h.id),
+        "seq":         h.seq,
+        "changed_at":  h.changed_at.isoformat() if h.changed_at else None,
+        "changed_by":  ({"id": str(h.changed_by_user_id), "name": h.changed_by_name, "email": h.changed_by_email}
+                        if h.changed_by_user_id else None),
+        "source":      h.source,
+        "entity_type": h.entity_type,
+        "change_type": h.change_type,
+        "description": h.description,
+        "field_name":  h.field_name,
+        "old_value":   h.old_value,
+        "new_value":   h.new_value,
+        "profile":     {"id": str(h.profile_id), "code": h.profile_code} if h.profile_id else None,
+        "target_user": ({"id": str(h.target_user_id), "email": h.target_user_email} if h.target_user_id else None),
+        "company":     {"id": str(h.company_id), "name": h.company_name} if h.company_id else None,
+        "record_id":   h.record_id,
+        "details":     h.details,
+    }
+
+
+@app.get("/api/v1/admin/profile-history")
+async def list_profile_history(
+    profile_code:       Optional[str] = None,
+    profile_id:         Optional[str] = None,
+    target_user_email:  Optional[str] = None,
+    changed_by_user_id: Optional[str] = None,
+    entity_type:        Optional[str] = None,
+    change_type:        Optional[str] = None,
+    date_from:          Optional[str] = None,
+    date_to:            Optional[str] = None,
+    limit:              int = 50,
+    offset:             int = 0,
+    current_user:       User    = Depends(get_current_user),
+    db:                 Session = Depends(get_db),
+):
+    """
+    Historial de cambios de perfiles y de los usuarios de esos perfiles: quién, cuándo, qué cambió,
+    valor anterior y valor actual. Solo lectura; alcance de todo el holding (mismo permiso que la
+    auditoría: audit.view).
+    """
+    require_permission(current_user, db, "audit", "view", company_id=None)
+
+    limit = max(1, min(limit, 200))
+    q = select(ProfileChangeHistory)
+    if profile_code:
+        q = q.where(ProfileChangeHistory.profile_code == profile_code)
+    if profile_id:
+        q = q.where(ProfileChangeHistory.profile_id == uuid.UUID(profile_id))
+    if target_user_email:
+        q = q.where(ProfileChangeHistory.target_user_email == target_user_email)
+    if changed_by_user_id:
+        q = q.where(ProfileChangeHistory.changed_by_user_id == uuid.UUID(changed_by_user_id))
+    if entity_type:
+        q = q.where(ProfileChangeHistory.entity_type == entity_type)
+    if change_type:
+        q = q.where(ProfileChangeHistory.change_type == change_type)
+    if date_from:
+        q = q.where(ProfileChangeHistory.changed_at >= datetime.fromisoformat(date_from))
+    if date_to:
+        q = q.where(ProfileChangeHistory.changed_at <= datetime.fromisoformat(date_to))
+    q = q.order_by(ProfileChangeHistory.changed_at.desc(), ProfileChangeHistory.seq.desc()).limit(limit).offset(offset)
+    return [serialize_profile_history(h) for h in db.execute(q).scalars().all()]
 
 
 # ─── Warehouse Inventory — escaneo de cajas ───────────────────────────────────
