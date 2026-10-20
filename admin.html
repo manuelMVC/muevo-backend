@@ -53,6 +53,7 @@
 </header>
 <nav id="tabs">
   <button data-tab="companies" class="active">Compañías</button>
+  <button data-tab="applications">Solicitudes de transporte</button>
   <button data-tab="profiles">Perfiles</button>
   <button data-tab="profileHistory">Historial de perfiles</button>
   <button data-tab="audit">Auditoría</button>
@@ -210,7 +211,66 @@ async function renderProfileHistory() {
   await load();
 }
 
-const views = { companies: renderCompanies, profiles: renderProfiles, profileHistory: renderProfileHistory, audit: renderAudit };
+// ── Solicitudes de registro de transporte ───────────────────────────────────
+async function renderApplications() {
+  $('view').innerHTML = `
+    <div class="toolbar">
+      <select id="appStatus">
+        <option value="pending">Pendientes</option>
+        <option value="approved">Aprobadas</option>
+        <option value="rejected">Rechazadas</option>
+        <option value="">Todas</option>
+      </select>
+    </div>
+    <div class="card wrap" id="appBox">Cargando…</div>`;
+  async function load() {
+    const st = $('appStatus').value;
+    const rows = await api('/admin/transport-applications' + (st ? '?status=' + st : ''));
+    const badge = s => s === 'approved' ? '<span class="badge ok">aprobada</span>' : s === 'rejected' ? '<span class="badge">rechazada</span>' : '<span class="badge">pendiente</span>';
+    $('appBox').innerHTML = rows.length ? `
+      <table>
+        <thead><tr><th>Empresa</th><th>Licencias y seguro</th><th>Ubicación</th><th>Administrador</th><th>Estado</th><th></th></tr></thead>
+        <tbody>${rows.map(a => `
+          <tr>
+            <td>${esc(a.company_name)}<div class="muted">${esc(a.legal_name)} · EIN <span class="mono">${esc(a.tax_id)}</span></div>
+              <div class="muted">${esc((a.service_modes || []).join(', '))}${a.fleet_size ? ' · ' + a.fleet_size + ' vehículos' : ''}</div></td>
+            <td class="mono">${a.dot_number ? 'DOT ' + esc(a.dot_number) : ''}${a.dot_number && a.mc_number ? '<br>' : ''}${a.mc_number ? 'MC ' + esc(a.mc_number) : ''}
+              <div class="muted">${esc(a.insurance_policy_number)} · vence ${esc(a.insurance_expires)}</div></td>
+            <td class="muted">${esc([a.city, a.state].filter(Boolean).join(', '))}<div>${esc(a.contact_phone)}</div></td>
+            <td>${esc(a.admin_full_name)}<div class="muted mono">${esc(a.admin_email)}</div></td>
+            <td>${badge(a.status)}${a.rejection_reason ? '<div class="muted">' + esc(a.rejection_reason) + '</div>' : ''}
+              <div class="muted mono">${esc((a.created_at || '').slice(0, 10))}</div></td>
+            <td>${a.status === 'pending' ? `
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="primary" data-approve="${a.id}">Aprobar</button>
+                <button data-reject-open="${a.id}">Rechazar</button>
+              </div>
+              <div id="rej-${a.id}" hidden style="margin-top:8px">
+                <input id="reason-${a.id}" placeholder="Motivo (se le envía al solicitante)" style="width:100%">
+                <button data-reject="${a.id}" style="margin-top:6px">Confirmar rechazo</button>
+              </div>` : ''}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : '<span class="muted">No hay solicitudes en este estado.</span>';
+    document.querySelectorAll('[data-approve]').forEach(b => b.addEventListener('click', async () => {
+      b.disabled = true; showError('');
+      try { await api(`/admin/transport-applications/${b.dataset.approve}/approve`, { method: 'POST' }); await load(); }
+      catch (e) { showError(e.message); b.disabled = false; }
+    }));
+    document.querySelectorAll('[data-reject-open]').forEach(b => b.addEventListener('click', () => { $('rej-' + b.dataset.rejectOpen).hidden = false; }));
+    document.querySelectorAll('[data-reject]').forEach(b => b.addEventListener('click', async () => {
+      const reason = $('reason-' + b.dataset.reject).value.trim();
+      if (reason.length < 5) return showError('Escribí el motivo del rechazo (mínimo 5 caracteres).');
+      b.disabled = true; showError('');
+      try { await api(`/admin/transport-applications/${b.dataset.reject}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }); await load(); }
+      catch (e) { showError(e.message); b.disabled = false; }
+    }));
+  }
+  $('appStatus').addEventListener('change', () => load().catch(e => showError(e.message)));
+  await load();
+}
+
+const views = { companies: renderCompanies, applications: renderApplications, profiles: renderProfiles, profileHistory: renderProfileHistory, audit: renderAudit };
 
 async function show(tab) {
   showError('');

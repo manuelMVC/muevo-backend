@@ -50,7 +50,7 @@ from models import (
     Earning, DriverMetric, Company,
     UserRole, RouteStatus, StopStatus, PodType, VehicleType,
     # Modelo multi-holding / multi-warehouse (vigente para /api/v1/routes)
-    Holding, Warehouse, TransportCompany, Country, State, City,
+    Holding, Warehouse, TransportCompany, Country, State, City, TransportApplication,
     RouteHeader, RouteDetail, ShipmentItem, CompanyAdmin, TransportCompanyAdmin,
     # Batches e incidencias
     RouteBatch, RouteBatchItem, IncidentType, Incident,
@@ -471,7 +471,9 @@ async def register(
         raise HTTPException(status_code=400, detail="El email ya está registrado")
 
     initials = "".join(w[0].upper() for w in data.full_name.split()[:2])
-    role     = UserRole(data.role) if data.role in [r.value for r in UserRole] else UserRole.DRIVER
+    # El registro es público: nunca se acepta un rol elegido por quien se registra
+    # (antes cualquiera podía registrarse como muevo_admin). Solo se crean conductores.
+    role     = UserRole.DRIVER
 
     user = User(
         id              = uuid.uuid4(),
@@ -6687,6 +6689,250 @@ def require_transport_permission(current_user: User, db: Session, module: str, a
     ).first()
     if not exists:
         raise HTTPException(status_code=403, detail=f"Sin permiso '{code}' para esta acción")
+
+
+# ─── Registro de empresas de transporte ──────────────────────────────────────
+# Formulario público -> solicitud pendiente -> un admin de Muevo aprueba o rechaza.
+
+_REGISTER_ATTEMPTS: dict = {}          # ip -> timestamps; límite simple en memoria
+_REGISTER_LIMIT, _REGISTER_WINDOW = 10, 3600
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
+_VALID_SERVICE_MODES = {"mensajeria", "logistica", "empleados"}
+
+
+class TransportRegisterRequest(BaseModel):
+    company_name:            str = Field(min_length=2, max_length=255)
+    legal_name:              str = Field(min_length=2, max_length=255)
+    tax_id:                  str = Field(min_length=9, max_length=20)     # EIN
+    dot_number:              Optional[str] = Field(None, max_length=30)
+    mc_number:               Optional[str] = Field(None, max_length=30)
+    insurance_policy_number: str = Field(min_length=3, max_length=100)
+    insurance_expires:       str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")  # YYYY-MM-DD
+    service_modes:           list[str] = Field(min_length=1)
+    fleet_size:              Optional[int] = Field(None, ge=1, le=100000)
+    contact_name:            str = Field(min_length=2, max_length=255)
+    contact_email:           str = Field(max_length=255)
+    contact_phone:           str = Field(min_length=7, max_length=30)
+    address_line1:           Optional[str] = Field(None, max_length=255)
+    city:                    str = Field(min_length=2, max_length=100)
+    state:                   str = Field(min_length=2, max_length=50)     # código (FL) o nombre
+    zip_code:                Optional[str] = Field(None, max_length=20)
+    admin_full_name:         str = Field(min_length=2, max_length=255)
+    admin_email:             str = Field(max_length=255)
+    admin_password:          str = Field(min_length=8, max_length=72)
+
+
+class TransportRejectRequest(BaseModel):
+    reason: str = Field(min_length=5, max_length=1000)
+
+
+def _normalize_ein(value: str) -> str:
+    return re.sub(r"\D", "", value or "")
+
+
+def _serialize_application(a: "TransportApplication") -> dict:
+    return {
+        "id": str(a.id), "status": a.status,
+        "company_name": a.company_name, "legal_name": a.legal_name, "tax_id": a.tax_id,
+        "dot_number": a.dot_number, "mc_number": a.mc_number,
+        "insurance_policy_number": a.insurance_policy_number,
+        "insurance_expires": a.insurance_expires.date().isoformat() if a.insurance_expires else None,
+        "service_modes": a.service_modes or [], "fleet_size": a.fleet_size,
+        "contact_name": a.contact_name, "contact_email": a.contact_email, "contact_phone": a.contact_phone,
+        "address_line1": a.address_line1, "city": a.city, "state": a.state, "zip_code": a.zip_code,
+        "admin_full_name": a.admin_full_name, "admin_email": a.admin_email,
+        "rejection_reason": a.rejection_reason,
+        "reviewed_at": a.reviewed_at.isoformat() if a.reviewed_at else None,
+        "transport_company_id": str(a.transport_company_id) if a.transport_company_id else None,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+    }
+
+
+@app.get("/register-transport.html", include_in_schema=False)
+async def serve_register_transport():
+    return FileResponse("register-transport.html", media_type="text/html")
+
+
+@app.post("/api/v1/transport/register", status_code=201)
+async def register_transport_company(
+    data:    TransportRegisterRequest,
+    request: Request,
+    db:      Session = Depends(get_db),
+):
+    """Solicitud pública de registro de una empresa de transporte. Queda pendiente de aprobación."""
+    import time
+    ip = request.client.host if request.client else "?"
+    now_ts = time.time()
+    recent = [t for t in _REGISTER_ATTEMPTS.get(ip, []) if now_ts - t < _REGISTER_WINDOW]
+    if len(recent) >= _REGISTER_LIMIT:
+        raise HTTPException(status_code=429, detail="Demasiadas solicitudes desde este equipo. Probá de nuevo en una hora.")
+    _REGISTER_ATTEMPTS[ip] = recent + [now_ts]
+
+    if not _EMAIL_RE.match(data.admin_email) or not _EMAIL_RE.match(data.contact_email):
+        raise HTTPException(status_code=422, detail="Revisá los correos: el formato no es válido")
+    ein = _normalize_ein(data.tax_id)
+    if len(ein) != 9:
+        raise HTTPException(status_code=422, detail="El EIN debe tener 9 dígitos (ej. 12-3456789)")
+    if not (data.dot_number or "").strip() and not (data.mc_number or "").strip():
+        raise HTTPException(status_code=422, detail="Indicá al menos el número DOT o el MC")
+    modes = [m.lower() for m in data.service_modes]
+    if not set(modes) <= _VALID_SERVICE_MODES:
+        raise HTTPException(status_code=422, detail="Tipo de servicio no válido")
+    try:
+        expires = datetime.strptime(data.insurance_expires, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Fecha de vencimiento del seguro no válida")
+    if expires.date() <= datetime.utcnow().date():
+        raise HTTPException(status_code=422, detail="El seguro está vencido o vence hoy")
+    st = find_state(db, data.state)
+    if not st:
+        raise HTTPException(status_code=422, detail="Estado no reconocido: usá el código de dos letras (ej. FL)")
+
+    email = data.admin_email.strip().lower()
+    dup_user = db.execute(select(User.id).where(func.lower(User.email) == email)).first()
+    dup_app = db.execute(select(TransportApplication.id).where(
+        func.lower(TransportApplication.admin_email) == email, TransportApplication.status == "pending")).first()
+    dup_tax = db.execute(select(TransportCompany.id).where(TransportCompany.tax_id.in_([ein, data.tax_id.strip()]))).first() \
+        or db.execute(select(TransportApplication.id).where(
+            TransportApplication.tax_id == ein, TransportApplication.status.in_(["pending", "approved"]))).first()
+    if dup_user or dup_app or dup_tax:
+        raise HTTPException(status_code=409, detail="Ya existe una cuenta o una solicitud con ese correo o ese EIN. Si es tuya, contactá a soporte.")
+
+    application = TransportApplication(
+        id=uuid.uuid4(), status="pending",
+        company_name=data.company_name.strip(), legal_name=data.legal_name.strip(), tax_id=ein,
+        dot_number=(data.dot_number or "").strip() or None, mc_number=(data.mc_number or "").strip() or None,
+        insurance_policy_number=data.insurance_policy_number.strip(), insurance_expires=expires,
+        service_modes=modes, fleet_size=data.fleet_size,
+        contact_name=data.contact_name.strip(), contact_email=data.contact_email.strip().lower(),
+        contact_phone=data.contact_phone.strip(), address_line1=(data.address_line1 or "").strip() or None,
+        city=data.city.strip(), state=st.code, zip_code=(data.zip_code or "").strip() or None,
+        admin_full_name=data.admin_full_name.strip(), admin_email=email,
+        admin_password_hash=hash_password(data.admin_password),
+    )
+    db.add(application)
+
+    # Aviso a los admins de Muevo
+    for admin in db.execute(select(User).where(User.role == UserRole.MUEVO_ADMIN, User.is_active == True)).scalars().all():
+        await create_notification(
+            db, admin.id, "transport_application",
+            f"Nueva solicitud de transporte: {application.company_name}",
+            f"{application.legal_name} ({application.city}, {application.state}) pidió registrarse. Revisala en Administración > Solicitudes.",
+            entity_type="transport_application", entity_id=application.id,
+        )
+    db.commit()
+
+    await send_email(
+        email, "Recibimos tu solicitud de registro en Muevo",
+        email_html("Recibimos tu solicitud", [
+            f"Hola {application.admin_full_name}, recibimos la solicitud de {application.company_name}.",
+            "Vamos a verificar tu DOT/MC y tu seguro. Te avisamos por este correo cuando esté aprobada.",
+        ]),
+    )
+    return {"status": "pending", "id": str(application.id),
+            "message": "Solicitud recibida. Te avisamos por correo cuando la revisemos."}
+
+
+@app.get("/api/v1/admin/transport-applications")
+async def list_transport_applications(
+    status:       Optional[str] = None,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    require_platform_admin(current_user, db)
+    query = select(TransportApplication).order_by(TransportApplication.created_at.desc())
+    if status:
+        query = query.where(TransportApplication.status == status)
+    return [_serialize_application(a) for a in db.execute(query).scalars().all()]
+
+
+@app.post("/api/v1/admin/transport-applications/{application_id}/approve")
+async def approve_transport_application(
+    application_id: str,
+    current_user:   User    = Depends(get_current_user),
+    db:             Session = Depends(get_db),
+):
+    """Aprueba la solicitud: crea la empresa verificada, su administrador y su perfil de transporte."""
+    require_platform_admin(current_user, db)
+    a = db.get(TransportApplication, uuid.UUID(application_id))
+    if not a:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    if a.status != "pending":
+        raise HTTPException(status_code=400, detail="La solicitud ya fue revisada")
+    if db.execute(select(User.id).where(func.lower(User.email) == a.admin_email.lower())).first():
+        raise HTTPException(status_code=409, detail="Ya existe un usuario con el correo del solicitante")
+    if db.execute(select(TransportCompany.id).where(TransportCompany.tax_id == a.tax_id)).first():
+        raise HTTPException(status_code=409, detail="Ya existe una empresa de transporte con ese EIN")
+    holding = db.execute(select(Holding)).scalars().first()
+    profile = db.execute(select(Profile).where(Profile.code == "transport_admin")).scalar_one_or_none()
+    if not holding or not profile:
+        raise HTTPException(status_code=500, detail="Falta el holding o el perfil transport_admin (corré seed_transport_profiles.py)")
+
+    now = datetime.utcnow()
+    tc = TransportCompany(
+        id=uuid.uuid4(), name=a.company_name, legal_name=a.legal_name, tax_id=a.tax_id,
+        dot_number=a.dot_number, mc_number=a.mc_number,
+        insurance_policy_number=a.insurance_policy_number, insurance_expires=a.insurance_expires,
+        is_verified=True, verified_at=now, verified_by=current_user.id,
+        contact_name=a.contact_name, contact_email=a.contact_email, contact_phone=a.contact_phone,
+        address_line1=a.address_line1, city=a.city, state=a.state, zip_code=a.zip_code,
+        service_modes=a.service_modes or [], is_active=True,
+    )
+    initials = "".join(w[0].upper() for w in a.admin_full_name.split()[:2])
+    user = User(
+        id=uuid.uuid4(), email=a.admin_email, full_name=a.admin_full_name, avatar_initials=initials,
+        role=UserRole.CORP_ADMIN, hashed_password=a.admin_password_hash, is_active=True, is_verified=True,
+    )
+    db.add_all([tc, user])
+    db.flush()
+    db.add(TransportCompanyAdmin(
+        id=uuid.uuid4(), transport_company_id=tc.id, user_id=user.id, is_primary=True,
+        can_accept_routes=True, can_manage_fleet=True, can_view_billing=True,
+    ))
+    hu = HoldingUser(id=uuid.uuid4(), holding_id=holding.id, user_id=user.id,
+                     role="transport_admin", is_super_admin=False, is_active=True)
+    db.add(hu)
+    db.flush()
+    db.add(HoldingUserProfile(id=uuid.uuid4(), holding_user_id=hu.id, profile_id=profile.id,
+                              company_id=None, granted_by_id=current_user.id))
+    a.status, a.reviewed_by_id, a.reviewed_at, a.transport_company_id = "approved", current_user.id, now, tc.id
+    db.commit()
+
+    await send_email(
+        a.admin_email, "Tu empresa fue aprobada en Muevo",
+        email_html("¡Tu empresa fue aprobada!", [
+            f"{a.company_name} ya está verificada en Muevo.",
+            f"Ingresá con {a.admin_email} y la contraseña que elegiste al registrarte, en /login.html.",
+        ]),
+    )
+    return {"status": "approved", "transport_company_id": str(tc.id), "user_id": str(user.id)}
+
+
+@app.post("/api/v1/admin/transport-applications/{application_id}/reject")
+async def reject_transport_application(
+    application_id: str,
+    data:           TransportRejectRequest,
+    current_user:   User    = Depends(get_current_user),
+    db:             Session = Depends(get_db),
+):
+    require_platform_admin(current_user, db)
+    a = db.get(TransportApplication, uuid.UUID(application_id))
+    if not a:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    if a.status != "pending":
+        raise HTTPException(status_code=400, detail="La solicitud ya fue revisada")
+    a.status, a.rejection_reason = "rejected", data.reason.strip()
+    a.reviewed_by_id, a.reviewed_at = current_user.id, datetime.utcnow()
+    db.commit()
+    await send_email(
+        a.admin_email, "Sobre tu solicitud de registro en Muevo",
+        email_html("No pudimos aprobar tu solicitud", [
+            f"Revisamos la solicitud de {a.company_name} y por ahora no la podemos aprobar.",
+            f"Motivo: {a.rejection_reason}",
+            "Si corregís lo indicado, podés enviar una solicitud nueva.",
+        ]),
+    )
+    return {"status": "rejected"}
 
 
 @app.get("/api/v1/transport/dashboard")

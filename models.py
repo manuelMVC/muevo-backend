@@ -2055,6 +2055,52 @@ class HoldingUserProfile(Base):
         Index("ix_hup_company_id",      "company_id"),
     )
 
+# ─── SOLICITUDES DE REGISTRO ────────────────────────────────────────────────
+# Una empresa de transporte pide registrarse desde un formulario público; queda
+# pendiente hasta que un admin de Muevo la aprueba (se crean la empresa verificada,
+# su usuario administrador y su perfil) o la rechaza con un motivo.
+
+class TransportApplication(Base):
+    __tablename__ = "transport_applications"
+
+    id                      = uuid_pk()
+    status                  = Column(String(20), default="pending", nullable=False)   # pending | approved | rejected
+
+    # Empresa
+    company_name            = Column(String(255), nullable=False)
+    legal_name              = Column(String(255), nullable=False)
+    tax_id                  = Column(String(50),  nullable=False)     # EIN
+    dot_number              = Column(String(30),  nullable=True)
+    mc_number               = Column(String(30),  nullable=True)
+    insurance_policy_number = Column(String(100), nullable=False)
+    insurance_expires       = Column(DateTime(timezone=True), nullable=False)
+    service_modes           = Column(ARRAY(String), nullable=False, default=list)
+    fleet_size              = Column(Integer, nullable=True)
+    contact_name            = Column(String(255), nullable=False)
+    contact_email           = Column(String(255), nullable=False)
+    contact_phone           = Column(String(30),  nullable=False)
+    address_line1           = Column(String(255), nullable=True)
+    city                    = Column(String(100), nullable=False)
+    state                   = Column(String(50),  nullable=False)
+    zip_code                = Column(String(20),  nullable=True)
+
+    # Administrador que se crea al aprobar
+    admin_full_name         = Column(String(255), nullable=False)
+    admin_email             = Column(String(255), nullable=False)
+    admin_password_hash     = Column(String(255), nullable=False)
+
+    # Revisión
+    reviewed_by_id          = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    reviewed_at             = Column(DateTime(timezone=True), nullable=True)
+    rejection_reason        = Column(Text, nullable=True)
+    transport_company_id    = Column(UUID(as_uuid=True), ForeignKey("transport_companies.id"), nullable=True)
+    created_at              = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_transport_applications_status", "status"),
+        Index("ix_transport_applications_admin_email", "admin_email"),
+    )
+
 # ─── GEOGRAFÍA ──────────────────────────────────────────────────────────────
 # País > estado > ciudad, para armar rutas por zona. Las paradas y los
 # warehouses apuntan a cities (city_id); los textos city/state se conservan.
@@ -2229,6 +2275,9 @@ _AUDIT_NOISY_COLUMNS = {
 # de perfiles (que ya es un registro de cambios; auditarlo duplicaría cada fila).
 _AUDIT_SKIP = (AuditLog, ProfileChangeHistory)
 
+# Columnas cuyo valor no debe quedar en audit_logs (se registra que cambiaron, no el valor).
+_AUDIT_REDACT = {"hashed_password", "admin_password_hash"}
+
 
 def _audit_serialize(value):
     if isinstance(value, uuid.UUID):
@@ -2243,7 +2292,10 @@ def _audit_serialize(value):
 
 
 def _audit_snapshot(obj) -> dict:
-    return {c.key: _audit_serialize(getattr(obj, c.key)) for c in obj.__mapper__.column_attrs}
+    return {
+        c.key: "[oculto]" if c.key in _AUDIT_REDACT else _audit_serialize(getattr(obj, c.key))
+        for c in obj.__mapper__.column_attrs
+    }
 
 
 @event.listens_for(Session, "before_flush")
@@ -2267,7 +2319,10 @@ def _capture_audit_log(session, flush_context, instances):
                 continue
             old = hist.deleted[0] if hist.deleted else None
             new = hist.added[0] if hist.added else getattr(obj, c.key)
-            diff[c.key] = {"old": _audit_serialize(old), "new": _audit_serialize(new)}
+            if c.key in _AUDIT_REDACT:
+                diff[c.key] = {"old": "[oculto]", "new": "[oculto]"}
+            else:
+                diff[c.key] = {"old": _audit_serialize(old), "new": _audit_serialize(new)}
         if not diff:
             continue
         noisy = _AUDIT_NOISY_COLUMNS.get(obj.__tablename__)

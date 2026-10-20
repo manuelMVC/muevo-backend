@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Muevo — Registro de empresa de transporte</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0D0D0D; --card: #1C1C1C; --orange: #F47B20; --white: #F8FAFB; --muted: #8A8A8A;
+    --border: rgba(255,255,255,0.10); --green: #27AE60; --red: #E74C3C;
+    --font: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;
+  }
+  [data-theme="light"] { --bg: #F4F4F2; --card: #FFFFFF; --white: #1A1A1A; --muted: #6B6B6B; --border: rgba(0,0,0,0.12); }
+  body { background: var(--bg); color: var(--white); font-family: var(--font); font-size: 14px; line-height: 1.5; padding: 32px 16px 64px; }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .brand { font-weight: 600; font-size: 18px; margin-bottom: 4px; }
+  .brand small { color: var(--orange); font-size: 11px; letter-spacing: .5px; text-transform: uppercase; margin-left: 8px; }
+  h1 { font-size: 22px; margin: 18px 0 6px; font-weight: 600; }
+  p.lead { color: var(--muted); margin-bottom: 20px; max-width: 60ch; }
+  fieldset { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; min-width: 0; }
+  legend { padding: 0 8px; font-weight: 600; font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); min-width: 0; }
+  input, select { font: inherit; background: transparent; color: var(--white); border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px; width: 100%; }
+  input:focus, select:focus, button:focus-visible { outline: 2px solid var(--orange); outline-offset: 1px; }
+  .hint { font-size: 11px; color: var(--muted); }
+  .modes { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 4px; }
+  .modes label { flex-direction: row; align-items: center; gap: 6px; color: var(--white); font-size: 13px; }
+  .modes input { width: auto; }
+  button.primary { font: inherit; cursor: pointer; background: var(--orange); border: 1px solid var(--orange); color: #fff; border-radius: 8px; padding: 11px 18px; font-weight: 600; }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  .msg { padding: 12px 14px; border-radius: 8px; margin-bottom: 16px; border: 1px solid var(--border); }
+  .msg.err { border-color: var(--red); color: var(--red); }
+  .msg.ok { border-color: var(--green); color: var(--green); }
+  a { color: var(--orange); }
+  .foot { margin-top: 16px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">muevo<small>Transportistas</small></div>
+  <h1>Registrá tu empresa de transporte</h1>
+  <p class="lead">Completá los datos de tu empresa. Verificamos tu DOT o MC y tu seguro antes de activar la cuenta, y te avisamos por correo.</p>
+
+  <div id="msg" class="msg" hidden></div>
+
+  <form id="form" novalidate>
+    <fieldset>
+      <legend>Empresa</legend>
+      <div class="grid">
+        <label>Nombre comercial<input id="company_name" required maxlength="255"></label>
+        <label>Razón social<input id="legal_name" required maxlength="255"></label>
+        <label>EIN<input id="tax_id" required placeholder="12-3456789" maxlength="20"></label>
+        <label>Tamaño de flota (vehículos)<input id="fleet_size" type="number" min="1" inputmode="numeric"></label>
+      </div>
+      <div class="modes" id="modes" role="group" aria-label="Servicios">
+        <label><input type="checkbox" value="mensajeria"> Mensajería</label>
+        <label><input type="checkbox" value="logistica"> Logística</label>
+        <label><input type="checkbox" value="empleados"> Traslado de empleados</label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Licencias y seguro</legend>
+      <div class="grid">
+        <label>Número DOT<input id="dot_number" maxlength="30"></label>
+        <label>Número MC<input id="mc_number" maxlength="30"></label>
+        <label>Póliza de seguro<input id="insurance_policy_number" required maxlength="100"></label>
+        <label>Vence el<input id="insurance_expires" type="date" required></label>
+      </div>
+      <p class="hint" style="margin-top:8px">Indicá al menos el DOT o el MC.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Contacto y ubicación</legend>
+      <div class="grid">
+        <label>Persona de contacto<input id="contact_name" required maxlength="255"></label>
+        <label>Teléfono<input id="contact_phone" type="tel" required maxlength="30"></label>
+        <label>Correo de contacto<input id="contact_email" type="email" required maxlength="255"></label>
+        <label>Dirección<input id="address_line1" maxlength="255"></label>
+        <label>Ciudad<input id="city" required maxlength="100"></label>
+        <label>Estado (2 letras)<input id="state" required maxlength="2" placeholder="FL" style="text-transform:uppercase"></label>
+        <label>Código postal<input id="zip_code" maxlength="10" inputmode="numeric"></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Administrador de la cuenta</legend>
+      <div class="grid">
+        <label>Nombre completo<input id="admin_full_name" required maxlength="255"></label>
+        <label>Correo (será tu usuario)<input id="admin_email" type="email" required maxlength="255" autocomplete="username"></label>
+        <label>Contraseña<input id="admin_password" type="password" required minlength="8" maxlength="72" autocomplete="new-password"><span class="hint">Mínimo 8 caracteres.</span></label>
+      </div>
+    </fieldset>
+
+    <button class="primary" id="submitBtn" type="submit">Enviar solicitud</button>
+  </form>
+  <p class="foot">¿Ya tenés cuenta? <a href="/login.html">Iniciá sesión</a></p>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+try { document.documentElement.setAttribute('data-theme', localStorage.getItem('muevo_theme') || 'dark'); } catch (e) {}
+
+function showMsg(text, kind) { const m = $('msg'); m.textContent = text; m.className = 'msg ' + kind; m.hidden = false; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+
+function formatError(body) {
+  if (!body) return 'No pudimos enviar la solicitud. Probá de nuevo.';
+  if (typeof body.detail === 'string') return body.detail;
+  if (Array.isArray(body.detail)) {
+    const labels = { company_name: 'Nombre comercial', legal_name: 'Razón social', tax_id: 'EIN', insurance_policy_number: 'Póliza',
+      insurance_expires: 'Vencimiento del seguro', contact_name: 'Contacto', contact_phone: 'Teléfono', city: 'Ciudad', state: 'Estado',
+      admin_full_name: 'Nombre del administrador', admin_email: 'Correo del administrador', admin_password: 'Contraseña', service_modes: 'Servicios' };
+    return 'Revisá estos campos: ' + [...new Set(body.detail.map(d => labels[d.loc[d.loc.length - 1]] || d.loc[d.loc.length - 1]))].join(', ') + '.';
+  }
+  return 'No pudimos enviar la solicitud.';
+}
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('msg').hidden = true;
+  const modes = [...document.querySelectorAll('#modes input:checked')].map(i => i.value);
+  if (!modes.length) return showMsg('Elegí al menos un tipo de servicio.', 'err');
+  const val = id => $(id).value.trim();
+  const body = {
+    company_name: val('company_name'), legal_name: val('legal_name'), tax_id: val('tax_id'),
+    dot_number: val('dot_number') || null, mc_number: val('mc_number') || null,
+    insurance_policy_number: val('insurance_policy_number'), insurance_expires: val('insurance_expires'),
+    service_modes: modes, fleet_size: val('fleet_size') ? parseInt(val('fleet_size'), 10) : null,
+    contact_name: val('contact_name'), contact_email: val('contact_email'), contact_phone: val('contact_phone'),
+    address_line1: val('address_line1') || null, city: val('city'), state: val('state').toUpperCase(), zip_code: val('zip_code') || null,
+    admin_full_name: val('admin_full_name'), admin_email: val('admin_email'), admin_password: $('admin_password').value,
+  };
+  $('submitBtn').disabled = true;
+  try {
+    const res = await fetch('/api/v1/transport/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) { showMsg(formatError(data), 'err'); return; }
+    $('form').hidden = true;
+    showMsg(data.message || 'Solicitud recibida. Te avisamos por correo cuando la revisemos.', 'ok');
+  } catch (err) {
+    showMsg('No pudimos conectar con el servidor. Probá de nuevo en unos minutos.', 'err');
+  } finally {
+    $('submitBtn').disabled = false;
+  }
+});
+</script>
+</body>
+</html>
