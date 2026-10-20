@@ -1,7 +1,7 @@
 # Muevo — Resumen del proyecto
 
 **Plataforma B2B2B de logística para el mercado hispano de EE.UU.**
-Documento vivo — última actualización: 4 de octubre de 2026
+Documento vivo — última actualización: 20 de octubre de 2026
 
 ---
 
@@ -17,7 +17,7 @@ C:\Claude\
 │   ├── transport.html      (portal empresa de transporte)
 │   ├── admin.html          (portal de administración de Muevo — versión mínima: compañías, perfiles, historial de perfiles, auditoría)
 │   ├── login.html          (login unificado)
-│   ├── alembic\versions\   (33 migraciones — 001 a 033)
+│   ├── alembic\versions\   (34 migraciones — 001 a 034)
 │   ├── seed_initial_data.py (bootstrap: holding→company→warehouse→usuario admin)
 │   ├── seed_security_extensions.py (módulos/permisos nuevos + asigna perfiles)
 │   ├── seed_test_profile_users.py (1 usuario de prueba por cada perfil de seguridad del warehouse)
@@ -274,6 +274,17 @@ Se pidió controlar el cambio de perfil y mantener un historial legible, con per
 - **Verificado**: `test_profile_history.py` llama a los endpoints reales con `TestClient` dentro de una transacción externa que se revierte (38 comprobaciones: crear/editar perfil, asignar, cambiar y quitar asignación, accesos a compañías, consulta con filtros, 403 para un `operator`, rechazo de UPDATE/DELETE/TRUNCATE y que el historial no se audita a sí mismo). Contra el `main.py` anterior (con DELETE masivo) la misma prueba falla 16 comprobaciones, justo en lo que no se registraba
 - **Límites conocidos**: solo ve lo que pasa por el ORM (SQL crudo, psql o un DELETE masivo no pasan por el listener); el rol de la app es superusuario y puede desactivar el trigger, así que para endurecerlo hace falta un rol de aplicación sin ese permiso; el historial empieza el día de la migración (no hay datos anteriores)
 
+### 4.13 Registro de empresas de transporte (`transport_applications`) — octubre 2026
+Hasta ahora no había forma de que una empresa de transporte se registrara sola: entraban por los scripts de carga. Ahora hay un flujo con revisión de Muevo, porque el marketplace le muestra a los warehouses el sello de "verificada" y no puede ser autoservicio.
+- **Formulario público** `register-transport.html` (enlazado desde `login.html`) y `POST /api/v1/transport/register`. Pide razón social, EIN (9 dígitos), al menos un número DOT o MC, póliza y vencimiento del seguro (debe ser futuro), servicios, contacto, ubicación (estado reconocido en `states`) y el administrador de la cuenta (correo y contraseña de 8+ caracteres). Rechaza duplicados de correo o EIN con un 409 genérico, y limita a 10 intentos por hora por IP (en memoria; se reinicia con el servidor)
+- **Queda pendiente**: la solicitud se guarda en `transport_applications` con el hash de la contraseña, sin crear todavía ningún usuario ni empresa. Se avisa a todos los admins de Muevo (notificación en el portal y correo) y se le confirma al solicitante por correo
+- **Revisión** en `admin.html`, pestaña "Solicitudes de transporte" (Pendientes / Aprobadas / Rechazadas / Todas). `GET /admin/transport-applications`, `POST .../{id}/approve` y `POST .../{id}/reject` exigen `require_platform_admin()`
+- **Aprobar** crea en una sola transacción: la `TransportCompany` con `is_verified = true`, `verified_at` y `verified_by`; el `User` administrador con el hash que eligió el solicitante; su `TransportCompanyAdmin` (principal, con todos los permisos de la empresa); un `HoldingUser` y el perfil `transport_admin` (ver [4.1](#41-autenticación-y-multi-tenancy)). Le llega un correo y ya puede entrar al portal de transporte
+- **Rechazar** exige un motivo, que se le envía al solicitante; puede volver a enviar una solicitud nueva
+- **Seguridad, de paso**: `POST /auth/register` aceptaba el `role` que mandara quien se registraba, así que cualquiera podía crearse como `muevo_admin` (un rol que ahora abre `admin.html`); ahora siempre crea un conductor. Además `audit_logs` guardaba el `hashed_password` de los usuarios en `changes`; ahora esas columnas (`hashed_password`, `admin_password_hash`) se registran como `[oculto]`. Quedan 4 filas anteriores en `audit_logs` con hashes, que no se tocaron porque la auditoría es un registro que no se edita: borrarlas o enmascararlas es una decisión pendiente
+- **Verificado**: contra la base real, 49 comprobaciones (validaciones, duplicados, permisos 403, aprobar y entrar al portal con el perfil, rechazar, auditoría sin hashes, límite de intentos) y el flujo completo en el navegador
+- **Pendiente**: registro de warehouses (compañías) y de conductores por invitación de su empresa, con el mismo esquema de solicitud y revisión; subir documentos (póliza, DOT) en vez de solo los números; y que Muevo verifique el DOT/MC contra la FMCSA en lugar de revisarlos a mano
+
 ---
 
 ## 5. Decisiones de UX relevantes
@@ -288,7 +299,7 @@ Se pidió controlar el cambio de perfil y mantener un historial legible, con per
 ## 6. Estado actual (octubre 2026)
 
 ### Completado
-- Backend: 33 migraciones Alembic aplicadas, 46 tablas
+- Backend: 34 migraciones Alembic aplicadas, 47 tablas
 - Portal warehouse: dashboard, lotes (con anulación con motivo y validación de precio al aprobar), rutas (con CRUD en borrador y paradas multi-ítem), clientes, incidencias, negociación de precios multi-transportista con sugerencia automática y aprobación de holding (con pantalla propia "Ofertas por ruta" para verlas todas juntas), tarifas de servicio administrables, escaneo de inventario, recepción de mercancía (inbound)
 - Portal transportista: marketplace de negociación de precios (antes no tenía ninguna UI de negociación) — incluye un widget en el Dashboard para pujar sin salir de ahí; Dashboard con cards + gráficos y matriz de rutas por estado, alineado con el del warehouse (ver [4.7](#47-negociación-de-precios-route_price_offers))
 - App móvil: pantallas base del portal warehouse
@@ -303,9 +314,12 @@ Se pidió controlar el cambio de perfil y mantener un historial legible, con per
 - **Usuarios de prueba** (contraseña de todos: `muevo123`): warehouse — `carlos@` y `super.admin@` (Super Admin), `company.admin@`, `warehouse.admin@`, `operator@`, `viewer@`, `billing.manager@`; transporte — `transport@` (Rapid Courier Orlando, verificada) y `sunshine@` (Sunshine Logistics, sin verificar) como Admin de Transporte, más `transport.dispatcher@`, `transport.billing@` y `transport.viewer@` en Rapid Courier; Muevo — `admin@muevo.app`; todos con dominio `@muevo.app`. `driver@muevo.app` es solo de la app móvil
 - **Geografía país > estado > ciudad** (octubre 2026, ver [4.1.2](#412-geografía-país--estado--ciudad-octubre-2026-migración-032_geography)): EE.UU., 50 estados y 29.537 ciudades; las rutas se pueden armar por ciudad, estado o país
 - **Historial de cambios de perfil** (octubre 2026, ver [4.12](#412-historial-de-cambios-de-perfil-profile_change_history--octubre-2026)): tabla de solo lectura con persona, fecha, cambio, valor anterior y valor actual para perfiles, permisos, asignaciones de perfil, usuarios del holding y accesos a compañías; consulta por API y pestaña en `admin.html`; de paso se cerró el hueco de los DELETE masivos que no quedaban en la auditoría
+- **Registro de empresas de transporte con revisión de Muevo** (octubre 2026, ver [4.13](#413-registro-de-empresas-de-transporte-transport_applications--octubre-2026)) y cierre de un hueco de seguridad en `/auth/register` (permitía registrarse como `muevo_admin`)
 - **Notificaciones in-app + email en ambos portales** (ver [4.11](#411-notificaciones-notifications--septiembre-2026)): todo el ciclo de negociación/despacho (marketplace se abre, ofertas, holding, aceptar/rechazar rutas) avisa a los usuarios correspondientes — campanita con polling, sin necesidad de refrescar la pantalla a mano
 
 ### Pendiente / próximos pasos
+- Registro de warehouses (compañías) y de conductores por invitación: falta, con el mismo esquema que el de transporte (ver [4.13](#413-registro-de-empresas-de-transporte-transport_applications--octubre-2026))
+- `audit_logs` tiene 4 filas anteriores con hashes de contraseña en `changes`: decidir si se enmascaran (la auditoría es un registro inmutable, no se tocó)
 - Geografía: `warehouse.html` no expone todavía el agrupamiento por zona ni los selectores de país/estado/ciudad; `companies` y `transport_companies` siguen con ciudad y estado en texto libre
 - Portal admin: la sección "Tarifas" (dentro de `warehouse.html`) ya cubre el catálogo de tipos de servicio; falta gestión de tipos de vehículo y el resto de catálogos restantes
 - `admin.html` es una versión mínima: el backend ya soporta editar perfiles, crear y editar warehouses y asignar perfiles a usuarios (`/admin/users/profiles`), pero la pantalla todavía no los expone
