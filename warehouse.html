@@ -627,6 +627,9 @@
     <button class="nav-item" id="navOfertas" onclick="showView('ofertas')">
       <span class="nav-icon">💬</span> Ofertas por ruta
     </button>
+    <button class="nav-item" id="navServicios" onclick="showView('servicios')">
+      <span class="nav-icon">🧩</span> Mis servicios
+    </button>
     <button class="nav-item" id="navTarifas" onclick="showView('tarifas')">
       <span class="nav-icon">💲</span> Tarifas
     </button>
@@ -813,6 +816,19 @@ async function apiPatch(path, body) {
   return res.status === 204 ? null : res.json();
 }
 
+async function apiPut(path, body) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: 'PUT',
+    headers: buildHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`API error ${res.status}: ${errText}`);
+  }
+  return res.json();
+}
+
 async function apiPost(path, body) {
   const res = await fetch(`${API_BASE}${path}`, {
     method: 'POST',
@@ -964,6 +980,7 @@ function getActiveBatches() {
 
 let REAL_BATCHES = null;
 let REAL_SERVICE_TYPES = null;
+let MY_SERVICE_CODES = null;   // tipos de servicio habilitados para la compañía activa (null = sin restricción)
 let REAL_VEHICLE_TYPES = null;
 let REAL_CLIENTS = null;
 let REAL_INCIDENTS = null;
@@ -1154,6 +1171,7 @@ function showView(view) {
     incidencias:    ['Incidencias', 'Gestión de incidencias y catálogo de tipos'],
     recepcion:      ['Recepción', 'Ingreso de mercancía al warehouse — manifiestos y check-in'],
     mensajes:       ['Mensajes', 'Catálogo de mensajes estándar — código, descripción y macro'],
+    servicios:      ['Mis servicios', 'Tipos de servicio con los que trabaja tu compañía'],
     tarifas:        ['Tarifas de servicio', 'Parámetros de precio por km, peso y volumen usados en la sugerencia automática'],
     auditoria:      ['Auditoría', 'Historial de cambios en el sistema — quién, qué y cuándo'],
     ofertas:        ['Ofertas por ruta', 'Negociaciones de precio activas en todas tus rutas, sin abrir cada una por separado'],
@@ -1176,6 +1194,7 @@ function showView(view) {
     incidencias:    renderIncidencias,
     recepcion:      renderRecepcion,
     mensajes:       renderMensajes,
+    servicios:      renderServicios,
     tarifas:        renderTarifas,
     auditoria:      renderAuditoria,
     ofertas:        renderOfertas,
@@ -1186,6 +1205,7 @@ function showView(view) {
   if (view === 'incidencias') setTimeout(loadIncidencias, 0);
   if (view === 'recepcion')   setTimeout(loadRecepciones, 0);
   if (view === 'mensajes')    setTimeout(loadMensajes, 0);
+  if (view === 'servicios')   setTimeout(loadServicios, 0);
   if (view === 'tarifas')     setTimeout(loadTarifas, 0);
   if (view === 'auditoria')   setTimeout(() => loadAuditoria(0), 0);
   if (view === 'ofertas')     setTimeout(renderOfertasBody, 0);
@@ -2099,6 +2119,22 @@ function getVehicleTypeByCode(code) {
   return getVehicleTypes().find(vt => vt.code === code) || null;
 }
 
+// Tipos de servicio que la compañía puede usar al armar un lote (uno o varios)
+function getBatchServiceTypes() {
+  const all = getServiceTypes();
+  if (!useRealData || !MY_SERVICE_CODES || !MY_SERVICE_CODES.length) return all;
+  const mine = all.filter(st => MY_SERVICE_CODES.includes(st.code));
+  return mine.length ? mine : all;
+}
+
+async function loadMyServiceCodes() {
+  if (!useRealData) return;
+  try {
+    const r = await apiGet('/warehouse/company/service-types');
+    MY_SERVICE_CODES = r.restricted ? r.selected : null;
+  } catch (e) { MY_SERVICE_CODES = null; }
+}
+
 function getServiceTypeByCode(code) {
   return getServiceTypes().find(st => st.code === code) || null;
 }
@@ -2175,9 +2211,13 @@ function batchStep0() {
             <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Tipo de servicio *</label>
             <select id="bServiceType"
               style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">
-              ${getServiceTypes().map(st =>
-                `<option value="${st.code}" ${batchConfig.service_type===st.code?'selected':''}>${st.name}</option>`
-              ).join('')}
+              ${(() => {
+                const opts = getBatchServiceTypes();
+                if (opts.length && !opts.some(st => st.code === batchConfig.service_type)) batchConfig.service_type = opts[0].code;
+                return opts.map(st =>
+                  `<option value="${st.code}" ${batchConfig.service_type===st.code?'selected':''}>${st.name}</option>`
+                ).join('');
+              })()}
             </select>
           </div>
         </div>
@@ -6780,6 +6820,51 @@ async function toggleMensajeActive(id, newActive) {
 // ── Tarifas de servicio (parámetros del precio sugerido) ────────────────────────
 let tarifasList = [];
 
+// ── Mis servicios: tipos de servicio de la compañía ─────────────────────────
+function renderServicios() {
+  return `
+    <div style="margin-bottom:16px">
+      <div class="section-title">Tipos de servicio de tu compañía</div>
+      <div class="section-sub">Elegí uno o varios. Al armar un lote solo vas a poder usar los que marques acá.</div>
+    </div>
+    <div class="card" id="serviciosBox" style="max-width:640px">Cargando…</div>`;
+}
+
+async function loadServicios() {
+  const box = document.getElementById('serviciosBox');
+  if (!box) return;
+  if (!useRealData) { box.innerHTML = '<div style="color:var(--muted)">Conectate al backend real para configurar los servicios.</div>'; return; }
+  try {
+    const r = await apiGet('/warehouse/company/service-types');
+    box.innerHTML = `
+      ${r.service_types.map(st => `
+        <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer">
+          <input type="checkbox" class="svcCheck" value="${st.code}" ${st.selected ? 'checked' : ''} style="margin-top:3px">
+          <span><strong>${st.name}</strong><div style="font-size:12px;color:var(--muted)">${st.description || ''}</div></span>
+        </label>`).join('')}
+      <div style="display:flex;align-items:center;gap:12px;margin-top:14px">
+        <button class="btn btn-primary" onclick="saveServicios()">Guardar</button>
+        <span id="svcMsg" style="font-size:12px;color:var(--muted)"></span>
+      </div>`;
+  } catch (e) {
+    box.innerHTML = `<div style="color:var(--red)">No pudimos cargar los servicios: ${e.message}</div>`;
+  }
+}
+
+async function saveServicios() {
+  const codes = [...document.querySelectorAll('.svcCheck:checked')].map(i => i.value);
+  const msg = document.getElementById('svcMsg');
+  if (!codes.length) { msg.textContent = 'Elegí al menos un tipo de servicio.'; msg.style.color = 'var(--red)'; return; }
+  try {
+    await apiPut('/warehouse/company/service-types', { service_types: codes });
+    MY_SERVICE_CODES = codes;
+    showToast('Servicios actualizados', 'success');
+    msg.textContent = 'Guardado.'; msg.style.color = 'var(--green)';
+  } catch (e) {
+    msg.textContent = 'No se pudo guardar: ' + e.message; msg.style.color = 'var(--red)';
+  }
+}
+
 function renderTarifas() {
   return `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
@@ -7569,6 +7654,7 @@ async function loadRealData() {
     REAL_BILLING       = await apiGet('/warehouse/billing');
     REAL_SERVICE_TYPES = await apiGet('/service-types?habilitado=true');
     REAL_VEHICLE_TYPES = await apiGet('/vehicle-types?habilitado=true');
+    await loadMyServiceCodes();
 
     // Límite de carga de CSV configurado para esta compañía (o el default global)
     if (REAL_DASHBOARD?.max_csv_rows)         MAX_CSV_ROWS = REAL_DASHBOARD.max_csv_rows;

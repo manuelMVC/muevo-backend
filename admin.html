@@ -53,6 +53,7 @@
 </header>
 <nav id="tabs">
   <button data-tab="companies" class="active">Compañías</button>
+  <button data-tab="companyApplications">Solicitudes de warehouse</button>
   <button data-tab="applications">Solicitudes de transporte</button>
   <button data-tab="profiles">Perfiles</button>
   <button data-tab="profileHistory">Historial de perfiles</button>
@@ -270,7 +271,67 @@ async function renderApplications() {
   await load();
 }
 
-const views = { companies: renderCompanies, applications: renderApplications, profiles: renderProfiles, profileHistory: renderProfileHistory, audit: renderAudit };
+// ── Solicitudes de registro de warehouses ───────────────────────────────────
+async function renderCompanyApplications() {
+  $('view').innerHTML = `
+    <div class="toolbar">
+      <select id="cappStatus">
+        <option value="pending">Pendientes</option>
+        <option value="approved">Aprobadas</option>
+        <option value="rejected">Rechazadas</option>
+        <option value="">Todas</option>
+      </select>
+    </div>
+    <div class="card wrap" id="cappBox">Cargando…</div>`;
+  async function load() {
+    const st = $('cappStatus').value;
+    const rows = await api('/admin/company-applications' + (st ? '?status=' + st : ''));
+    const badge = s => s === 'approved' ? '<span class="badge ok">aprobada</span>' : s === 'rejected' ? '<span class="badge">rechazada</span>' : '<span class="badge">pendiente</span>';
+    $('cappBox').innerHTML = rows.length ? `
+      <table>
+        <thead><tr><th>Empresa</th><th>Warehouse</th><th>Contacto</th><th>Administrador</th><th>Estado</th><th></th></tr></thead>
+        <tbody>${rows.map(a => `
+          <tr>
+            <td>${esc(a.company_name)}<div class="muted">${esc(a.legal_name)} · EIN <span class="mono">${esc(a.tax_id)}</span></div>
+              <div class="muted">${esc(a.industry || '')}${a.industry ? ' · ' : ''}${esc((a.service_types || []).join(', '))}${a.estimated_monthly_stops ? ' · ' + a.estimated_monthly_stops + ' paradas/mes' : ''}</div>
+              <div class="muted">${esc([a.address_line1, a.city, a.state].filter(Boolean).join(', '))}</div></td>
+            <td>${esc(a.warehouse_name)}<div class="muted">${esc([a.warehouse_address_line1, a.warehouse_city, a.warehouse_state].filter(Boolean).join(', '))}</div>
+              <div class="muted">${a.warehouse_docks_count} muelle${a.warehouse_docks_count === 1 ? '' : 's'}</div></td>
+            <td>${esc(a.contact_name)}<div class="muted mono">${esc(a.contact_email)}</div><div class="muted">${esc(a.contact_phone)}</div></td>
+            <td>${esc(a.admin_full_name)}<div class="muted mono">${esc(a.admin_email)}</div></td>
+            <td>${badge(a.status)}${a.rejection_reason ? '<div class="muted">' + esc(a.rejection_reason) + '</div>' : ''}
+              <div class="muted mono">${esc((a.created_at || '').slice(0, 10))}</div></td>
+            <td>${a.status === 'pending' ? `
+              <div style="display:flex;gap:6px;flex-wrap:wrap">
+                <button class="primary" data-capp-approve="${a.id}">Aprobar</button>
+                <button data-capp-reject-open="${a.id}">Rechazar</button>
+              </div>
+              <div id="crej-${a.id}" hidden style="margin-top:8px">
+                <input id="creason-${a.id}" placeholder="Motivo (se le envía al solicitante)" style="width:100%">
+                <button data-capp-reject="${a.id}" style="margin-top:6px">Confirmar rechazo</button>
+              </div>` : ''}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>` : '<span class="muted">No hay solicitudes en este estado.</span>';
+    document.querySelectorAll('[data-capp-approve]').forEach(b => b.addEventListener('click', async () => {
+      b.disabled = true; showError('');
+      try { await api(`/admin/company-applications/${b.dataset.cappApprove}/approve`, { method: 'POST' }); await load(); }
+      catch (e) { showError(e.message); b.disabled = false; }
+    }));
+    document.querySelectorAll('[data-capp-reject-open]').forEach(b => b.addEventListener('click', () => { $('crej-' + b.dataset.cappRejectOpen).hidden = false; }));
+    document.querySelectorAll('[data-capp-reject]').forEach(b => b.addEventListener('click', async () => {
+      const reason = $('creason-' + b.dataset.cappReject).value.trim();
+      if (reason.length < 5) return showError('Escribí el motivo del rechazo (mínimo 5 caracteres).');
+      b.disabled = true; showError('');
+      try { await api(`/admin/company-applications/${b.dataset.cappReject}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }); await load(); }
+      catch (e) { showError(e.message); b.disabled = false; }
+    }));
+  }
+  $('cappStatus').addEventListener('change', () => load().catch(e => showError(e.message)));
+  await load();
+}
+
+const views = { companies: renderCompanies, companyApplications: renderCompanyApplications, applications: renderApplications, profiles: renderProfiles, profileHistory: renderProfileHistory, audit: renderAudit };
 
 async function show(tab) {
   showError('');

@@ -50,7 +50,7 @@ from models import (
     Earning, DriverMetric, Company,
     UserRole, RouteStatus, StopStatus, PodType, VehicleType,
     # Modelo multi-holding / multi-warehouse (vigente para /api/v1/routes)
-    Holding, Warehouse, TransportCompany, Country, State, City, TransportApplication,
+    Holding, Warehouse, TransportCompany, Country, State, City, TransportApplication, CompanyApplication,
     RouteHeader, RouteDetail, ShipmentItem, CompanyAdmin, TransportCompanyAdmin,
     # Batches e incidencias
     RouteBatch, RouteBatchItem, IncidentType, Incident,
@@ -2450,7 +2450,7 @@ async def admin_create_company(
         name=data.name, industry=data.industry,
         contact_email=data.contact_email,
         city=data.city, state=data.state, country=data.country,
-        allowed_modes=data.allowed_modes,
+        allowed_modes=_validate_service_codes(db, data.allowed_modes) if data.allowed_modes else [],
         payment_terms_days=data.payment_terms_days,
         is_primary_company=False,
         max_csv_rows=data.max_csv_rows,
@@ -2479,7 +2479,7 @@ async def admin_update_company(
     if data.city               is not None: company.city               = data.city
     if data.state              is not None: company.state              = data.state
     if data.country            is not None: company.country            = data.country
-    if data.allowed_modes      is not None: company.allowed_modes      = data.allowed_modes
+    if data.allowed_modes      is not None: company.allowed_modes      = _validate_service_codes(db, data.allowed_modes)
     if data.payment_terms_days is not None: company.payment_terms_days = data.payment_terms_days
     if data.max_csv_rows         is not None: company.max_csv_rows         = data.max_csv_rows
     if data.max_csv_file_size_mb is not None: company.max_csv_file_size_mb = data.max_csv_file_size_mb
@@ -4497,6 +4497,7 @@ async def plan_batch(
 
     if data.agrupar_por not in (None, "ciudad", "estado", "pais"):
         raise HTTPException(status_code=400, detail="agrupar_por debe ser 'ciudad', 'estado' o 'pais'")
+    _require_service_allowed(company, data.service_type)
 
     # Zona de cada parada: se informa siempre que se pueda y se usa para agrupar si se pidió
     cities_by_temp = {
@@ -4635,20 +4636,19 @@ async def confirm_batch(
     data:         DispatchConfirmRequest,
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
 ):
     """
     Confirma los grupos propuestos (con los ajustes manuales del usuario)
     y los persiste en la DB: crea RouteHeaders, RouteDetails, ShipmentItems,
     y finalmente el RouteBatch que los agrupa.
     """
-    # Resolver la empresa del admin
-    company_admin = db.execute(
-        select(CompanyAdmin).where(CompanyAdmin.user_id == current_user.id)
-    ).scalar_one_or_none()
-    if not company_admin:
-        raise HTTPException(status_code=403, detail="Solo admins de empresa pueden crear lotes")
+    # Compañía activa (HoldingUser + X-Company-ID, o admin legacy) y permiso de crear lotes
+    company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "batches", "create", company.id)
+    _require_service_allowed(company, data.service_type)
 
-    company_id  = company_admin.company_id
+    company_id  = company.id
     contract_id = uuid.UUID(data.contract_id) if data.contract_id else None
     fecha       = datetime.fromisoformat(data.fecha).date()
 
@@ -4768,14 +4768,8 @@ async def confirm_batch(
 
 def _require_draft_batch_access(db: Session, batch_id, current_user: User) -> "RouteBatch":
     """Verifica que el usuario administre la company dueña del lote y que el lote esté en draft."""
-    company_admin = db.execute(
-        select(CompanyAdmin).where(CompanyAdmin.user_id == current_user.id)
-    ).scalar_one_or_none()
-    if not company_admin:
-        raise HTTPException(status_code=403, detail="Solo admins de empresa pueden modificar lotes")
-
     batch = db.get(RouteBatch, batch_id)
-    if not batch or batch.company_id != company_admin.company_id:
+    if not batch or not _user_has_company_access(db, current_user, batch.company_id, need_operate=True):
         raise HTTPException(status_code=404, detail="Lote no encontrado")
 
     if batch.status != BatchStatus.DRAFT:
@@ -5323,7 +5317,11 @@ async def warehouse_update_incident_status(
 
 
 def next_batch_number(company_id: uuid.UUID, db: Session) -> str:
-    """Genera el siguiente número secuencial de lote: ORL-LOT-0001, 0002, ..."""
+    """
+    Genera el siguiente número secuencial de lote de la compañía: ORL-LOT-0001, 0002, ...
+    La secuencia es por compañía (la unicidad es compañía + número). Una compañía que ya tiene
+    lotes conserva su prefijo; una nueva toma las tres primeras letras de su nombre (TES-LOT-0001).
+    """
     last = db.execute(
         select(RouteBatch.batch_number)
         .where(RouteBatch.company_id == company_id, RouteBatch.batch_number.isnot(None))
@@ -5331,14 +5329,17 @@ def next_batch_number(company_id: uuid.UUID, db: Session) -> str:
         .limit(1)
     ).scalar_one_or_none()
 
-    if last:
+    if last and "-" in last:
+        prefix = last.rsplit("-", 1)[0]
         try:
-            n = int(last.split('-')[-1]) + 1
+            n = int(last.rsplit("-", 1)[1]) + 1
         except ValueError:
             n = 1
     else:
+        name = db.execute(select(Company.name).where(Company.id == company_id)).scalar_one_or_none() or ""
+        prefix = re.sub(r"[^A-Za-z0-9]", "", name).upper()[:3].ljust(3, "X") + "-LOT"
         n = 1
-    return f"ORL-LOT-{n:04d}"
+    return f"{prefix}-{n:04d}"
 
 
 # ─── Route Batches ────────────────────────────────────────────────────────────
@@ -5348,20 +5349,18 @@ async def create_batch(
     data:         BatchCreate,
     current_user: User    = Depends(get_current_user),
     db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
 ):
     """Dispatcher crea un lote de rutas para ofrecerlo a una empresa de transporte."""
-    company_admin = db.execute(
-        select(CompanyAdmin).where(CompanyAdmin.user_id == current_user.id)
-    ).scalar_one_or_none()
-    if not company_admin:
-        raise HTTPException(status_code=403, detail="Solo admins de empresa pueden crear lotes")
+    company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "batches", "create", company.id)
 
     # Validar que todas las rutas pertenezcan a la empresa del admin
     route_ids = [uuid.UUID(r) for r in data.route_ids]
     routes = db.execute(
         select(RouteHeader).where(
             RouteHeader.id.in_(route_ids),
-            RouteHeader.company_id == company_admin.company_id,
+            RouteHeader.company_id == company.id,
         )
     ).scalars().all()
 
@@ -5381,8 +5380,8 @@ async def create_batch(
             )
 
     batch = RouteBatch(
-        id=uuid.uuid4(), company_id=company_admin.company_id,
-        batch_number=next_batch_number(company_admin.company_id, db),
+        id=uuid.uuid4(), company_id=company.id,
+        batch_number=next_batch_number(company.id, db),
         status=BatchStatus.DRAFT, notes=data.notes,
         expires_at=datetime.fromisoformat(data.expires_at) if data.expires_at else None,
     )
@@ -5542,14 +5541,7 @@ async def change_batch_status(
         )
     ).scalar_one_or_none()
 
-    company_admin = db.execute(
-        select(CompanyAdmin).where(CompanyAdmin.user_id == current_user.id)
-    ).scalar_one_or_none()
-
-    has_access = (
-        (hu and hu.is_super_admin) or
-        (company_admin and company_admin.company_id == batch.company_id)
-    )
+    has_access = _user_has_company_access(db, current_user, batch.company_id)
     if not has_access:
         raise HTTPException(status_code=403, detail="Sin acceso a este lote")
 
@@ -5768,7 +5760,7 @@ async def report_incident(
     """
     # Determinar el rol del reportante
     reporter_role = ReporterRole.DRIVER
-    if db.execute(select(CompanyAdmin).where(CompanyAdmin.user_id == current_user.id)).scalar_one_or_none():
+    if _is_warehouse_user(db, current_user):
         reporter_role = ReporterRole.WAREHOUSE_ADMIN
     elif db.execute(select(TransportCompanyAdmin).where(TransportCompanyAdmin.user_id == current_user.id)).scalar_one_or_none():
         reporter_role = ReporterRole.TRANSPORT_ADMIN
@@ -6691,6 +6683,113 @@ def require_transport_permission(current_user: User, db: Session, module: str, a
         raise HTTPException(status_code=403, detail=f"Sin permiso '{code}' para esta acción")
 
 
+# ─── Tipos de servicio por compañía ──────────────────────────────────────────
+# Cada compañía elige uno o varios tipos de servicio del catálogo (service_types) al
+# registrarse y puede cambiarlos después. Esa lista (companies.allowed_modes) es la que
+# valida el armado de lotes. Una compañía con la lista vacía (cuentas anteriores) no
+# tiene restricción.
+
+def _enabled_service_types(db: Session) -> list:
+    return db.execute(
+        select(ServiceType).where(ServiceType.habilitado == True).order_by(ServiceType.name)
+    ).scalars().all()
+
+
+def _validate_service_codes(db: Session, codes: list[str]) -> list[str]:
+    """Normaliza (minúsculas, sin repetidos, en el orden recibido) y exige que existan y estén habilitados."""
+    clean = list(dict.fromkeys(c.strip().lower() for c in codes if c and c.strip()))
+    valid = {st.code for st in _enabled_service_types(db)}
+    unknown = [c for c in clean if c not in valid]
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Tipo de servicio no válido: {', '.join(unknown)}")
+    return clean
+
+
+def _require_service_allowed(company: "Company", code: str) -> None:
+    allowed = list(company.allowed_modes or [])
+    if allowed and code not in allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tu compañía no tiene habilitado el servicio '{code}'. Habilitados: {', '.join(allowed)}. "
+                   f"Podés cambiarlos en Mis servicios.",
+        )
+
+
+@app.get("/api/v1/service-types-public")
+async def list_public_service_types(db: Session = Depends(get_db)):
+    """Catálogo de tipos de servicio habilitados (sin precios), para los formularios de registro."""
+    return [{"code": st.code, "name": st.name, "description": st.description} for st in _enabled_service_types(db)]
+
+
+class CompanyServicesUpdate(BaseModel):
+    service_types: list[str] = Field(min_length=1)
+
+
+@app.get("/api/v1/warehouse/company/service-types")
+async def get_company_service_types(
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
+):
+    """Tipos de servicio del catálogo, marcando cuáles tiene habilitados la compañía activa."""
+    company = get_current_company(current_user, db, x_company_id)
+    selected = list(company.allowed_modes or [])
+    return {
+        "company_id": str(company.id),
+        "restricted": bool(selected),
+        "selected":   selected,
+        "service_types": [
+            {"code": st.code, "name": st.name, "description": st.description,
+             "selected": (st.code in selected) if selected else True}
+            for st in _enabled_service_types(db)
+        ],
+    }
+
+
+@app.put("/api/v1/warehouse/company/service-types")
+async def update_company_service_types(
+    data:         CompanyServicesUpdate,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+    x_company_id: Optional[str] = Header(None),
+):
+    """La compañía elige con qué tipos de servicio trabaja (uno o varios)."""
+    company = get_current_company(current_user, db, x_company_id)
+    require_permission(current_user, db, "companies", "edit", company.id)
+    company.allowed_modes = _validate_service_codes(db, data.service_types)
+    db.commit()
+    return {"company_id": str(company.id), "selected": company.allowed_modes}
+
+
+# ─── Acceso a una compañía (modelo nuevo + legacy) ───────────────────────────
+
+def _is_warehouse_user(db: Session, user: User) -> bool:
+    """Usuario de un warehouse: admin legacy de una compañía o con acceso a alguna vía HoldingUserCompany."""
+    if db.execute(select(CompanyAdmin.id).where(CompanyAdmin.user_id == user.id)).first():
+        return True
+    return db.execute(
+        select(HoldingUserCompany.id).join(HoldingUser, HoldingUser.id == HoldingUserCompany.holding_user_id)
+        .where(HoldingUser.user_id == user.id, HoldingUser.is_active == True)
+    ).first() is not None
+
+
+def _user_has_company_access(db: Session, user: User, company_id, need_operate: bool = False) -> bool:
+    """Admin legacy de la compañía, super admin de su holding, o acceso vía HoldingUserCompany."""
+    if db.execute(select(CompanyAdmin.id).where(
+            CompanyAdmin.user_id == user.id, CompanyAdmin.company_id == company_id)).first():
+        return True
+    hu = db.execute(select(HoldingUser).where(HoldingUser.user_id == user.id, HoldingUser.is_active == True)).scalar_one_or_none()
+    if not hu:
+        return False
+    company = db.get(Company, company_id)
+    if hu.is_super_admin and company and company.holding_id == hu.holding_id:
+        return True
+    access = db.execute(select(HoldingUserCompany).where(
+        HoldingUserCompany.holding_user_id == hu.id, HoldingUserCompany.company_id == company_id,
+        HoldingUserCompany.can_view == True)).scalar_one_or_none()
+    return bool(access and (not need_operate or access.can_operate or access.is_admin))
+
+
 # ─── Registro de empresas de transporte ──────────────────────────────────────
 # Formulario público -> solicitud pendiente -> un admin de Muevo aprueba o rechaza.
 
@@ -6698,6 +6797,17 @@ _REGISTER_ATTEMPTS: dict = {}          # ip -> timestamps; límite simple en mem
 _REGISTER_LIMIT, _REGISTER_WINDOW = 10, 3600
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 _VALID_SERVICE_MODES = {"mensajeria", "logistica", "empleados"}
+
+
+def _enforce_register_rate_limit(request: Request) -> None:
+    """Límite simple por IP para los formularios públicos de registro (en memoria)."""
+    import time
+    ip = request.client.host if request.client else "?"
+    now_ts = time.time()
+    recent = [t for t in _REGISTER_ATTEMPTS.get(ip, []) if now_ts - t < _REGISTER_WINDOW]
+    if len(recent) >= _REGISTER_LIMIT:
+        raise HTTPException(status_code=429, detail="Demasiadas solicitudes desde este equipo. Probá de nuevo en una hora.")
+    _REGISTER_ATTEMPTS[ip] = recent + [now_ts]
 
 
 class TransportRegisterRequest(BaseModel):
@@ -6760,13 +6870,7 @@ async def register_transport_company(
     db:      Session = Depends(get_db),
 ):
     """Solicitud pública de registro de una empresa de transporte. Queda pendiente de aprobación."""
-    import time
-    ip = request.client.host if request.client else "?"
-    now_ts = time.time()
-    recent = [t for t in _REGISTER_ATTEMPTS.get(ip, []) if now_ts - t < _REGISTER_WINDOW]
-    if len(recent) >= _REGISTER_LIMIT:
-        raise HTTPException(status_code=429, detail="Demasiadas solicitudes desde este equipo. Probá de nuevo en una hora.")
-    _REGISTER_ATTEMPTS[ip] = recent + [now_ts]
+    _enforce_register_rate_limit(request)
 
     if not _EMAIL_RE.match(data.admin_email) or not _EMAIL_RE.match(data.contact_email):
         raise HTTPException(status_code=422, detail="Revisá los correos: el formato no es válido")
@@ -6917,6 +7021,253 @@ async def reject_transport_application(
 ):
     require_platform_admin(current_user, db)
     a = db.get(TransportApplication, uuid.UUID(application_id))
+    if not a:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    if a.status != "pending":
+        raise HTTPException(status_code=400, detail="La solicitud ya fue revisada")
+    a.status, a.rejection_reason = "rejected", data.reason.strip()
+    a.reviewed_by_id, a.reviewed_at = current_user.id, datetime.utcnow()
+    db.commit()
+    await send_email(
+        a.admin_email, "Sobre tu solicitud de registro en Muevo",
+        email_html("No pudimos aprobar tu solicitud", [
+            f"Revisamos la solicitud de {a.company_name} y por ahora no la podemos aprobar.",
+            f"Motivo: {a.rejection_reason}",
+            "Si corregís lo indicado, podés enviar una solicitud nueva.",
+        ]),
+    )
+    return {"status": "rejected"}
+
+
+# ─── Registro de warehouses (compañías cliente) ──────────────────────────────
+# Formulario público -> solicitud pendiente -> un admin de Muevo aprueba o rechaza.
+
+class WarehouseRegisterRequest(BaseModel):
+    company_name:            str = Field(min_length=2, max_length=255)
+    legal_name:              str = Field(min_length=2, max_length=255)
+    tax_id:                  str = Field(min_length=9, max_length=20)     # EIN
+    industry:                Optional[str] = Field(None, max_length=100)
+    service_types:           list[str] = Field(min_length=1)       # códigos del catálogo (uno o varios)
+    estimated_monthly_stops: Optional[int] = Field(None, ge=1, le=10000000)
+    contact_name:            str = Field(min_length=2, max_length=255)
+    contact_email:           str = Field(max_length=255)
+    contact_phone:           str = Field(min_length=7, max_length=30)
+    address_line1:           str = Field(min_length=3, max_length=255)
+    city:                    str = Field(min_length=2, max_length=100)
+    state:                   str = Field(min_length=2, max_length=50)
+    zip_code:                Optional[str] = Field(None, max_length=20)
+    warehouse_name:          str = Field(min_length=2, max_length=255)
+    warehouse_address_line1: str = Field(min_length=3, max_length=255)
+    warehouse_city:          str = Field(min_length=2, max_length=100)
+    warehouse_state:         str = Field(min_length=2, max_length=50)
+    warehouse_zip_code:      Optional[str] = Field(None, max_length=20)
+    warehouse_docks_count:   int = Field(1, ge=1, le=500)
+    admin_full_name:         str = Field(min_length=2, max_length=255)
+    admin_email:             str = Field(max_length=255)
+    admin_password:          str = Field(min_length=8, max_length=72)
+
+
+def _serialize_company_application(a: "CompanyApplication") -> dict:
+    return {
+        "id": str(a.id), "status": a.status,
+        "company_name": a.company_name, "legal_name": a.legal_name, "tax_id": a.tax_id, "industry": a.industry,
+        "service_types": a.allowed_modes or [], "estimated_monthly_stops": a.estimated_monthly_stops,
+        "contact_name": a.contact_name, "contact_email": a.contact_email, "contact_phone": a.contact_phone,
+        "address_line1": a.address_line1, "city": a.city, "state": a.state, "zip_code": a.zip_code,
+        "warehouse_name": a.warehouse_name, "warehouse_address_line1": a.warehouse_address_line1,
+        "warehouse_city": a.warehouse_city, "warehouse_state": a.warehouse_state,
+        "warehouse_zip_code": a.warehouse_zip_code, "warehouse_docks_count": a.warehouse_docks_count,
+        "admin_full_name": a.admin_full_name, "admin_email": a.admin_email,
+        "rejection_reason": a.rejection_reason,
+        "reviewed_at": a.reviewed_at.isoformat() if a.reviewed_at else None,
+        "company_id": str(a.company_id) if a.company_id else None,
+        "created_at": a.created_at.isoformat() if a.created_at else None,
+    }
+
+
+@app.get("/register-warehouse.html", include_in_schema=False)
+async def serve_register_warehouse():
+    return FileResponse("register-warehouse.html", media_type="text/html")
+
+
+@app.post("/api/v1/warehouse/register", status_code=201)
+async def register_warehouse_company(
+    data:    WarehouseRegisterRequest,
+    request: Request,
+    db:      Session = Depends(get_db),
+):
+    """Solicitud pública de registro de un warehouse (compañía cliente). Queda pendiente de aprobación."""
+    _enforce_register_rate_limit(request)
+
+    if not _EMAIL_RE.match(data.admin_email) or not _EMAIL_RE.match(data.contact_email):
+        raise HTTPException(status_code=422, detail="Revisá los correos: el formato no es válido")
+    ein = _normalize_ein(data.tax_id)
+    if len(ein) != 9:
+        raise HTTPException(status_code=422, detail="El EIN debe tener 9 dígitos (ej. 12-3456789)")
+    modes = _validate_service_codes(db, data.service_types)
+    if not modes:
+        raise HTTPException(status_code=422, detail="Elegí al menos un tipo de servicio")
+    st = find_state(db, data.state)
+    wh_st = find_state(db, data.warehouse_state)
+    if not st or not wh_st:
+        raise HTTPException(status_code=422, detail="Estado no reconocido: usá el código de dos letras (ej. FL)")
+
+    email = data.admin_email.strip().lower()
+    dup_user = db.execute(select(User.id).where(func.lower(User.email) == email)).first()
+    dup_app = db.execute(select(CompanyApplication.id).where(
+        func.lower(CompanyApplication.admin_email) == email, CompanyApplication.status == "pending")).first()
+    dup_tax = db.execute(select(Company.id).where(Company.tax_id.in_([ein, data.tax_id.strip()]))).first() \
+        or db.execute(select(CompanyApplication.id).where(
+            CompanyApplication.tax_id == ein, CompanyApplication.status.in_(["pending", "approved"]))).first()
+    if dup_user or dup_app or dup_tax:
+        raise HTTPException(status_code=409, detail="Ya existe una cuenta o una solicitud con ese correo o ese EIN. Si es tuya, contactá a soporte.")
+
+    application = CompanyApplication(
+        id=uuid.uuid4(), status="pending",
+        company_name=data.company_name.strip(), legal_name=data.legal_name.strip(), tax_id=ein,
+        industry=(data.industry or "").strip() or None, allowed_modes=modes,
+        estimated_monthly_stops=data.estimated_monthly_stops,
+        contact_name=data.contact_name.strip(), contact_email=data.contact_email.strip().lower(),
+        contact_phone=data.contact_phone.strip(),
+        address_line1=data.address_line1.strip(), city=data.city.strip(), state=st.code,
+        zip_code=(data.zip_code or "").strip() or None,
+        warehouse_name=data.warehouse_name.strip(), warehouse_address_line1=data.warehouse_address_line1.strip(),
+        warehouse_city=data.warehouse_city.strip(), warehouse_state=wh_st.code,
+        warehouse_zip_code=(data.warehouse_zip_code or "").strip() or None,
+        warehouse_docks_count=data.warehouse_docks_count,
+        admin_full_name=data.admin_full_name.strip(), admin_email=email,
+        admin_password_hash=hash_password(data.admin_password),
+    )
+    db.add(application)
+
+    for admin in db.execute(select(User).where(User.role == UserRole.MUEVO_ADMIN, User.is_active == True)).scalars().all():
+        await create_notification(
+            db, admin.id, "company_application",
+            f"Nueva solicitud de warehouse: {application.company_name}",
+            f"{application.legal_name} ({application.city}, {application.state}) pidió registrarse. Revisala en Administración > Solicitudes de warehouse.",
+            entity_type="company_application", entity_id=application.id,
+        )
+    db.commit()
+
+    await send_email(
+        email, "Recibimos tu solicitud de registro en Muevo",
+        email_html("Recibimos tu solicitud", [
+            f"Hola {application.admin_full_name}, recibimos la solicitud de {application.company_name}.",
+            "Vamos a revisar los datos de tu empresa. Te avisamos por este correo cuando esté aprobada.",
+        ]),
+    )
+    return {"status": "pending", "id": str(application.id),
+            "message": "Solicitud recibida. Te avisamos por correo cuando la revisemos."}
+
+
+@app.get("/api/v1/admin/company-applications")
+async def list_company_applications(
+    status:       Optional[str] = None,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    require_platform_admin(current_user, db)
+    query = select(CompanyApplication).order_by(CompanyApplication.created_at.desc())
+    if status:
+        query = query.where(CompanyApplication.status == status)
+    return [_serialize_company_application(a) for a in db.execute(query).scalars().all()]
+
+
+@app.post("/api/v1/admin/company-applications/{application_id}/approve")
+async def approve_company_application(
+    application_id: str,
+    current_user:   User    = Depends(get_current_user),
+    db:             Session = Depends(get_db),
+):
+    """
+    Aprueba la solicitud. Crea un holding propio (single_entity) para la compañía, para que
+    sus datos queden aislados de los demás clientes, más la compañía, su primer warehouse,
+    su administrador y el perfil company_admin acotado a esa compañía.
+    """
+    require_platform_admin(current_user, db)
+    a = db.get(CompanyApplication, uuid.UUID(application_id))
+    if not a:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    if a.status != "pending":
+        raise HTTPException(status_code=400, detail="La solicitud ya fue revisada")
+    if db.execute(select(User.id).where(func.lower(User.email) == a.admin_email.lower())).first():
+        raise HTTPException(status_code=409, detail="Ya existe un usuario con el correo del solicitante")
+    if db.execute(select(Company.id).where(Company.tax_id == a.tax_id)).first() \
+            or db.execute(select(Holding.id).where(Holding.tax_id == a.tax_id)).first():
+        raise HTTPException(status_code=409, detail="Ya existe una compañía con ese EIN")
+    profile = db.execute(select(Profile).where(Profile.code == "company_admin")).scalar_one_or_none()
+    if not profile:
+        raise HTTPException(status_code=500, detail="Falta el perfil company_admin (corré seed_security_extensions.py)")
+
+    now = datetime.utcnow()
+    holding = Holding(
+        id=uuid.uuid4(), name=a.company_name, legal_name=a.legal_name, tax_id=a.tax_id,
+        holding_type="single_entity", billing_mode="per_company", billing_email=a.contact_email,
+        primary_contact_name=a.contact_name, primary_contact_email=a.contact_email,
+        primary_contact_phone=a.contact_phone, industry=a.industry, country="US",
+        default_allowed_modes=a.allowed_modes or [], is_active=True,
+    )
+    db.add(holding)
+    db.flush()
+    company = Company(
+        id=uuid.uuid4(), holding_id=holding.id, is_primary_company=True,
+        name=a.company_name, legal_name=a.legal_name, tax_id=a.tax_id, industry=a.industry,
+        contact_name=a.contact_name, contact_email=a.contact_email, contact_phone=a.contact_phone,
+        address_line1=a.address_line1, city=a.city, state=a.state, zip_code=a.zip_code,
+        country="US", allowed_modes=a.allowed_modes or [], is_active=True,
+    )
+    db.add(company)
+    db.flush()
+
+    code_base = re.sub(r"[^A-Za-z0-9]", "", a.warehouse_name).upper()[:3].ljust(3, "X")
+    wh_city = resolve_city(db, zip_code=a.warehouse_zip_code, city=a.warehouse_city, state=a.warehouse_state, create=True)
+    db.add(Warehouse(
+        id=uuid.uuid4(), company_id=company.id, code=f"{code_base}-01", name=a.warehouse_name,
+        address_line1=a.warehouse_address_line1, city=a.warehouse_city, state=a.warehouse_state,
+        city_id=wh_city.id if wh_city else None, zip_code=a.warehouse_zip_code, country="US",
+        contact_name=a.contact_name, contact_phone=a.contact_phone, contact_email=a.contact_email,
+        docks_count=a.warehouse_docks_count, is_origin_default=True, is_active=True,
+    ))
+
+    initials = "".join(w[0].upper() for w in a.admin_full_name.split()[:2])
+    user = User(
+        id=uuid.uuid4(), email=a.admin_email, full_name=a.admin_full_name, avatar_initials=initials,
+        role=UserRole.CORP_ADMIN, hashed_password=a.admin_password_hash, is_active=True, is_verified=True,
+    )
+    db.add(user)
+    db.flush()
+    hu = HoldingUser(id=uuid.uuid4(), holding_id=holding.id, user_id=user.id,
+                     role="company_admin", is_super_admin=False, is_active=True)
+    db.add(hu)
+    db.flush()
+    db.add(HoldingUserCompany(
+        id=uuid.uuid4(), holding_user_id=hu.id, company_id=company.id,
+        can_view=True, can_operate=True, can_invoice=True, is_admin=True, granted_by_id=current_user.id,
+    ))
+    db.add(HoldingUserProfile(id=uuid.uuid4(), holding_user_id=hu.id, profile_id=profile.id,
+                              company_id=company.id, granted_by_id=current_user.id))
+    a.status, a.reviewed_by_id, a.reviewed_at, a.company_id = "approved", current_user.id, now, company.id
+    db.commit()
+
+    await send_email(
+        a.admin_email, "Tu empresa fue aprobada en Muevo",
+        email_html("¡Tu empresa fue aprobada!", [
+            f"{a.company_name} ya tiene cuenta en Muevo.",
+            f"Ingresá con {a.admin_email} y la contraseña que elegiste al registrarte, en /login.html.",
+        ]),
+    )
+    return {"status": "approved", "company_id": str(company.id), "holding_id": str(holding.id), "user_id": str(user.id)}
+
+
+@app.post("/api/v1/admin/company-applications/{application_id}/reject")
+async def reject_company_application(
+    application_id: str,
+    data:           TransportRejectRequest,
+    current_user:   User    = Depends(get_current_user),
+    db:             Session = Depends(get_db),
+):
+    require_platform_admin(current_user, db)
+    a = db.get(CompanyApplication, uuid.UUID(application_id))
     if not a:
         raise HTTPException(status_code=404, detail="Solicitud no encontrada")
     if a.status != "pending":

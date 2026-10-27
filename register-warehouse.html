@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Muevo — Registro de empresa (warehouse)</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0D0D0D; --card: #1C1C1C; --orange: #F47B20; --white: #F8FAFB; --muted: #8A8A8A;
+    --border: rgba(255,255,255,0.10); --green: #27AE60; --red: #E74C3C;
+    --font: -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif;
+  }
+  [data-theme="light"] { --bg: #F4F4F2; --card: #FFFFFF; --white: #1A1A1A; --muted: #6B6B6B; --border: rgba(0,0,0,0.12); }
+  body { background: var(--bg); color: var(--white); font-family: var(--font); font-size: 14px; line-height: 1.5; padding: 32px 16px 64px; }
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .brand { font-weight: 600; font-size: 18px; margin-bottom: 4px; }
+  .brand small { color: var(--orange); font-size: 11px; letter-spacing: .5px; text-transform: uppercase; margin-left: 8px; }
+  h1 { font-size: 22px; margin: 18px 0 6px; font-weight: 600; }
+  p.lead { color: var(--muted); margin-bottom: 20px; max-width: 60ch; }
+  fieldset { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; min-width: 0; }
+  legend { padding: 0 8px; font-weight: 600; font-size: 13px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); min-width: 0; }
+  input, select { font: inherit; background: transparent; color: var(--white); border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px; width: 100%; }
+  input:focus, select:focus, button:focus-visible { outline: 2px solid var(--orange); outline-offset: 1px; }
+  .hint { font-size: 11px; color: var(--muted); }
+  .modes { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; }
+  .modes label, label.inline { flex-direction: row; align-items: center; gap: 6px; color: var(--white); font-size: 13px; }
+  .modes input, label.inline input { width: auto; }
+  button.primary { font: inherit; cursor: pointer; background: var(--orange); border: 1px solid var(--orange); color: #fff; border-radius: 8px; padding: 11px 18px; font-weight: 600; }
+  button.primary:disabled { opacity: .5; cursor: default; }
+  .msg { padding: 12px 14px; border-radius: 8px; margin-bottom: 16px; border: 1px solid var(--border); }
+  .msg.err { border-color: var(--red); color: var(--red); }
+  .msg.ok { border-color: var(--green); color: var(--green); }
+  a { color: var(--orange); }
+  .foot { margin-top: 16px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">muevo<small>Warehouses</small></div>
+  <h1>Registrá tu empresa</h1>
+  <p class="lead">Contanos quién sos y desde dónde despachás. Revisamos los datos antes de activar la cuenta y te avisamos por correo.</p>
+
+  <div id="msg" class="msg" hidden></div>
+
+  <form id="form" novalidate>
+    <fieldset>
+      <legend>Empresa</legend>
+      <div class="grid">
+        <label>Nombre comercial<input id="company_name" required maxlength="255"></label>
+        <label>Razón social<input id="legal_name" required maxlength="255"></label>
+        <label>EIN<input id="tax_id" required placeholder="12-3456789" maxlength="20"></label>
+        <label>Rubro<input id="industry" maxlength="100" placeholder="retail, legal, salud…"></label>
+        <label>Paradas estimadas por mes<input id="estimated_monthly_stops" type="number" min="1" inputmode="numeric"></label>
+      </div>
+      <p class="hint" style="margin-top:12px">Tipos de servicio que vas a usar (elegí uno o varios; después los podés cambiar):</p>
+      <div class="modes" id="modes" role="group" aria-label="Tipos de servicio" style="flex-direction:column;gap:8px">
+        <span class="hint" id="modesLoading">Cargando servicios…</span>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Contacto y dirección de la empresa</legend>
+      <div class="grid">
+        <label>Persona de contacto<input id="contact_name" required maxlength="255"></label>
+        <label>Teléfono<input id="contact_phone" type="tel" required maxlength="30"></label>
+        <label>Correo de contacto<input id="contact_email" type="email" required maxlength="255"></label>
+        <label>Dirección<input id="address_line1" required maxlength="255"></label>
+        <label>Ciudad<input id="city" required maxlength="100"></label>
+        <label>Estado (2 letras)<input id="state" required maxlength="2" placeholder="FL" style="text-transform:uppercase"></label>
+        <label>Código postal<input id="zip_code" maxlength="10" inputmode="numeric"></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Tu primer warehouse (origen de las rutas)</legend>
+      <label class="inline" style="margin-bottom:12px"><input type="checkbox" id="same"> Es la misma dirección de la empresa</label>
+      <div class="grid">
+        <label>Nombre del warehouse<input id="warehouse_name" required maxlength="255"></label>
+        <label>Dirección<input id="warehouse_address_line1" required maxlength="255"></label>
+        <label>Ciudad<input id="warehouse_city" required maxlength="100"></label>
+        <label>Estado (2 letras)<input id="warehouse_state" required maxlength="2" placeholder="FL" style="text-transform:uppercase"></label>
+        <label>Código postal<input id="warehouse_zip_code" maxlength="10" inputmode="numeric"></label>
+        <label>Muelles de carga<input id="warehouse_docks_count" type="number" min="1" value="1" inputmode="numeric"></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Administrador de la cuenta</legend>
+      <div class="grid">
+        <label>Nombre completo<input id="admin_full_name" required maxlength="255"></label>
+        <label>Correo (será tu usuario)<input id="admin_email" type="email" required maxlength="255" autocomplete="username"></label>
+        <label>Contraseña<input id="admin_password" type="password" required minlength="8" maxlength="72" autocomplete="new-password"><span class="hint">Mínimo 8 caracteres.</span></label>
+      </div>
+    </fieldset>
+
+    <button class="primary" id="submitBtn" type="submit">Enviar solicitud</button>
+  </form>
+  <p class="foot">¿Ya tenés cuenta? <a href="/login.html">Iniciá sesión</a> · ¿Sos una empresa de transporte? <a href="/register-transport.html">Registrate acá</a></p>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+try { document.documentElement.setAttribute('data-theme', localStorage.getItem('muevo_theme') || 'dark'); } catch (e) {}
+
+function showMsg(text, kind) { const m = $('msg'); m.textContent = text; m.className = 'msg ' + kind; m.hidden = false; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+
+function formatError(body) {
+  if (!body) return 'No pudimos enviar la solicitud. Probá de nuevo.';
+  if (typeof body.detail === 'string') return body.detail;
+  if (Array.isArray(body.detail)) {
+    const labels = { company_name: 'Nombre comercial', legal_name: 'Razón social', tax_id: 'EIN', contact_name: 'Contacto', contact_phone: 'Teléfono',
+      address_line1: 'Dirección de la empresa', city: 'Ciudad', state: 'Estado', warehouse_name: 'Nombre del warehouse',
+      warehouse_address_line1: 'Dirección del warehouse', warehouse_city: 'Ciudad del warehouse', warehouse_state: 'Estado del warehouse',
+      admin_full_name: 'Nombre del administrador', admin_email: 'Correo del administrador', admin_password: 'Contraseña', service_types: 'Servicios' };
+    return 'Revisá estos campos: ' + [...new Set(body.detail.map(d => labels[d.loc[d.loc.length - 1]] || d.loc[d.loc.length - 1]))].join(', ') + '.';
+  }
+  return 'No pudimos enviar la solicitud.';
+}
+
+// Tipos de servicio: salen del catálogo, no de una lista fija en el formulario
+(async function loadServices() {
+  try {
+    const res = await fetch('/api/v1/service-types-public');
+    const list = await res.json();
+    $('modes').innerHTML = list.map(st => `
+      <label><input type="checkbox" value="${st.code}"> <span><strong>${st.name}</strong>${st.description ? ' <span class="hint">— ' + st.description + '</span>' : ''}</span></label>`).join('')
+      || '<span class="hint">No hay servicios disponibles por ahora.</span>';
+  } catch (e) {
+    $('modes').innerHTML = '<span class="hint">No pudimos cargar los servicios. Recargá la página.</span>';
+  }
+})();
+
+// "Misma dirección": copia los datos de la empresa al warehouse
+const PAIRS = [['address_line1', 'warehouse_address_line1'], ['city', 'warehouse_city'], ['state', 'warehouse_state'], ['zip_code', 'warehouse_zip_code']];
+function syncWarehouse() { if ($('same').checked) PAIRS.forEach(([a, b]) => { $(b).value = $(a).value; }); PAIRS.forEach(([, b]) => { $(b).readOnly = $('same').checked; }); }
+$('same').addEventListener('change', syncWarehouse);
+PAIRS.forEach(([a]) => $(a).addEventListener('input', syncWarehouse));
+
+$('form').addEventListener('submit', async e => {
+  e.preventDefault();
+  $('msg').hidden = true;
+  const modes = [...document.querySelectorAll('#modes input:checked')].map(i => i.value);
+  if (!modes.length) return showMsg('Elegí al menos un tipo de servicio.', 'err');
+  const val = id => $(id).value.trim();
+  const body = {
+    company_name: val('company_name'), legal_name: val('legal_name'), tax_id: val('tax_id'), industry: val('industry') || null,
+    service_types: modes, estimated_monthly_stops: val('estimated_monthly_stops') ? parseInt(val('estimated_monthly_stops'), 10) : null,
+    contact_name: val('contact_name'), contact_email: val('contact_email'), contact_phone: val('contact_phone'),
+    address_line1: val('address_line1'), city: val('city'), state: val('state').toUpperCase(), zip_code: val('zip_code') || null,
+    warehouse_name: val('warehouse_name'), warehouse_address_line1: val('warehouse_address_line1'), warehouse_city: val('warehouse_city'),
+    warehouse_state: val('warehouse_state').toUpperCase(), warehouse_zip_code: val('warehouse_zip_code') || null,
+    warehouse_docks_count: parseInt(val('warehouse_docks_count') || '1', 10) || 1,
+    admin_full_name: val('admin_full_name'), admin_email: val('admin_email'), admin_password: $('admin_password').value,
+  };
+  $('submitBtn').disabled = true;
+  try {
+    const res = await fetch('/api/v1/warehouse/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) { showMsg(formatError(data), 'err'); return; }
+    $('form').hidden = true;
+    showMsg(data.message || 'Solicitud recibida. Te avisamos por correo cuando la revisemos.', 'ok');
+  } catch (err) {
+    showMsg('No pudimos conectar con el servidor. Probá de nuevo en unos minutos.', 'err');
+  } finally {
+    $('submitBtn').disabled = false;
+  }
+});
+</script>
+</body>
+</html>

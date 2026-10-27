@@ -1597,7 +1597,7 @@ class RouteBatch(Base):
     company_id    = Column(UUID(as_uuid=True), ForeignKey("companies.id"),      nullable=False)
     contract_id   = Column(UUID(as_uuid=True), ForeignKey("contracts.id"),      nullable=True)
     client_id     = Column(UUID(as_uuid=True), ForeignKey("batch_clients.id"),  nullable=True)
-    batch_number  = Column(String(50),  nullable=True, unique=True)  # ORL-LOT-0001
+    batch_number  = Column(String(50),  nullable=True)  # ORL-LOT-0001; único por compañía, no global
     client_code   = Column(String(100), nullable=True)
     vehicle_type  = Column(String(50),  nullable=True)  # tipo de vehículo del lote
     service_type  = Column(String(50),  nullable=True)  # tipo de servicio del lote
@@ -1620,6 +1620,7 @@ class RouteBatch(Base):
     items         = relationship("RouteBatchItem", back_populates="batch", cascade="all, delete-orphan")
 
     __table_args__ = (
+        UniqueConstraint("company_id", "batch_number", name="uq_route_batches_company_batch_number"),
         Index("ix_route_batches_company_id", "company_id"),
         Index("ix_route_batches_status",     "status"),
     )
@@ -2100,6 +2101,58 @@ class TransportApplication(Base):
         Index("ix_transport_applications_status", "status"),
         Index("ix_transport_applications_admin_email", "admin_email"),
     )
+
+class CompanyApplication(Base):
+    """
+    Solicitud de registro de un warehouse (compañía cliente). Queda pendiente hasta que
+    un admin de Muevo la aprueba: se crean su propio holding, la compañía, su primer
+    warehouse y su usuario administrador. Mismo esquema que TransportApplication.
+    """
+    __tablename__ = "company_applications"
+
+    id                       = uuid_pk()
+    status                   = Column(String(20), default="pending", nullable=False)   # pending | approved | rejected
+
+    # Empresa
+    company_name             = Column(String(255), nullable=False)
+    legal_name               = Column(String(255), nullable=False)
+    tax_id                   = Column(String(50),  nullable=False)     # EIN
+    industry                 = Column(String(100), nullable=True)
+    allowed_modes            = Column(ARRAY(String), nullable=False, default=list)
+    estimated_monthly_stops  = Column(Integer, nullable=True)
+    contact_name             = Column(String(255), nullable=False)
+    contact_email            = Column(String(255), nullable=False)
+    contact_phone            = Column(String(30),  nullable=False)
+    address_line1            = Column(String(255), nullable=False)
+    city                     = Column(String(100), nullable=False)
+    state                    = Column(String(50),  nullable=False)
+    zip_code                 = Column(String(20),  nullable=True)
+
+    # Primer warehouse (origen de las rutas)
+    warehouse_name           = Column(String(255), nullable=False)
+    warehouse_address_line1  = Column(String(255), nullable=False)
+    warehouse_city           = Column(String(100), nullable=False)
+    warehouse_state          = Column(String(50),  nullable=False)
+    warehouse_zip_code       = Column(String(20),  nullable=True)
+    warehouse_docks_count    = Column(Integer, default=1, nullable=False)
+
+    # Administrador que se crea al aprobar
+    admin_full_name          = Column(String(255), nullable=False)
+    admin_email              = Column(String(255), nullable=False)
+    admin_password_hash      = Column(String(255), nullable=False)
+
+    # Revisión
+    reviewed_by_id           = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    reviewed_at              = Column(DateTime(timezone=True), nullable=True)
+    rejection_reason         = Column(Text, nullable=True)
+    company_id               = Column(UUID(as_uuid=True), ForeignKey("companies.id"), nullable=True)
+    created_at               = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_company_applications_status", "status"),
+        Index("ix_company_applications_admin_email", "admin_email"),
+    )
+
 
 # ─── GEOGRAFÍA ──────────────────────────────────────────────────────────────
 # País > estado > ciudad, para armar rutas por zona. Las paradas y los
