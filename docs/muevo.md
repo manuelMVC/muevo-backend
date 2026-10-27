@@ -1,7 +1,7 @@
 # Muevo — Resumen del proyecto
 
 **Plataforma B2B2B de logística para el mercado hispano de EE.UU.**
-Documento vivo — última actualización: 20 de octubre de 2026
+Documento vivo — última actualización: 22 de octubre de 2026
 
 ---
 
@@ -17,7 +17,7 @@ C:\Claude\
 │   ├── transport.html      (portal empresa de transporte)
 │   ├── admin.html          (portal de administración de Muevo — versión mínima: compañías, perfiles, historial de perfiles, auditoría)
 │   ├── login.html          (login unificado)
-│   ├── alembic\versions\   (34 migraciones — 001 a 034)
+│   ├── alembic\versions\   (37 migraciones — 001 a 037)
 │   ├── seed_initial_data.py (bootstrap: holding→company→warehouse→usuario admin)
 │   ├── seed_security_extensions.py (módulos/permisos nuevos + asigna perfiles)
 │   ├── seed_test_profile_users.py (1 usuario de prueba por cada perfil de seguridad del warehouse)
@@ -283,7 +283,28 @@ Hasta ahora no había forma de que una empresa de transporte se registrara sola:
 - **Rechazar** exige un motivo, que se le envía al solicitante; puede volver a enviar una solicitud nueva
 - **Seguridad, de paso**: `POST /auth/register` aceptaba el `role` que mandara quien se registraba, así que cualquiera podía crearse como `muevo_admin` (un rol que ahora abre `admin.html`); ahora siempre crea un conductor. Además `audit_logs` guardaba el `hashed_password` de los usuarios en `changes`; ahora esas columnas (`hashed_password`, `admin_password_hash`) se registran como `[oculto]`. Quedan 4 filas anteriores en `audit_logs` con hashes, que no se tocaron porque la auditoría es un registro que no se edita: borrarlas o enmascararlas es una decisión pendiente
 - **Verificado**: contra la base real, 49 comprobaciones (validaciones, duplicados, permisos 403, aprobar y entrar al portal con el perfil, rechazar, auditoría sin hashes, límite de intentos) y el flujo completo en el navegador
-- **Pendiente**: registro de warehouses (compañías) y de conductores por invitación de su empresa, con el mismo esquema de solicitud y revisión; subir documentos (póliza, DOT) en vez de solo los números; y que Muevo verifique el DOT/MC contra la FMCSA en lugar de revisarlos a mano
+- **Pendiente**: registro de conductores por invitación de su empresa; subir documentos (póliza, DOT) en vez de solo los números; y que Muevo verifique el DOT/MC contra la FMCSA en lugar de revisarlos a mano
+
+### 4.14 Registro de warehouses (`company_applications`) — octubre 2026
+Mismo esquema que el registro de transportistas (ver [4.13](#413-registro-de-empresas-de-transporte-transport_applications--octubre-2026)): formulario público, solicitud pendiente y revisión de Muevo.
+- **Formulario público** `register-warehouse.html` (enlazado desde `login.html`) y `POST /api/v1/warehouse/register`. Pide razón social, EIN, rubro, servicios, volumen estimado, contacto, dirección de la empresa, el primer warehouse (con una casilla "misma dirección") y el administrador. Valida estados contra `states`, rechaza duplicados de correo o EIN y comparte el límite de 10 intentos por hora por IP con el registro de transporte
+- **Revisión** en `admin.html`, pestaña "Solicitudes de warehouse": `GET /admin/company-applications`, `POST .../{id}/approve` y `.../{id}/reject` (motivo obligatorio), todos con `require_platform_admin()`. Hay avisos a los admins de Muevo y correos al solicitante
+- **Aprobar crea, en una transacción**: un **holding propio** (`single_entity`) para la compañía, la `Company`, su primer `Warehouse` (código tomado del nombre, por ejemplo `CEN-01`, origen por defecto, con la ciudad resuelta contra `cities`), el `User` administrador, su `HoldingUser`, el acceso a la compañía (`HoldingUserCompany` con todas las banderas) y el perfil `company_admin` acotado a esa compañía
+- **Por qué un holding por compañía y no uno compartido**: un super admin ve todas las compañías de su holding, así que meter a un cliente nuevo en el holding de otro le daría acceso a datos ajenos. Tampoco se le da `is_super_admin`, porque eso permitiría editar recursos globales como las tarifas. Se verificó con una cuenta recién aprobada: no puede entrar a las compañías de LegalDocs (403), a `/admin` (403), crear perfiles (403) ni editar tarifas (403), y su dashboard está vacío
+- **Verificado**: contra la base real (validaciones, duplicados, permisos 403, aprobar y entrar al portal con la compañía seleccionada sola, aislamiento, rechazar, auditoría sin hashes) y el flujo completo en el navegador
+- **Límite conocido**: el administrador de una compañía nueva no puede invitar compañeros, porque `/holding/users` exige ser super admin del holding. Hoy el alta de más usuarios la hace Muevo
+
+### 4.15 Tipos de servicio por compañía — octubre 2026
+Una compañía puede trabajar con **un tipo de servicio o con varios**, y lo elige al registrarse y puede cambiarlo después. Antes el formulario de registro tenía su propia lista fija (mensajería, logística, traslado de empleados) que no coincidía con el catálogo real (`service_types`: logística, mensajería, paquetería y personas), y `companies.allowed_modes` se guardaba pero ningún endpoint lo consultaba.
+- **Fuente única: el catálogo `service_types`.** `companies.allowed_modes` ahora guarda códigos de ese catálogo. `GET /api/v1/service-types-public` (sin login ni precios) alimenta el formulario de registro, que muestra una casilla por servicio habilitado con su descripción. El registro recibe `service_types` (antes `allowed_modes`), exige al menos uno y rechaza códigos que no existan o estén deshabilitados
+- **Cambiarlos después:** pantalla "Mis servicios" en `warehouse.html` y `GET/PUT /api/v1/warehouse/company/service-types` (el PUT exige `companies.edit` sobre la compañía; mínimo un servicio). La edición de compañías en `/admin` valida igual
+- **Se aplica al armar lotes:** `plan_batch` y `confirm_batch` rechazan con 400 un servicio que la compañía no tiene habilitado. El selector de "Tipo de servicio" del paso 1 del planificador muestra solo los de la compañía y corrige el valor por defecto si no es uno de ellos. Una compañía con la lista vacía (cuentas anteriores a este cambio) no tiene restricción
+- **Datos existentes** (migración `036_company_service_types`): se normalizaron al vocabulario del catálogo ("empleados" pasó a "personas") y se les sumaron los servicios que ya usaban en sus lotes, para no bloquear nada. LegalDocs quedó con los cuatro
+- **Dos errores previos que aparecieron al probar con una compañía nueva, y se corrigieron:**
+  - `route_batches.batch_number` era único en toda la base pero la secuencia se genera por compañía, así que el primer lote de la segunda compañía chocaba con `ORL-LOT-0001` y fallaba con un 500. Ahora es único por compañía (migración `037_batch_number_per_company`); una compañía con lotes conserva su prefijo y una nueva toma las tres primeras letras de su nombre (`TES-LOT-0001`)
+  - `confirm_batch`, `create_batch`, `change_batch_status` y la edición de lotes en borrador solo reconocían al admin legacy (`CompanyAdmin`), así que un administrador de una compañía registrada por el nuevo flujo no podía crear ni aprobar lotes. Ahora resuelven la compañía activa (`get_current_company` + `X-Company-ID`) o el acceso por `HoldingUserCompany`, y `confirm_batch`/`create_batch` exigen el permiso `batches.create`. De paso `change_batch_status` dejó de aceptar a un super admin de otro holding
+- **Verificado**: contra la base real (catálogo público, registro con varios servicios y casos inválidos, plan y confirmación con servicios habilitados y no habilitados, cambio de servicios, admin de compañía nueva creando y aprobando un lote, 403 para viewer y para otra compañía) y la pantalla en el navegador
+- **Pendiente**: el vocabulario de las empresas de transporte (`transport_companies.service_modes` y el formulario de registro de transporte) sigue siendo mensajería / logística / empleados, distinto del catálogo; y los precios son globales por tipo de servicio, no por compañía
 
 ---
 
@@ -299,7 +320,7 @@ Hasta ahora no había forma de que una empresa de transporte se registrara sola:
 ## 6. Estado actual (octubre 2026)
 
 ### Completado
-- Backend: 34 migraciones Alembic aplicadas, 47 tablas
+- Backend: 37 migraciones Alembic aplicadas, 48 tablas
 - Portal warehouse: dashboard, lotes (con anulación con motivo y validación de precio al aprobar), rutas (con CRUD en borrador y paradas multi-ítem), clientes, incidencias, negociación de precios multi-transportista con sugerencia automática y aprobación de holding (con pantalla propia "Ofertas por ruta" para verlas todas juntas), tarifas de servicio administrables, escaneo de inventario, recepción de mercancía (inbound)
 - Portal transportista: marketplace de negociación de precios (antes no tenía ninguna UI de negociación) — incluye un widget en el Dashboard para pujar sin salir de ahí; Dashboard con cards + gráficos y matriz de rutas por estado, alineado con el del warehouse (ver [4.7](#47-negociación-de-precios-route_price_offers))
 - App móvil: pantallas base del portal warehouse
@@ -315,10 +336,14 @@ Hasta ahora no había forma de que una empresa de transporte se registrara sola:
 - **Geografía país > estado > ciudad** (octubre 2026, ver [4.1.2](#412-geografía-país--estado--ciudad-octubre-2026-migración-032_geography)): EE.UU., 50 estados y 29.537 ciudades; las rutas se pueden armar por ciudad, estado o país
 - **Historial de cambios de perfil** (octubre 2026, ver [4.12](#412-historial-de-cambios-de-perfil-profile_change_history--octubre-2026)): tabla de solo lectura con persona, fecha, cambio, valor anterior y valor actual para perfiles, permisos, asignaciones de perfil, usuarios del holding y accesos a compañías; consulta por API y pestaña en `admin.html`; de paso se cerró el hueco de los DELETE masivos que no quedaban en la auditoría
 - **Registro de empresas de transporte con revisión de Muevo** (octubre 2026, ver [4.13](#413-registro-de-empresas-de-transporte-transport_applications--octubre-2026)) y cierre de un hueco de seguridad en `/auth/register` (permitía registrarse como `muevo_admin`)
+- **Registro de warehouses con revisión de Muevo** (octubre 2026, ver [4.14](#414-registro-de-warehouses-company_applications--octubre-2026)): formulario público, solicitud pendiente y aprobación que crea la compañía en su propio holding, su primer warehouse y su administrador
+- **Tipos de servicio por compañía** (octubre 2026, ver [4.15](#415-tipos-de-servicio-por-compañía--octubre-2026)): cada compañía elige uno o varios servicios del catálogo al registrarse, los cambia en "Mis servicios" y el armado de lotes solo acepta los habilitados. Corrige además que la segunda compañía no podía crear su primer lote y que las compañías del registro nuevo no podían crear ni aprobar lotes
 - **Notificaciones in-app + email en ambos portales** (ver [4.11](#411-notificaciones-notifications--septiembre-2026)): todo el ciclo de negociación/despacho (marketplace se abre, ofertas, holding, aceptar/rechazar rutas) avisa a los usuarios correspondientes — campanita con polling, sin necesidad de refrescar la pantalla a mano
 
 ### Pendiente / próximos pasos
-- Registro de warehouses (compañías) y de conductores por invitación: falta, con el mismo esquema que el de transporte (ver [4.13](#413-registro-de-empresas-de-transporte-transport_applications--octubre-2026))
+- Las empresas de transporte usan otro vocabulario de servicios (mensajería, logística, empleados) que el catálogo `service_types`: unificarlo permitiría emparejar bien lotes y transportistas
+- Registro de conductores por invitación de su empresa: falta (el de transportistas es [4.13](#413-registro-de-empresas-de-transporte-transport_applications--octubre-2026) y el de warehouses [4.14](#414-registro-de-warehouses-company_applications--octubre-2026))
+- El administrador de una compañía registrada no puede invitar a su equipo: `/holding/users` exige ser super admin del holding. Falta un alta de usuarios a nivel compañía
 - `audit_logs` tiene 4 filas anteriores con hashes de contraseña en `changes`: decidir si se enmascaran (la auditoría es un registro inmutable, no se tocó)
 - Geografía: `warehouse.html` no expone todavía el agrupamiento por zona ni los selectores de país/estado/ciudad; `companies` y `transport_companies` siguen con ciudad y estado en texto libre
 - Portal admin: la sección "Tarifas" (dentro de `warehouse.html`) ya cubre el catálogo de tipos de servicio; falta gestión de tipos de vehículo y el resto de catálogos restantes
