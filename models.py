@@ -2154,6 +2154,32 @@ class CompanyApplication(Base):
     )
 
 
+class DriverInvitation(Base):
+    """
+    Invitación de una empresa de transporte a un conductor. El token viaja solo en el enlace
+    del correo; en la base se guarda su hash SHA-256. Es de un solo uso y vence en 7 días.
+    Al aceptarla se crean el usuario, el Driver (sin aprobar) y su licencia pendiente.
+    """
+    __tablename__ = "driver_invitations"
+
+    id                   = uuid_pk()
+    transport_company_id = Column(UUID(as_uuid=True), ForeignKey("transport_companies.id", ondelete="CASCADE"), nullable=False)
+    invited_by_id        = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    email                = Column(String(255), nullable=False)
+    full_name            = Column(String(255), nullable=True)
+    token_hash           = Column(String(64), nullable=False, unique=True)
+    status               = Column(String(20), default="pending", nullable=False)   # pending | accepted | revoked
+    expires_at           = Column(DateTime(timezone=True), nullable=False)
+    accepted_at          = Column(DateTime(timezone=True), nullable=True)
+    driver_id            = Column(UUID(as_uuid=True), ForeignKey("drivers.id", ondelete="SET NULL"), nullable=True)
+    created_at           = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_driver_invitations_company_status", "transport_company_id", "status"),
+        Index("ix_driver_invitations_email", "email"),
+    )
+
+
 # ─── GEOGRAFÍA ──────────────────────────────────────────────────────────────
 # País > estado > ciudad, para armar rutas por zona. Las paradas y los
 # warehouses apuntan a cities (city_id); los textos city/state se conservan.
@@ -2329,7 +2355,7 @@ _AUDIT_NOISY_COLUMNS = {
 _AUDIT_SKIP = (AuditLog, ProfileChangeHistory)
 
 # Columnas cuyo valor no debe quedar en audit_logs (se registra que cambiaron, no el valor).
-_AUDIT_REDACT = {"hashed_password", "admin_password_hash"}
+_AUDIT_REDACT = {"hashed_password", "admin_password_hash", "token_hash"}
 
 
 def _audit_serialize(value):

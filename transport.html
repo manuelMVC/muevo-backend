@@ -600,6 +600,10 @@
     <button class="nav-item" onclick="showView('flota')">
       <span class="nav-icon">🚐</span> Mi flota
     </button>
+    <button class="nav-item" onclick="showView('conductores')">
+      <span class="nav-icon">🧑‍✈️</span> Conductores
+      <span class="nav-badge" id="navDriversBadge" style="display:none">0</span>
+    </button>
     <button class="nav-item" onclick="showView('tracking')">
       <span class="nav-icon">📍</span> Tracking flota
     </button>
@@ -936,14 +940,15 @@ let dashRouteFilter = 'todos';
 function showView(view) {
   currentView = view;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  const idx = ['dashboard','rutas','negociacion','flota','tracking','facturacion'].indexOf(view);
+  const idx = ['dashboard','rutas','negociacion','flota','conductores','tracking','facturacion'].indexOf(view);
   document.querySelectorAll('.nav-item')[idx]?.classList.add('active');
 
   const titles = {
     dashboard:   ['Dashboard', 'Resumen de operaciones · Hoy, 15 jun 2026'],
     rutas:       ['Rutas', 'Ofrecidas, en curso, y completadas'],
     negociacion: ['Negociación', 'Marketplace de rutas abiertas a pujas'],
-    flota:       ['Mi flota', 'Vehículos y conductores de tu empresa'],
+    flota:       ['Mi flota', 'Vehículos de tu empresa'],
+    conductores: ['Conductores', 'Invitá, aprobá y administrá a los conductores de tu empresa'],
     tracking:    ['Tracking de flota', 'Posición en vivo de todos tus vehículos'],
     facturacion: ['Facturación', 'Pagos recibidos por rutas completadas'],
   };
@@ -956,11 +961,13 @@ function showView(view) {
     rutas:       renderRutas,
     negociacion: renderNegociacion,
     flota:       renderFlota,
+    conductores: renderConductores,
     tracking:    renderTracking,
     facturacion: renderFacturacion,
   };
   document.getElementById('content').innerHTML = (renders[view] || (() => ''))();
   updateOfferedBadge();
+  if (view === 'conductores') setTimeout(loadConductores, 0);
 
   if (view === 'tracking') {
     setTimeout(initLiveTracking, 0); // esperar a que el DOM tenga #liveMap
@@ -2040,15 +2047,15 @@ async function renderNotificationList() {
       <div onclick="openNotification('${n.id}','${n.entity_type||''}','${n.entity_id||''}')"
         style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;${n.is_read?'opacity:.55':''}">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
-          <span style="font-size:12.5px;font-weight:600;color:var(--white)">${n.title}</span>
+          <span style="font-size:12.5px;font-weight:600;color:var(--white)">${escHtml(n.title)}</span>
           ${!n.is_read ? '<span style="width:7px;height:7px;border-radius:50%;background:var(--orange);flex-shrink:0;margin-top:4px"></span>' : ''}
         </div>
-        ${n.body ? `<div style="font-size:11.5px;color:var(--muted);margin-top:2px">${n.body}</div>` : ''}
+        ${n.body ? `<div style="font-size:11.5px;color:var(--muted);margin-top:2px">${escHtml(n.body)}</div>` : ''}
         <div style="font-size:10px;color:var(--muted);margin-top:4px">${timeAgo(n.created_at)}</div>
       </div>
     `).join('');
   } catch (e) {
-    list.innerHTML = `<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px">Error: ${e.message}</div>`;
+    list.innerHTML = `<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px">Error: ${escHtml(e.message)}</div>`;
   }
 }
 
@@ -2063,6 +2070,8 @@ async function openNotification(id, entityType, entityId) {
     showView('negociacion');
   } else if (entityType === 'route_batch') {
     showView('rutas');
+  } else if (entityType === 'driver') {
+    showView('conductores');
   }
 }
 
@@ -2416,12 +2425,134 @@ async function rejectRoute(routeId) {
   document.getElementById('content').innerHTML = (currentView === 'rutas' ? renderRutas : renderDashboard)();
 }
 
+// ── Conductores: invitar, aprobar y administrar ─────────────────────────────
+function escHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// Los errores del backend llegan como "API error 409: {"detail":"..."}": se muestra solo el detalle
+function apiErrorText(e) {
+  const m = String(e && e.message || e).match(/\{.*\}/s);
+  if (m) { try { const d = JSON.parse(m[0]).detail; if (typeof d === 'string') return d; } catch (_) {} }
+  return String(e && e.message || e);
+}
+
+function renderConductores() {
+  return `
+    <div class="card" style="margin-bottom:16px;max-width:760px">
+      <div class="card-title" style="margin-bottom:4px">Invitar a un conductor</div>
+      <div class="card-sub" style="margin-bottom:12px">Le enviamos un enlace por correo (vence en 7 días). Cuando complete sus datos queda pendiente de tu aprobación.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);flex:1;min-width:200px">Correo
+          <input id="drvInvEmail" type="email" placeholder="conductor@correo.com" style="padding:8px 10px;background:transparent;color:var(--white);border:1px solid var(--border);border-radius:8px">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);flex:1;min-width:160px">Nombre (opcional)
+          <input id="drvInvName" placeholder="Nombre" style="padding:8px 10px;background:transparent;color:var(--white);border:1px solid var(--border);border-radius:8px">
+        </label>
+        <button class="btn btn-primary" id="drvInvBtn" onclick="inviteDriver()">Enviar invitación</button>
+      </div>
+      <div id="drvInvResult" style="margin-top:12px;font-size:12px"></div>
+    </div>
+    <div class="section-hdr"><div class="section-title">Conductores</div></div>
+    <div class="table-wrap" style="margin-bottom:20px" id="drvTable">Cargando…</div>
+    <div class="section-hdr"><div class="section-title">Invitaciones</div></div>
+    <div class="table-wrap" id="drvInvTable">Cargando…</div>`;
+}
+
+async function loadConductores() {
+  const dt = document.getElementById('drvTable'), it = document.getElementById('drvInvTable');
+  if (!dt) return;
+  if (!useRealData) {
+    dt.innerHTML = it.innerHTML = '<div style="padding:20px;color:var(--muted)">Conectate al backend real para administrar conductores.</div>';
+    return;
+  }
+  try {
+    const [drivers, invs] = await Promise.all([apiGet('/transport/drivers'), apiGet('/transport/driver-invitations')]);
+    REAL_DRIVERS = drivers;
+    const pending = drivers.filter(d => !d.is_approved).length;
+    const badge = document.getElementById('navDriversBadge');
+    if (badge) { badge.textContent = pending; badge.style.display = pending ? '' : 'none'; }
+    dt.innerHTML = drivers.length ? `
+      <table><thead><tr><th>Conductor</th><th>Contacto</th><th>Licencia vence</th><th>Rating</th><th>Estado</th><th></th></tr></thead><tbody>
+      ${drivers.map(d => `
+        <tr>
+          <td style="font-weight:500">${escHtml(d.name)}</td>
+          <td><div style="font-size:12px">${escHtml(d.email)}</div><div style="font-size:11px;color:var(--muted)">${escHtml(d.phone || '')}</div></td>
+          <td style="font-size:12px">${escHtml(d.license_expires || '—')}</td>
+          <td>${d.rating ? '★ ' + d.rating.toFixed(1) : '—'}</td>
+          <td>${d.is_approved
+              ? (d.on_route ? '<span class="badge badge-orange">En ruta</span>' : '<span class="badge badge-green">Aprobado</span>')
+              : '<span class="badge badge-yellow">Pendiente de aprobación</span>'}</td>
+          <td style="text-align:right;white-space:nowrap">${d.is_approved
+              ? `<button class="btn btn-ghost" style="font-size:11px;padding:4px 10px;color:var(--red,#D85A30)" onclick="suspendDriver('${d.id}')">Suspender</button>`
+              : `<button class="btn btn-primary" style="font-size:11px;padding:4px 10px" onclick="approveDriver('${d.id}')">✓ Aprobar</button>`}</td>
+        </tr>`).join('')}
+      </tbody></table>` : '<div style="padding:20px;color:var(--muted)">Todavía no tenés conductores. Invitá al primero con el formulario de arriba.</div>';
+    const label = { pending: ['badge-yellow', 'Pendiente'], accepted: ['badge-green', 'Aceptada'], expired: ['badge-muted', 'Vencida'], revoked: ['badge-muted', 'Revocada'] };
+    it.innerHTML = invs.length ? `
+      <table><thead><tr><th>Correo</th><th>Estado</th><th>Vence</th><th></th></tr></thead><tbody>
+      ${invs.map(i => { const [cls, txt] = label[i.status] || ['badge-muted', i.status]; return `
+        <tr>
+          <td><div style="font-size:12px">${escHtml(i.email)}</div><div style="font-size:11px;color:var(--muted)">${escHtml(i.full_name || '')}</div></td>
+          <td><span class="badge ${cls}">${txt}</span></td>
+          <td style="font-size:12px">${escHtml((i.expires_at || '').slice(0, 10))}</td>
+          <td style="text-align:right">${i.status === 'pending' ? `<button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="revokeInvitation('${i.id}')">Revocar</button>` : ''}</td>
+        </tr>`; }).join('')}
+      </tbody></table>` : '<div style="padding:20px;color:var(--muted)">No hay invitaciones.</div>';
+  } catch (e) {
+    dt.innerHTML = it.innerHTML = `<div style="padding:20px;color:var(--red)">No pudimos cargar los conductores: ${escHtml(apiErrorText(e))}</div>`;
+  }
+}
+
+async function inviteDriver() {
+  const email = document.getElementById('drvInvEmail').value.trim();
+  const name = document.getElementById('drvInvName').value.trim();
+  const out = document.getElementById('drvInvResult');
+  if (!email) { out.innerHTML = '<span style="color:var(--red)">Escribí el correo del conductor.</span>'; return; }
+  const btn = document.getElementById('drvInvBtn'); btn.disabled = true;
+  try {
+    const r = await apiPost('/transport/driver-invitations', { email, full_name: name || null });
+    document.getElementById('drvInvEmail').value = ''; document.getElementById('drvInvName').value = '';
+    out.innerHTML = `
+      <div style="color:var(--green);margin-bottom:6px">Invitación enviada a ${escHtml(r.email)}. Si no le llega, compartile este enlace:</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <input id="drvInvLink" readonly value="${escHtml(r.invite_url)}" style="flex:1;min-width:240px;padding:7px 9px;background:transparent;color:var(--white);border:1px solid var(--border);border-radius:8px;font-size:11px">
+        <button class="btn btn-ghost" style="font-size:11px;padding:6px 12px" onclick="copyInviteLink()">Copiar</button>
+      </div>`;
+    loadConductores();
+  } catch (e) {
+    out.innerHTML = `<span style="color:var(--red)">${escHtml(apiErrorText(e))}</span>`;
+  } finally { btn.disabled = false; }
+}
+
+function copyInviteLink() {
+  const input = document.getElementById('drvInvLink');
+  input.select();
+  (navigator.clipboard ? navigator.clipboard.writeText(input.value) : Promise.reject()).then(
+    () => showToast('Enlace copiado', 'success'), () => { document.execCommand && document.execCommand('copy'); showToast('Enlace seleccionado: copialo con Ctrl+C', 'info'); });
+}
+
+async function approveDriver(id) {
+  try { await apiPost(`/transport/drivers/${id}/approve`, {}); showToast('Conductor aprobado', 'success'); loadConductores(); }
+  catch (e) { showToast(apiErrorText(e), 'warn'); }
+}
+
+async function suspendDriver(id) {
+  try { await apiPost(`/transport/drivers/${id}/suspend`, {}); showToast('Conductor suspendido', 'success'); loadConductores(); }
+  catch (e) { showToast(apiErrorText(e), 'warn'); }
+}
+
+async function revokeInvitation(id) {
+  try { await apiPost(`/transport/driver-invitations/${id}/revoke`, {}); showToast('Invitación revocada', 'success'); loadConductores(); }
+  catch (e) { showToast(apiErrorText(e), 'warn'); }
+}
+
 function openAcceptModal(routeId) {
   const r = getActiveRoutes().find(x => x.id === routeId);
   if (!r) return;
   const fleet = useRealData && REAL_FLEET ? REAL_FLEET : FLEET;
   const available = fleet.filter(v => v.is_active !== false && !v.active_route_id);
-  const drivers = useRealData && REAL_DRIVERS ? REAL_DRIVERS : [];
+  const drivers = (useRealData && REAL_DRIVERS ? REAL_DRIVERS : []).filter(d => d.is_approved);
 
   document.getElementById('stopModalTitle').textContent = `Aceptar ${r.num}`;
   document.getElementById('stopModalSub').textContent = r.title;

@@ -4013,6 +4013,10 @@ document.addEventListener('click', (e) => {
   if (!panel.contains(e.target) && !btn.contains(e.target)) panel.style.display = 'none';
 });
 
+function escHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
 async function renderNotificationList() {
   const list = document.getElementById('notifList');
   if (!list) return;
@@ -4031,15 +4035,15 @@ async function renderNotificationList() {
       <div onclick="openNotification('${n.id}','${n.entity_type||''}','${n.entity_id||''}')"
         style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;${n.is_read?'opacity:.55':''}">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
-          <span style="font-size:12.5px;font-weight:600;color:var(--white)">${n.title}</span>
+          <span style="font-size:12.5px;font-weight:600;color:var(--white)">${escHtml(n.title)}</span>
           ${!n.is_read ? '<span style="width:7px;height:7px;border-radius:50%;background:var(--orange);flex-shrink:0;margin-top:4px"></span>' : ''}
         </div>
-        ${n.body ? `<div style="font-size:11.5px;color:var(--muted);margin-top:2px">${n.body}</div>` : ''}
+        ${n.body ? `<div style="font-size:11.5px;color:var(--muted);margin-top:2px">${escHtml(n.body)}</div>` : ''}
         <div style="font-size:10px;color:var(--muted);margin-top:4px">${timeAgo(n.created_at)}</div>
       </div>
     `).join('');
   } catch (e) {
-    list.innerHTML = `<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px">Error: ${e.message}</div>`;
+    list.innerHTML = `<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px">Error: ${escHtml(e.message)}</div>`;
   }
 }
 

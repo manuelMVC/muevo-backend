@@ -9,7 +9,6 @@ Levantar con:
 Endpoints:
   GET  /health
   POST /api/v1/auth/token
-  POST /api/v1/auth/register
   POST /api/v1/rides/estimate
   POST /api/v1/rides/request
   GET  /api/v1/rides/{id}/status
@@ -47,10 +46,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from dispatcher import Stop as DispatchStop, plan_stops, planned_route_to_dict, ROUTE_COLORS
 from models import (
     Base, User, Driver, Vehicle, Route, Stop, Delivery,
-    Earning, DriverMetric, Company,
+    Earning, DriverMetric, Company, Certification, CertStatus,
     UserRole, RouteStatus, StopStatus, PodType, VehicleType,
     # Modelo multi-holding / multi-warehouse (vigente para /api/v1/routes)
-    Holding, Warehouse, TransportCompany, Country, State, City, TransportApplication, CompanyApplication,
+    Holding, Warehouse, TransportCompany, Country, State, City, TransportApplication, CompanyApplication, DriverInvitation,
     RouteHeader, RouteDetail, ShipmentItem, CompanyAdmin, TransportCompanyAdmin,
     # Batches e incidencias
     RouteBatch, RouteBatchItem, IncidentType, Incident,
@@ -235,13 +234,6 @@ async def audit_user_context_middleware(request: Request, call_next):
 
 
 # ─── Schemas Pydantic ─────────────────────────────────────────────────────────
-
-class RegisterRequest(BaseModel):
-    full_name: str
-    email:     str
-    password:  str
-    phone:     Optional[str] = None
-    role:      str = "driver"
 
 class EstimateRequest(BaseModel):
     service_type:      str
@@ -457,57 +449,6 @@ async def login(
         **resolve_user_portal(user, db),
     }
 
-
-@app.post("/api/v1/auth/register", status_code=201)
-async def register(
-    data: RegisterRequest,
-    db:   Session = Depends(get_db),
-):
-    existing = db.execute(
-        select(User).where(User.email == data.email)
-    ).scalar_one_or_none()
-
-    if existing:
-        raise HTTPException(status_code=400, detail="El email ya está registrado")
-
-    initials = "".join(w[0].upper() for w in data.full_name.split()[:2])
-    # El registro es público: nunca se acepta un rol elegido por quien se registra
-    # (antes cualquiera podía registrarse como muevo_admin). Solo se crean conductores.
-    role     = UserRole.DRIVER
-
-    user = User(
-        id              = uuid.uuid4(),
-        email           = data.email,
-        full_name       = data.full_name,
-        phone           = data.phone,
-        avatar_initials = initials,
-        role            = role,
-        hashed_password = hash_password(data.password),
-        is_active       = True,
-        is_verified     = False,
-    )
-    db.add(user)
-
-    # Si es conductor, crear perfil de driver automáticamente
-    if role == UserRole.DRIVER:
-        driver = Driver(
-            id           = uuid.uuid4(),
-            user_id      = user.id,
-            is_online    = False,
-            is_approved  = False,
-            service_modes= ["mensajeria"],
-        )
-        db.add(driver)
-
-    db.commit()
-    db.refresh(user)
-
-    token = create_token(str(user.id), user.email)
-    return {
-        "access_token": token,
-        "token_type":   "bearer",
-        "user":         format_user(user),
-    }
 
 # ─── Rides — estimador ────────────────────────────────────────────────────────
 
@@ -851,6 +792,8 @@ async def list_routes(
     if not driver:
         raise HTTPException(status_code=404, detail="Perfil de conductor no encontrado")
 
+    if not driver.is_approved:
+        return []      # pendiente de aprobación: no ve rutas ni sus precios
     transport_company_id = driver.transport_company_id
 
     query = select(RouteHeader)
@@ -895,6 +838,8 @@ async def accept_route(
     driver = db.execute(
         select(Driver).where(Driver.user_id == current_user.id)
     ).scalar_one_or_none()
+    if not driver or not driver.is_approved:
+        raise HTTPException(status_code=403, detail="Tu cuenta todavía no fue aprobada por tu empresa")
     header.driver_id            = driver.id
     header.transport_company_id = driver.transport_company_id or header.transport_company_id
     # Solo pasar a ASSIGNED si efectivamente hay una empresa de transporte asociada
@@ -1340,6 +1285,12 @@ async def send_email(to_email: str, subject: str, body_html: str):
         print(f"[EMAIL ERROR] {to_email}: {e}")
 
 
+def _h(value) -> str:
+    """Escapa texto que escribió un tercero (nombres, motivos) antes de ponerlo en un correo HTML."""
+    import html as _html
+    return _html.escape(str(value if value is not None else ""))
+
+
 def email_html(title: str, body_lines: list[str], cta_label: str = None, cta_url: str = None) -> str:
     """Genera el HTML del email con la paleta visual de Muevo."""
     cta_block = ""
@@ -1428,7 +1379,7 @@ async def create_notification(
     user = db.get(User, user_id)
     if user and user.email:
         try:
-            await send_email(user.email, title, email_html(title, [body] if body else []))
+            await send_email(user.email, title, email_html(_h(title), [_h(body)] if body else []))
         except Exception as e:
             print(f"[NOTIFY EMAIL ERROR] {user.email}: {e}")
 
@@ -6799,15 +6750,16 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]{2,}$")
 _VALID_SERVICE_MODES = {"mensajeria", "logistica", "empleados"}
 
 
-def _enforce_register_rate_limit(request: Request) -> None:
-    """Límite simple por IP para los formularios públicos de registro (en memoria)."""
+def _enforce_register_rate_limit(request: Request, bucket: str = "register", limit: Optional[int] = None) -> None:
+    """Límite simple por IP para los formularios públicos (en memoria). Cada bucket cuenta aparte."""
     import time
     ip = request.client.host if request.client else "?"
+    key = ip if bucket == "register" else f"{bucket}:{ip}"
     now_ts = time.time()
-    recent = [t for t in _REGISTER_ATTEMPTS.get(ip, []) if now_ts - t < _REGISTER_WINDOW]
-    if len(recent) >= _REGISTER_LIMIT:
+    recent = [t for t in _REGISTER_ATTEMPTS.get(key, []) if now_ts - t < _REGISTER_WINDOW]
+    if len(recent) >= (limit or _REGISTER_LIMIT):
         raise HTTPException(status_code=429, detail="Demasiadas solicitudes desde este equipo. Probá de nuevo en una hora.")
-    _REGISTER_ATTEMPTS[ip] = recent + [now_ts]
+    _REGISTER_ATTEMPTS[key] = recent + [now_ts]
 
 
 class TransportRegisterRequest(BaseModel):
@@ -6929,7 +6881,7 @@ async def register_transport_company(
     await send_email(
         email, "Recibimos tu solicitud de registro en Muevo",
         email_html("Recibimos tu solicitud", [
-            f"Hola {application.admin_full_name}, recibimos la solicitud de {application.company_name}.",
+            f"Hola {_h(application.admin_full_name)}, recibimos la solicitud de {_h(application.company_name)}.",
             "Vamos a verificar tu DOT/MC y tu seguro. Te avisamos por este correo cuando esté aprobada.",
         ]),
     )
@@ -7005,8 +6957,8 @@ async def approve_transport_application(
     await send_email(
         a.admin_email, "Tu empresa fue aprobada en Muevo",
         email_html("¡Tu empresa fue aprobada!", [
-            f"{a.company_name} ya está verificada en Muevo.",
-            f"Ingresá con {a.admin_email} y la contraseña que elegiste al registrarte, en /login.html.",
+            f"{_h(a.company_name)} ya está verificada en Muevo.",
+            f"Ingresá con {_h(a.admin_email)} y la contraseña que elegiste al registrarte, en /login.html.",
         ]),
     )
     return {"status": "approved", "transport_company_id": str(tc.id), "user_id": str(user.id)}
@@ -7031,8 +6983,8 @@ async def reject_transport_application(
     await send_email(
         a.admin_email, "Sobre tu solicitud de registro en Muevo",
         email_html("No pudimos aprobar tu solicitud", [
-            f"Revisamos la solicitud de {a.company_name} y por ahora no la podemos aprobar.",
-            f"Motivo: {a.rejection_reason}",
+            f"Revisamos la solicitud de {_h(a.company_name)} y por ahora no la podemos aprobar.",
+            f"Motivo: {_h(a.rejection_reason)}",
             "Si corregís lo indicado, podés enviar una solicitud nueva.",
         ]),
     )
@@ -7152,7 +7104,7 @@ async def register_warehouse_company(
     await send_email(
         email, "Recibimos tu solicitud de registro en Muevo",
         email_html("Recibimos tu solicitud", [
-            f"Hola {application.admin_full_name}, recibimos la solicitud de {application.company_name}.",
+            f"Hola {_h(application.admin_full_name)}, recibimos la solicitud de {_h(application.company_name)}.",
             "Vamos a revisar los datos de tu empresa. Te avisamos por este correo cuando esté aprobada.",
         ]),
     )
@@ -7252,8 +7204,8 @@ async def approve_company_application(
     await send_email(
         a.admin_email, "Tu empresa fue aprobada en Muevo",
         email_html("¡Tu empresa fue aprobada!", [
-            f"{a.company_name} ya tiene cuenta en Muevo.",
-            f"Ingresá con {a.admin_email} y la contraseña que elegiste al registrarte, en /login.html.",
+            f"{_h(a.company_name)} ya tiene cuenta en Muevo.",
+            f"Ingresá con {_h(a.admin_email)} y la contraseña que elegiste al registrarte, en /login.html.",
         ]),
     )
     return {"status": "approved", "company_id": str(company.id), "holding_id": str(holding.id), "user_id": str(user.id)}
@@ -7278,8 +7230,8 @@ async def reject_company_application(
     await send_email(
         a.admin_email, "Sobre tu solicitud de registro en Muevo",
         email_html("No pudimos aprobar tu solicitud", [
-            f"Revisamos la solicitud de {a.company_name} y por ahora no la podemos aprobar.",
-            f"Motivo: {a.rejection_reason}",
+            f"Revisamos la solicitud de {_h(a.company_name)} y por ahora no la podemos aprobar.",
+            f"Motivo: {_h(a.rejection_reason)}",
             "Si corregís lo indicado, podés enviar una solicitud nueva.",
         ]),
     )
@@ -7384,6 +7336,8 @@ async def transport_accept_route(
         driver = db.get(Driver, uuid.UUID(driver_id))
         if not driver or driver.transport_company_id != tc.id:
             raise HTTPException(status_code=400, detail="El conductor no pertenece a tu empresa")
+        if not driver.is_approved:
+            raise HTTPException(status_code=400, detail="El conductor todavía no está aprobado")
         header.driver_id = driver.id
 
     db.commit()
@@ -7526,11 +7480,269 @@ async def transport_list_drivers(
             .where(RouteHeader.driver_id == d.id)
             .where(RouteHeader.status == RouteStatus.IN_PROGRESS)
         ).first() is not None
+        lic = db.execute(select(Certification).where(
+            Certification.driver_id == d.id, Certification.cert_type == "driver_license")
+            .order_by(Certification.created_at.desc())).scalars().first()
         result.append({
             "id": str(d.id), "name": user.full_name if user else None,
+            "email": user.email if user else None, "phone": user.phone if user else None,
             "rating": float(d.avg_rating or 0), "is_online": d.is_online, "on_route": busy,
+            "is_approved": bool(d.is_approved),
+            "license_expires": lic.expires_at.date().isoformat() if lic and lic.expires_at else None,
+            "joined_at": d.created_at.isoformat() if getattr(d, "created_at", None) else None,
         })
     return result
+
+
+# ─── Invitaciones y registro de conductores ──────────────────────────────────
+# La empresa de transporte invita por correo; el conductor completa sus datos con el enlace
+# y queda pendiente hasta que la empresa lo aprueba.
+
+DRIVER_INVITATION_DAYS = 7
+DRIVER_INVITATION_MAX_PENDING = 50
+
+
+class DriverInviteRequest(BaseModel):
+    email:     str = Field(max_length=255)
+    full_name: Optional[str] = Field(None, max_length=255)
+
+
+class DriverAcceptRequest(BaseModel):
+    full_name:       str = Field(min_length=2, max_length=255)
+    phone:           str = Field(min_length=7, max_length=30)
+    password:        str = Field(min_length=8, max_length=72)
+    license_state:   str = Field(min_length=2, max_length=50)
+    license_expires: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")   # YYYY-MM-DD
+
+
+def _hash_invite_token(token: str) -> str:
+    import hashlib
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def _invitation_state(inv: "DriverInvitation") -> str:
+    if inv.status == "pending" and inv.expires_at and inv.expires_at <= datetime.now(inv.expires_at.tzinfo):
+        return "expired"
+    return inv.status
+
+
+def _serialize_invitation(inv: "DriverInvitation") -> dict:
+    return {
+        "id": str(inv.id), "email": inv.email, "full_name": inv.full_name, "status": _invitation_state(inv),
+        "expires_at": inv.expires_at.isoformat() if inv.expires_at else None,
+        "accepted_at": inv.accepted_at.isoformat() if inv.accepted_at else None,
+        "created_at": inv.created_at.isoformat() if inv.created_at else None,
+    }
+
+
+def _find_invitation(db: Session, token: str) -> "DriverInvitation":
+    """Invitación por token. 404 si no existe; 410 con motivo si ya se usó, se revocó o venció."""
+    inv = db.execute(select(DriverInvitation).where(DriverInvitation.token_hash == _hash_invite_token(token))).scalar_one_or_none()
+    if not inv:
+        raise HTTPException(status_code=404, detail="La invitación no es válida. Pedile a tu empresa que te envíe una nueva.")
+    state = _invitation_state(inv)
+    if state == "accepted":
+        raise HTTPException(status_code=410, detail="Esta invitación ya se usó. Si ya te registraste, iniciá sesión.")
+    if state == "revoked":
+        raise HTTPException(status_code=410, detail="Tu empresa canceló esta invitación. Pedile una nueva.")
+    if state == "expired":
+        raise HTTPException(status_code=410, detail="La invitación venció. Pedile a tu empresa que te envíe una nueva.")
+    return inv
+
+
+@app.get("/register-driver.html", include_in_schema=False)
+async def serve_register_driver():
+    return FileResponse("register-driver.html", media_type="text/html")
+
+
+@app.post("/api/v1/transport/driver-invitations", status_code=201)
+async def create_driver_invitation(
+    data:         DriverInviteRequest,
+    request:      Request,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """La empresa de transporte invita a un conductor. Devuelve el enlace (también va por correo)."""
+    import secrets
+    tc = get_current_transport_company(current_user, db)
+    require_transport_permission(current_user, db, "fleet", "create")
+
+    email = data.email.strip().lower()
+    if not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=422, detail="El formato del correo no es válido")
+    if db.execute(select(User.id).where(func.lower(User.email) == email)).first():
+        raise HTTPException(status_code=409, detail="Ese correo ya tiene una cuenta en Muevo. Usá otro correo para la invitación.")
+
+    now = datetime.utcnow()
+    pending = db.execute(select(DriverInvitation).where(
+        DriverInvitation.transport_company_id == tc.id, DriverInvitation.status == "pending")).scalars().all()
+    live = [i for i in pending if _invitation_state(i) == "pending"]
+    if len(live) >= DRIVER_INVITATION_MAX_PENDING and not any(i.email == email for i in live):
+        raise HTTPException(status_code=400, detail=f"Tenés {len(live)} invitaciones pendientes. Revocá algunas antes de enviar más.")
+    for i in live:                       # reenviar a un correo reemplaza la invitación anterior
+        if i.email == email:
+            i.status = "revoked"
+
+    token = secrets.token_urlsafe(32)
+    inv = DriverInvitation(
+        id=uuid.uuid4(), transport_company_id=tc.id, invited_by_id=current_user.id, email=email,
+        full_name=(data.full_name or "").strip() or None, token_hash=_hash_invite_token(token), status="pending",
+        expires_at=datetime.utcnow() + timedelta(days=DRIVER_INVITATION_DAYS),
+    )
+    db.add(inv)
+    db.commit()
+
+    base = os.getenv("PUBLIC_BASE_URL") or str(request.base_url).rstrip("/")
+    link = f"{base.rstrip('/')}/register-driver.html?token={token}"
+    greeting = f"Hola {_h(inv.full_name)}," if inv.full_name else "Hola,"
+    await send_email(
+        email, f"{tc.name} te invitó a Muevo",
+        email_html("Te invitaron a Muevo", [
+            f"{greeting} {_h(tc.name)} te invitó a trabajar como conductor en Muevo.",
+            f"Completá tus datos desde el botón. La invitación vence en {DRIVER_INVITATION_DAYS} días.",
+        ], cta_label="Completar mi registro", cta_url=link),
+    )
+    return {**_serialize_invitation(inv), "invite_url": link}
+
+
+@app.get("/api/v1/transport/driver-invitations")
+async def list_driver_invitations(
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    tc = get_current_transport_company(current_user, db)
+    require_transport_permission(current_user, db, "fleet", "view")
+    rows = db.execute(select(DriverInvitation).where(DriverInvitation.transport_company_id == tc.id)
+                      .order_by(DriverInvitation.created_at.desc()).limit(200)).scalars().all()
+    return [_serialize_invitation(i) for i in rows]
+
+
+@app.post("/api/v1/transport/driver-invitations/{invitation_id}/revoke")
+async def revoke_driver_invitation(
+    invitation_id: str,
+    current_user:  User    = Depends(get_current_user),
+    db:            Session = Depends(get_db),
+):
+    tc = get_current_transport_company(current_user, db)
+    require_transport_permission(current_user, db, "fleet", "edit")
+    inv = db.get(DriverInvitation, uuid.UUID(invitation_id))
+    if not inv or inv.transport_company_id != tc.id:
+        raise HTTPException(status_code=404, detail="Invitación no encontrada")
+    if inv.status != "pending":
+        raise HTTPException(status_code=400, detail="Solo se pueden revocar invitaciones pendientes")
+    inv.status = "revoked"
+    db.commit()
+    return {"status": "revoked"}
+
+
+@app.get("/api/v1/driver-invitations/{token}")
+async def get_driver_invitation(token: str, request: Request, db: Session = Depends(get_db)):
+    """Público: datos mínimos de la invitación para mostrar el formulario de registro."""
+    _enforce_register_rate_limit(request, bucket="invite", limit=60)
+    inv = _find_invitation(db, token)
+    tc = db.get(TransportCompany, inv.transport_company_id)
+    return {"company_name": tc.name if tc else "", "email": inv.email, "full_name": inv.full_name,
+            "expires_at": inv.expires_at.isoformat()}
+
+
+@app.post("/api/v1/driver-invitations/{token}/accept", status_code=201)
+async def accept_driver_invitation(
+    token:   str,
+    data:    DriverAcceptRequest,
+    request: Request,
+    db:      Session = Depends(get_db),
+):
+    """Público: el conductor completa su registro. Queda pendiente de aprobación de su empresa."""
+    _enforce_register_rate_limit(request, bucket="invite", limit=60)
+    inv = _find_invitation(db, token)
+    tc = db.get(TransportCompany, inv.transport_company_id)
+    if not tc or not tc.is_active:
+        raise HTTPException(status_code=410, detail="La empresa que te invitó ya no está activa.")
+    try:
+        expires = datetime.strptime(data.license_expires, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=422, detail="Fecha de vencimiento de la licencia no válida")
+    if expires.date() <= datetime.utcnow().date():
+        raise HTTPException(status_code=422, detail="Tu licencia está vencida o vence hoy")
+    st = find_state(db, data.license_state)
+    if not st:
+        raise HTTPException(status_code=422, detail="Estado de la licencia no reconocido: usá el código de dos letras (ej. FL)")
+    if db.execute(select(User.id).where(func.lower(User.email) == inv.email.lower())).first():
+        raise HTTPException(status_code=409, detail="Ese correo ya tiene una cuenta en Muevo. Si es tuya, iniciá sesión.")
+
+    full_name = data.full_name.strip()
+    user = User(
+        id=uuid.uuid4(), email=inv.email, full_name=full_name, phone=data.phone.strip(),
+        avatar_initials="".join(w[0].upper() for w in full_name.split()[:2]),
+        role=UserRole.DRIVER, hashed_password=hash_password(data.password), is_active=True, is_verified=True,
+    )
+    db.add(user)
+    db.flush()
+    modes = [m for m in (tc.service_modes or []) if m]
+    driver = Driver(
+        id=uuid.uuid4(), user_id=user.id, transport_company_id=tc.id, is_online=False, is_approved=False,
+        service_modes=modes or ["mensajeria"],
+    )
+    db.add(driver)
+    db.flush()
+    db.add(Certification(
+        id=uuid.uuid4(), driver_id=driver.id, cert_type="driver_license", label="Licencia de conducir",
+        status=CertStatus.PENDING, expires_at=expires, issuing_authority=st.name,
+    ))
+    inv.status, inv.accepted_at, inv.driver_id = "accepted", datetime.utcnow(), driver.id
+    await notify_transport_company(
+        db, tc.id, "driver_registered", f"{full_name} completó su registro",
+        f"{full_name} aceptó tu invitación y espera tu aprobación para recibir rutas.",
+        entity_type="driver", entity_id=driver.id,
+    )
+    db.commit()
+    return {"status": "pending_approval",
+            "message": f"Registro completo. {tc.name} tiene que aprobar tu cuenta antes de que puedas recibir rutas. Te avisamos por correo."}
+
+
+@app.post("/api/v1/transport/drivers/{driver_id}/approve")
+async def approve_driver(
+    driver_id:    str,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    tc = get_current_transport_company(current_user, db)
+    require_transport_permission(current_user, db, "fleet", "edit")
+    d = db.get(Driver, uuid.UUID(driver_id))
+    if not d or d.transport_company_id != tc.id:
+        raise HTTPException(status_code=404, detail="Conductor no encontrado")
+    if d.is_approved:
+        return {"status": "approved"}
+    d.is_approved = True
+    user = db.get(User, d.user_id)
+    db.commit()
+    if user:
+        await send_email(
+            user.email, "Tu cuenta de conductor fue aprobada",
+            email_html("¡Ya podés recibir rutas!", [
+                f"{_h(tc.name)} aprobó tu cuenta de conductor en Muevo.",
+                "Iniciá sesión en la app Muevo Drive para ver tus rutas.",
+            ]),
+        )
+    return {"status": "approved"}
+
+
+@app.post("/api/v1/transport/drivers/{driver_id}/suspend")
+async def suspend_driver(
+    driver_id:    str,
+    current_user: User    = Depends(get_current_user),
+    db:           Session = Depends(get_db),
+):
+    """Quita la aprobación: el conductor deja de ver rutas y no se le pueden asignar nuevas."""
+    tc = get_current_transport_company(current_user, db)
+    require_transport_permission(current_user, db, "fleet", "edit")
+    d = db.get(Driver, uuid.UUID(driver_id))
+    if not d or d.transport_company_id != tc.id:
+        raise HTTPException(status_code=404, detail="Conductor no encontrado")
+    d.is_approved = False
+    d.is_online = False
+    db.commit()
+    return {"status": "suspended"}
 
 
 class VehicleCreate(BaseModel):
