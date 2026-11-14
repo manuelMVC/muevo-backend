@@ -37,3 +37,7 @@ Thumbs.db
 
 # Alembic (mantenemos las migraciones, ignoramos solo si hay algo temporal)
 # alembic/versions/__pycache__/
+
+# Generador del diccionario de datos
+tools/diccionario/node_modules/
+tools/diccionario/build/

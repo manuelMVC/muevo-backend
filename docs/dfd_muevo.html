@@ -1,0 +1,685 @@
+<title>DFD Muevo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Concepto: documento técnico sobre papel de dibujo. Una columna de lectura, diagramas en marcos con scroll propio.
+     Color: tinta, papel, azul de proceso, ámbar de almacén, gris de entidad. */
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --fg: #1a212c;
+    --muted: #596273;
+    --line: #d9dde4;
+    --proc: #2563c9;
+    --store: #b86e0b;
+    --ent: #6b7585;
+    --soft: #eceff4;
+    --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #11151b; --surface: #181d25; --fg: #e5e9f0; --muted: #98a2b3; --line: #2b323d;
+      --proc: #6aa3ff; --store: #e8a53d; --ent: #9aa4b5; --soft: #1f252f; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #11151b; --surface: #181d25; --fg: #e5e9f0; --muted: #98a2b3; --line: #2b323d;
+    --proc: #6aa3ff; --store: #e8a53d; --ent: #9aa4b5; --soft: #1f252f; color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--font-body);
+    font-size: 15px; line-height: 1.55; padding-inline: 20px; padding-block: 0 64px;
+  }
+  .wrap { max-width: 1120px; margin-inline: auto; }
+  header { padding-block: 40px 20px; }
+  .kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 8px; }
+  h1 { font-size: clamp(28px, 4.5vw, 40px); line-height: 1.12; margin: 0 0 12px; font-weight: 600; letter-spacing: -.01em; text-wrap: balance; }
+  h2 { font-size: 22px; margin: 0 0 6px; font-weight: 600; text-wrap: balance; }
+  h3 { font-size: 15px; margin: 0 0 6px; font-weight: 600; }
+  p { margin: 0 0 12px; max-width: 70ch; }
+  .lede { color: var(--muted); font-size: 16px; max-width: 70ch; }
+  code, .mono { font-family: var(--font-mono); font-size: .88em; }
+
+  nav {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+    background: var(--bg); border-bottom: 1px solid var(--line);
+    margin-inline: -20px; padding-inline: 20px;
+  }
+  nav .row { display: flex; gap: 4px; overflow-x: auto; max-width: 1120px; margin-inline: auto; padding-block: 8px; scrollbar-width: thin; }
+  nav a {
+    flex: none; font-size: 13px; color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; white-space: nowrap;
+  }
+  nav a:hover { background: var(--soft); color: var(--fg); }
+  nav a:focus-visible, .copy:focus-visible { outline: 2px solid var(--proc); outline-offset: 1px; }
+
+  section { padding-block: 36px 8px; border-bottom: 1px solid var(--line); scroll-margin-top: 56px; }
+  section:last-of-type { border-bottom: 0; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 22px; margin: 18px 0 0; padding: 14px 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+  .legend div { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .legend svg { flex: none; }
+  .legend svg * { fill: none; stroke-width: 1.8; }
+
+  .diagram {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+    padding: 16px; margin-block: 14px 18px; overflow-x: auto;
+  }
+  .diagram pre { margin: 0; }
+  .diagram svg { max-width: none; }
+
+  .note { font-size: 13px; color: var(--muted); border-left: 3px solid var(--line); padding-left: 12px; max-width: 74ch; margin-block: 0 16px; }
+
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); margin-block: 12px 24px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; font-size: 12px; color: var(--muted); background: var(--soft); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td.id { font-family: var(--font-mono); white-space: nowrap; font-weight: 500; }
+  td.id.p { color: var(--proc); }
+  td.id.d { color: var(--store); }
+  td.tables { color: var(--muted); }
+  .matrix td, .matrix th { text-align: center; padding: 8px 6px; min-width: 40px; font-family: var(--font-mono); }
+  .matrix td:first-child, .matrix th:first-child { text-align: left; font-family: var(--font-body); white-space: nowrap; padding-inline: 12px; }
+  .matrix td.on { color: var(--proc); font-weight: 500; }
+  .matrix td.off { color: var(--line); }
+  .matrix th small { display: block; font-weight: 400; }
+  footer { padding-block: 28px 0; color: var(--muted); font-size: 13px; }
+</style>
+
+<div class="wrap">
+<header>
+  <p class="kicker">Muevo · Backend B2B2B · Noviembre 2026</p>
+  <h1>Diagramas de flujo de datos</h1>
+  <p class="lede">Cómo se mueve la información entre warehouses, empresas de transporte, el holding y los conductores: del contexto general hasta cada proceso, con los almacenes de datos que lee y escribe.</p>
+  <div class="legend" aria-label="Notación">
+    <div><svg width="26" height="26" viewBox="0 0 26 26"><circle cx="13" cy="13" r="10" stroke="var(--proc)"/></svg>Proceso</div>
+    <div><svg width="30" height="22" viewBox="0 0 30 22"><rect x="2" y="3" width="26" height="16" stroke="var(--ent)"/></svg>Entidad externa</div>
+    <div><svg width="26" height="26" viewBox="0 0 26 26"><path d="M4 7c0-3 18-3 18 0v12c0 3-18 3-18 0z M4 7c0 3 18 3 18 0" stroke="var(--store)"/></svg>Almacén de datos</div>
+    <div><svg width="30" height="14" viewBox="0 0 30 14"><path d="M2 7h22M19 3l5 4-5 4" stroke="var(--fg)"/></svg>Flujo de datos (etiquetado)</div>
+  </div>
+</header>
+
+<nav aria-label="Secciones"><div class="row">
+  <a href="#nivel0">Nivel 0</a>
+  <a href="#nivel1">Nivel 1</a>
+  <a href="#acceso">1.0 Acceso</a>
+  <a href="#planificacion">2.0 Planificación</a>
+  <a href="#negociacion">3.0 y 4.0 Negociación</a>
+  <a href="#ejecucion">5.0 Ejecución</a>
+  <a href="#avisos">9.0 y 10.0 Avisos y auditoría</a>
+  <a href="#registro">12.0 Registro de transportistas</a>
+  <a href="#registrowh">13.0 Registro de warehouses</a>
+  <a href="#conductores">14.0 Registro de conductores</a>
+  <a href="#almacenes">Almacenes</a>
+  <a href="#matriz">Matriz proceso × almacén</a>
+</div></nav>
+
+<section id="nivel0">
+  <h2>Nivel 0 · Diagrama de contexto</h2>
+  <p>La plataforma como un solo proceso. Los cuatro actores humanos operan desde los portales web (<code>warehouse.html</code>, <code>transport.html</code>, <code>admin.html</code>) y la app móvil; el correo y las notificaciones push salen hacia servicios externos.</p>
+  <div class="diagram"><pre class="mermaid">
+%%{init: {"flowchart": {"useMaxWidth": false, "curve": "basis", "nodeSpacing": 50, "rankSpacing": 90}}}%%
+flowchart LR
+  classDef proc fill:transparent,stroke:#2563c9,stroke-width:2px
+  classDef ent fill:transparent,stroke:#6b7585,stroke-width:1.5px
+  WH["Operador del&lt;br/&gt;warehouse"]:::ent
+  HD["Aprobador&lt;br/&gt;de holding"]:::ent
+  TR["Empresa de&lt;br/&gt;transporte"]:::ent
+  DR["Conductor&lt;br/&gt;(app móvil)"]:::ent
+  CL["Cliente del lote&lt;br/&gt;(contacto externo)"]:::ent
+  SM["Servidor SMTP"]:::ent
+  EX["Expo Push"]:::ent
+  P0(("0&lt;br/&gt;Plataforma&lt;br/&gt;Muevo")):::proc
+  WH -->|"solicitud de registro, servicios elegidos,&lt;br/&gt;CSV y paradas, aprobar lote, elegir&lt;br/&gt;oferta, incidencias, recepciones"| P0
+  P0 -->|"resultado del registro, ofertas&lt;br/&gt;recibidas, tracking, costos,&lt;br/&gt;notificaciones"| WH
+  HD -->|"aprobación de negociación,&lt;br/&gt;perfiles y tarifas"| P0
+  P0 -->|"negociaciones pendientes&lt;br/&gt;de aprobar"| HD
+  TR -->|"solicitud de registro, ofertas y&lt;br/&gt;contraofertas, invitar y aprobar&lt;br/&gt;conductores, aceptar o rechazar rutas"| P0
+  P0 -->|"resultado del registro, marketplace,&lt;br/&gt;rutas ofrecidas, facturación,&lt;br/&gt;notificaciones"| TR
+  DR -->|"registro con invitación, posición&lt;br/&gt;GPS, paradas completadas,&lt;br/&gt;prueba de entrega"| P0
+  P0 -->|"invitación por correo,&lt;br/&gt;cuenta aprobada, ruta asignada"| DR
+  P0 -->|"avisos de lote, parada,&lt;br/&gt;entrega e incidencia"| CL
+  P0 -->|"correos"| SM
+  P0 -->|"push de ruta asignada"| EX
+  </pre></div>
+  <p class="note">Fuera del alcance actual: no hay integración de pagos con un procesador externo (la liquidación se registra en <code>earnings</code>) y la geocodificación de direcciones solo se hizo al cargar datos de demostración, no en tiempo de ejecución.</p>
+</section>
+
+<section id="nivel1">
+  <h2>Nivel 1 · Procesos principales</h2>
+  <p>Catorce procesos. Para mantener el diagrama legible no se dibujan dos cosas que atraviesan a todos: <strong>1.0</strong> valida sesión y permisos en cada endpoint, y <strong>10.0</strong> registra cada insert, update y delete que pasa por el ORM.</p>
+  <div class="diagram"><pre class="mermaid">
+%%{init: {"flowchart": {"useMaxWidth": false, "curve": "basis", "nodeSpacing": 45, "rankSpacing": 110}}}%%
+flowchart LR
+  classDef proc fill:transparent,stroke:#2563c9,stroke-width:2px
+  classDef ent fill:transparent,stroke:#6b7585,stroke-width:1.5px
+  WH["Operador del&lt;br/&gt;warehouse"]:::ent
+  HD["Aprobador&lt;br/&gt;de holding"]:::ent
+  TR["Empresa de&lt;br/&gt;transporte"]:::ent
+  DR["Conductor"]:::ent
+  CL["Cliente&lt;br/&gt;del lote"]:::ent
+  SM["SMTP"]:::ent
+  EX["Expo Push"]:::ent
+  P7(("7.0&lt;br/&gt;Inventario y&lt;br/&gt;recepción")):::proc
+  P2(("2.0&lt;br/&gt;Planificación&lt;br/&gt;de lotes")):::proc
+  P11(("11.0&lt;br/&gt;Administración&lt;br/&gt;y catálogos")):::proc
+  P12(("12.0&lt;br/&gt;Registro de&lt;br/&gt;transportistas")):::proc
+  P13(("13.0&lt;br/&gt;Registro de&lt;br/&gt;warehouses")):::proc
+  P14(("14.0&lt;br/&gt;Registro de&lt;br/&gt;conductores")):::proc
+  P3(("3.0&lt;br/&gt;Aprobación&lt;br/&gt;de lotes")):::proc
+  P4(("4.0&lt;br/&gt;Negociación&lt;br/&gt;de precios")):::proc
+  P5(("5.0&lt;br/&gt;Despacho y&lt;br/&gt;ejecución")):::proc
+  P6(("6.0&lt;br/&gt;Incidencias")):::proc
+  P8(("8.0&lt;br/&gt;Facturación")):::proc
+  P9(("9.0&lt;br/&gt;Notificaciones")):::proc
+  WH -->|"recepciones, escaneos"| P7
+  P7 -->|"ítems escaneados"| P2
+  WH -->|"CSV, paradas manuales"| P2
+  HD -->|"tarifas, perfiles,&lt;br/&gt;catálogos"| P11
+  P11 -->|"tarifas por servicio,&lt;br/&gt;tipos de vehículo"| P2
+  TR -->|"solicitud de registro:&lt;br/&gt;DOT/MC y seguro"| P12
+  HD -->|"aprobar o rechazar"| P12
+  P12 -->|"cuenta aprobada&lt;br/&gt;o motivo del rechazo"| TR
+  P12 -->|"solicitud nueva"| P9
+  WH -->|"solicitud de registro:&lt;br/&gt;empresa, warehouse, servicios"| P13
+  HD -->|"aprobar o rechazar"| P13
+  P13 -->|"cuenta aprobada&lt;br/&gt;o motivo del rechazo"| WH
+  P13 -->|"solicitud nueva"| P9
+  TR -->|"invitar conductor,&lt;br/&gt;aprobar o suspender"| P14
+  P14 -->|"enlace de invitación&lt;br/&gt;por correo"| DR
+  DR -->|"datos de registro&lt;br/&gt;y licencia"| P14
+  P14 -->|"conductor aprobado:&lt;br/&gt;puede recibir rutas"| P5
+  P14 -->|"registro completado"| P9
+  WH -->|"servicios habilitados&lt;br/&gt;de la compañía"| P11
+  P11 -->|"servicios permitidos&lt;br/&gt;para armar lotes"| P2
+  P2 -->|"lote en borrador con&lt;br/&gt;precio de fórmula"| P3
+  WH -->|"aprobar o anular lote"| P3
+  P3 -->|"rutas abiertas a ofertas"| P4
+  TR -->|"oferta, contraoferta,&lt;br/&gt;aceptar precio"| P4
+  WH -->|"elegir oferta"| P4
+  P4 -->|"ofertas por ruta"| WH
+  P4 -->|"negociación en holding"| HD
+  HD -->|"aprobación"| P4
+  P4 -->|"ruta adjudicada"| P5
+  WH -->|"ofrecer lote directo"| P5
+  TR -->|"aceptar o rechazar,&lt;br/&gt;vehículo y conductor"| P5
+  P5 -->|"ruta rechazada:&lt;br/&gt;reabre pujas"| P4
+  DR -->|"GPS, paradas,&lt;br/&gt;prueba de entrega"| P5
+  P5 -->|"ruta asignada"| DR
+  P5 -->|"tracking en vivo"| WH
+  WH -->|"reporta incidencia"| P6
+  TR -->|"reporta incidencia"| P6
+  DR -->|"reporta incidencia"| P6
+  P6 -->|"ruta afectada"| P5
+  P5 -->|"rutas completadas"| P8
+  P8 -->|"pagos y facturación"| TR
+  P8 -->|"costos"| WH
+  P3 -->|"eventos"| P9
+  P4 -->|"eventos"| P9
+  P5 -->|"eventos"| P9
+  P9 -->|"campanita"| WH
+  P9 -->|"campanita"| TR
+  P9 -->|"correos"| SM
+  P9 -->|"push"| EX
+  P9 -->|"avisos al contacto"| CL
+  </pre></div>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Proceso</th><th>Qué hace</th><th>Endpoints y piezas clave</th></tr></thead>
+    <tbody>
+      <tr><td class="id p">1.0 Acceso</td><td>Autentica, resuelve la company activa y verifica permisos por módulo y acción.</td><td><code>/auth/token</code>, <code>require_permission()</code></td></tr>
+      <tr><td class="id p">2.0 Planificación</td><td>Importa paradas, las agrupa en rutas, crea el lote en borrador y fija el precio de fórmula.</td><td><code>/warehouse/batches/plan</code>, <code>/confirm</code>, <code>calculate_suggested_price()</code></td></tr>
+      <tr><td class="id p">3.0 Aprobación</td><td>Exige precio distinto de cero, aprueba o anula (con motivo) y abre el marketplace.</td><td><code>/warehouse/batches/{id}/status</code>, <code>_open_route_marketplace()</code></td></tr>
+      <tr><td class="id p">4.0 Negociación</td><td>Ofertas en paralelo por transportista, selección, aprobación de holding, reapertura.</td><td><code>/transport/marketplace</code>, <code>counter-offer</code>, <code>select-offer</code>, <code>holding-approve</code></td></tr>
+      <tr><td class="id p">5.0 Ejecución</td><td>Despacho directo, aceptar o rechazar, asignar vehículo, seguimiento y entrega.</td><td><code>/batches/{id}/offer</code>, <code>/transport/routes/{id}/accept</code>, <code>/ws/tracking</code>, <code>stops/{id}/complete</code></td></tr>
+      <tr><td class="id p">6.0 Incidencias</td><td>Registra y resuelve incidencias; algunas tipos cambian el estado de la ruta.</td><td><code>/incidents</code>, <code>/warehouse/incidents</code></td></tr>
+      <tr><td class="id p">7.0 Inventario y recepción</td><td>Escaneo con deduplicación y recepción de mercancía entrante con check-in por ítem.</td><td><code>/warehouse/inventory/scan</code>, <code>/warehouse/receptions</code></td></tr>
+      <tr><td class="id p">8.0 Facturación</td><td>Consolida costos y pagos de rutas completadas para cada lado.</td><td><code>/warehouse/billing</code>, <code>/transport/billing</code></td></tr>
+      <tr><td class="id p">9.0 Notificaciones</td><td>Avisos dentro del portal, por correo y push; contacto externo del lote según sus preferencias.</td><td><code>/notifications</code>, <code>create_notification()</code>, <code>notify_batch_client()</code></td></tr>
+      <tr><td class="id p">10.0 Auditoría</td><td>Registra quién cambió qué y cuándo, sin tocar los endpoints.</td><td>listener <code>before_flush</code>, <code>/admin/audit-logs</code></td></tr>
+      <tr><td class="id p">11.0 Administración</td><td>Perfiles y asignaciones, compañías y warehouses, catálogos configurables y los tipos de servicio que habilita cada compañía.</td><td><code>/admin/profiles</code>, <code>/service-types</code>, <code>/vehicle-types</code>, <code>/admin/incident-types</code></td></tr>
+      <tr><td class="id p">12.0 Registro de transportistas</td><td>Formulario público, solicitud pendiente y revisión de Muevo: al aprobar crea la empresa verificada, su administrador y su perfil.</td><td><code>/transport/register</code>, <code>/admin/transport-applications</code></td></tr>
+      <tr><td class="id p">13.0 Registro de warehouses</td><td>Formulario público, solicitud pendiente y revisión de Muevo: al aprobar crea la compañía en su propio holding, su primer warehouse, su administrador y su perfil.</td><td><code>/warehouse/register</code>, <code>/admin/company-applications</code></td></tr>
+      <tr><td class="id p">14.0 Registro de conductores</td><td>La empresa invita por correo con un enlace de un solo uso; el conductor completa sus datos y licencia y queda pendiente hasta que la empresa lo aprueba. Sin aprobación no ve rutas ni se le pueden asignar.</td><td><code>/transport/driver-invitations</code>, <code>/driver-invitations/{token}</code>, <code>/transport/drivers/{id}/approve</code></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="acceso">
+  <h2>Nivel 2 · 1.0 Acceso y permisos</h2>
+  <p>El chequeo de permisos es un solo punto, <code>require_permission()</code>. El <code>super_admin</code> siempre pasa, y un usuario sin perfil asignado también pasa por diseño (así no se rompen cuentas anteriores al sistema de perfiles).</p>
+  <div class="diagram"><pre class="mermaid">
+%%{init: {"flowchart": {"useMaxWidth": false, "curve": "basis", "nodeSpacing": 45, "rankSpacing": 90}}}%%
+flowchart LR
+  classDef proc fill:transparent,stroke:#2563c9,stroke-width:2px
+  classDef ent fill:transparent,stroke:#6b7585,stroke-width:1.5px
+  classDef store fill:transparent,stroke:#b86e0b,stroke-width:2px
+  U["Usuario de un portal"]:::ent
+  PX["Procesos 2.0 a 11.0"]:::ent
+  P11(("1.1&lt;br/&gt;Validar&lt;br/&gt;credenciales")):::proc
+  P12(("1.2&lt;br/&gt;Emitir token&lt;br/&gt;(24 h)")):::proc
+  P13(("1.3&lt;br/&gt;Resolver&lt;br/&gt;company activa")):::proc
+  P14(("1.4&lt;br/&gt;Verificar&lt;br/&gt;permiso")):::proc
+  D1[("D1 Identidad&lt;br/&gt;y accesos")]:::store
+  D2[("D2 Organización")]:::store
+  U -->|"email y contraseña"| P11
+  D1 -->|"hash, is_active"| P11
+  P11 -->|"usuario válido"| P12
+  P12 -->|"token de acceso"| U
+  P12 -->|"last_login_at"| D1
+  D1 -->|"HoldingUserCompany"| P13
+  D2 -->|"companies del holding"| P13
+  P13 -->|"selector de company"| U
+  PX -->|"endpoint, módulo.acción,&lt;br/&gt;company_id"| P14
+  D1 -->|"HoldingUserProfile +&lt;br/&gt;ProfilePermission"| P14
+  P14 -->|"permitir o 403"| PX
+  </pre></div>
+</section>
+
+<section id="planificacion">
+  <h2>Nivel 2 · 2.0 Planificación de lotes</h2>
+  <p>Las rutas se pueden armar por ciudad, estado o país: 2.1 ubica cada parada en la jerarquía geográfica y 2.2 planifica por separado dentro de cada zona. Una ruta nace con precio. El paso 2.4 aplica la fórmula (base del servicio, más tarifa por km, libra y ft³, acotada al rango del tipo de servicio) apenas se crea la ruta, sin acción manual.</p>
+  <div class="diagram"><pre class="mermaid">
+%%{init: {"flowchart": {"useMaxWidth": false, "curve": "basis", "nodeSpacing": 45, "rankSpacing": 100}}}%%
+flowchart LR
+  classDef proc fill:transparent,stroke:#2563c9,stroke-width:2px
+  classDef ent fill:transparent,stroke:#6b7585,stroke-width:1.5px
+  classDef store fill:transparent,stroke:#b86e0b,stroke-width:2px
+  WH["Operador del&lt;br/&gt;warehouse"]:::ent
+  P21(("2.1&lt;br/&gt;Importar y&lt;br/&gt;validar paradas")):::proc
+  P22(("2.2&lt;br/&gt;Agrupar en rutas&lt;br/&gt;por zona")):::proc
+  P23(("2.3&lt;br/&gt;Crear lote&lt;br/&gt;y rutas")):::proc
+  P24(("2.4&lt;br/&gt;Calcular precio&lt;br/&gt;de fórmula")):::proc
+  P25(("2.5&lt;br/&gt;Editar lote&lt;br/&gt;en borrador")):::proc
+  D2[("D2 Organización")]:::store
+  D7[("D7 Inventario&lt;br/&gt;y recepción")]:::store
+  D10[("D10 Catálogos")]:::store
+  D13[("D13 Geografía")]:::store
+  D4[("D4 Lotes")]:::store
+  D5[("D5 Rutas")]:::store
+  WH -->|"CSV, paradas manuales"| P21
+  D7 -->|"ítems escaneados"| P21
+  D2 -->|"límites de CSV y servicios&lt;br/&gt;habilitados de la company"| P21
+  D13 -->|"ciudad por zip, nombre&lt;br/&gt;o coordenadas"| P21
+  P21 -->|"paradas multi-ítem&lt;br/&gt;validadas con su zona"| P22
+  D10 -->|"capacidad del&lt;br/&gt;tipo de vehículo"| P22
+  WH -->|"agrupar por ciudad,&lt;br/&gt;estado o país"| P22
+  P22 -->|"grupos de paradas por&lt;br/&gt;zona (k-means)"| P23
+  WH -->|"confirmar&lt;br/&gt;agrupamiento"| P23
+  P23 -->|"city_id de cada parada;&lt;br/&gt;ciudad nueva si no existe"| D13
+  P23 -->|"lote draft"| D4
+  P23 -->|"encabezados, paradas,&lt;br/&gt;ítems de envío"| D5
+  P23 -->|"rutas nuevas"| P24
+  P23 -->|"número de lote"| WH
+  D10 -->|"tarifas del tipo&lt;br/&gt;de servicio"| P24
+  P24 -->|"precio bruto, comisión,&lt;br/&gt;neto estimado"| D5
+  WH -->|"agregar, editar o&lt;br/&gt;quitar rutas y paradas"| P25
+  D4 -->|"estado del lote"| P25
+  P25 -->|"cambios, solo si es draft"| D5
+  </pre></div>
+</section>
+
+<section id="negociacion">
+  <h2>Nivel 2 · 3.0 Aprobación y 4.0 Negociación</h2>
+  <p>El recorrido completo de una ruta hasta quedar negociada: aprobar el lote abre el marketplace, varios transportistas pujan en paralelo (cada uno ve solo su hilo), el warehouse elige una oferta y el holding la aprueba. Si el ganador rechaza después, el marketplace se reabre para todos.</p>
+  <div class="diagram"><pre class="mermaid">
+%%{init: {"flowchart": {"useMaxWidth": false, "curve": "basis", "nodeSpacing": 45, "rankSpacing": 110}}}%%
+flowchart LR
+  classDef proc fill:transparent,stroke:#2563c9,stroke-width:2px
+  classDef ent fill:transparent,stroke:#6b7585,stroke-width:1.5px
+  classDef store fill:transparent,stroke:#b86e0b,stroke-width:2px
+  WH["Operador del&lt;br/&gt;warehouse"]:::ent
+  TR["Empresa de&lt;br/&gt;transporte"]:::ent
+  HD["Aprobador&lt;br/&gt;de holding"]:::ent
+  P31(("3.1&lt;br/&gt;Validar precios&lt;br/&gt;y aprobar lote")):::proc
+  P32(("3.2&lt;br/&gt;Abrir marketplace&lt;br/&gt;por ruta")):::proc
+  P41(("4.1&lt;br/&gt;Publicar a&lt;br/&gt;transportistas")):::proc
+  P42(("4.2&lt;br/&gt;Registrar oferta&lt;br/&gt;o contraoferta")):::proc
+  P43(("4.3&lt;br/&gt;Seleccionar&lt;br/&gt;oferta")):::proc
+  P44(("4.4&lt;br/&gt;Aprobar en&lt;br/&gt;holding")):::proc
+  P45(("4.5&lt;br/&gt;Reabrir tras&lt;br/&gt;rechazo")):::proc
+  D4[("D4 Lotes")]:::store
+  D5[("D5 Rutas")]:::store
+  D6[("D6 Ofertas")]:::store
+  WH -->|"aprobar lote"| P31
+  D5 -->|"precio de cada ruta&lt;br/&gt;(no puede ser 0)"| P31
+  P31 -->|"estado approved"| D4
+  P31 -->|"rutas del lote"| P32
+  P32 -->|"negociación: suggested"| D5
+  P32 -->|"oferta inicial =&lt;br/&gt;precio público"| D6
+  D5 -->|"rutas abiertas"| P41
+  P41 -->|"marketplace con&lt;br/&gt;precio público"| TR
+  TR -->|"contraoferta o&lt;br/&gt;aceptar precio"| P42
+  P42 -->|"oferta en el hilo&lt;br/&gt;del transportista"| D6
+  P42 -->|"oferta recibida"| WH
+  WH -->|"elegir transportista"| P43
+  D6 -->|"ofertas pendientes"| P43
+  P43 -->|"elegida selected,&lt;br/&gt;resto rejected"| D6
+  P43 -->|"pending_holding_approval"| D5
+  P43 -->|"negociación&lt;br/&gt;pendiente"| HD
+  HD -->|"aprobación"| P44
+  P44 -->|"precio final, comisión 5%,&lt;br/&gt;transportista, publicada"| D5
+  P44 -->|"oferta accepted"| D6
+  P44 -->|"ruta ganada"| TR
+  TR -->|"rechaza la ruta ganada"| P45
+  P45 -->|"vuelve a suggested,&lt;br/&gt;sin asignación ni precio"| D5
+  P45 -->|"mismo precio público"| P41
+  </pre></div>
+  <p class="note">Cada paso que cambia de actor (3.1, 4.2, 4.3, 4.4, 4.5) también dispara un evento hacia 9.0, que no se dibuja aquí para no duplicar flechas. Las rutas despachadas a mano (5.1) no pasan por este marketplace.</p>
+</section>
+
+<section id="ejecucion">
+  <h2>Nivel 2 · 5.0 Despacho y ejecución de rutas</h2>
+  <p>Una ruta llega al transportista por dos caminos: adjudicada tras la negociación (4.4) o despachada directo por el warehouse (5.1). Al aceptarla se le asignan vehículo y conductor; el conductor es de la ruta, no del vehículo. Desde ahí reporta posición y entregas hasta cerrar el lote.</p>
+  <div class="diagram"><pre class="mermaid">
+%%{init: {"flowchart": {"useMaxWidth": false, "curve": "basis", "nodeSpacing": 45, "rankSpacing": 100}}}%%
+flowchart LR
+  classDef proc fill:transparent,stroke:#2563c9,stroke-width:2px
+  classDef ent fill:transparent,stroke:#6b7585,stroke-width:1.5px
+  classDef store fill:transparent,stroke:#b86e0b,stroke-width:2px
+  WH["Operador del&lt;br/&gt;warehouse"]:::ent
+  TR["Empresa de&lt;br/&gt;transporte"]:::ent
+  DR["Conductor&lt;br/&gt;(app móvil)"]:::ent
+  P51(("5.1&lt;br/&gt;Ofrecer lote&lt;br/&gt;directo")):::proc
+  P52(("5.2&lt;br/&gt;Aceptar o&lt;br/&gt;rechazar ruta")):::proc
+  P53(("5.3&lt;br/&gt;Asignar vehículo&lt;br/&gt;y conductor")):::proc
+  P54(("5.4&lt;br/&gt;Seguimiento&lt;br/&gt;en vivo")):::proc
+  P55(("5.5&lt;br/&gt;Completar paradas&lt;br/&gt;y entregar")):::proc
+  P56(("5.6&lt;br/&gt;Cerrar ruta y&lt;br/&gt;recalcular lote")):::proc
+  D3[("D3 Transporte&lt;br/&gt;y flota")]:::store
+  D4[("D4 Lotes")]:::store
+  D5[("D5 Rutas")]:::store
+  D9[("D9 Entregas&lt;br/&gt;y pagos")]:::store
+  WH -->|"ofrecer lote a&lt;br/&gt;una empresa"| P51
+  P51 -->|"ítems ofrecidos"| D4
+  P51 -->|"oferta directa"| TR
+  TR -->|"aceptar o rechazar"| P52
+  D5 -->|"ruta adjudicada&lt;br/&gt;o publicada"| P52
+  P52 -->|"estado del ítem"| D4
+  P52 -->|"estado de la ruta"| D5
+  P52 -->|"rutas aceptadas"| P53
+  TR -->|"vehículo y conductor&lt;br/&gt;de esta ruta"| P53
+  D3 -->|"flota y conductores&lt;br/&gt;disponibles"| P53
+  P53 -->|"vehículo y conductor&lt;br/&gt;de la ruta"| D5
+  P53 -->|"ruta asignada"| DR
+  DR -->|"posición GPS"| P54
+  P54 -->|"última posición"| D3
+  P54 -->|"posición en vivo"| WH
+  P54 -->|"flota en vivo"| TR
+  DR -->|"parada completada,&lt;br/&gt;firma, foto o PIN"| P55
+  P55 -->|"prueba de entrega"| D9
+  P55 -->|"estado de la parada"| D5
+  P55 -->|"paradas completadas"| P56
+  P56 -->|"ruta y lote&lt;br/&gt;completados"| D5
+  P56 -->|"estado del lote"| D4
+  P56 -->|"liquidación y métricas"| D9
+  P56 -->|"avance del lote"| WH
+  </pre></div>
+</section>
+
+<section id="avisos">
+  <h2>Nivel 2 · 9.0 Notificaciones y 10.0 Auditoría</h2>
+  <p>Las notificaciones salen de los eventos de 3.0, 4.0 y 5.0. La auditoría es independiente: un listener del ORM captura cada cambio y toma el usuario actual de una variable de contexto que fija un middleware, por eso no hay que pasar el usuario por cada llamada.</p>
+  <div class="diagram"><pre class="mermaid">
+%%{init: {"flowchart": {"useMaxWidth": false, "curve": "basis", "nodeSpacing": 40, "rankSpacing": 100}}}%%
+flowchart LR
+  classDef proc fill:transparent,stroke:#2563c9,stroke-width:2px
+  classDef ent fill:transparent,stroke:#6b7585,stroke-width:1.5px
+  classDef store fill:transparent,stroke:#b86e0b,stroke-width:2px
+  EV["Procesos 3.0, 4.0 y 5.0"]:::ent
+  U["Usuario de un portal"]:::ent
+  SM["Servidor SMTP"]:::ent
+  EX["Expo Push"]:::ent
+  CL["Cliente del lote"]:::ent
+  P91(("9.1&lt;br/&gt;Resolver&lt;br/&gt;destinatarios")):::proc
+  P92(("9.2&lt;br/&gt;Guardar&lt;br/&gt;notificación")):::proc
+  P93(("9.3&lt;br/&gt;Enviar&lt;br/&gt;correo")):::proc
+  P94(("9.4&lt;br/&gt;Push al&lt;br/&gt;conductor")):::proc
+  P95(("9.5&lt;br/&gt;Avisar al contacto&lt;br/&gt;del lote")):::proc
+  P96(("9.6&lt;br/&gt;Consultar y&lt;br/&gt;marcar leídas")):::proc
+  D1[("D1 Identidad&lt;br/&gt;y accesos")]:::store
+  D3[("D3 Transporte&lt;br/&gt;y flota")]:::store
+  D4[("D4 Lotes")]:::store
+  D11[("D11 Notificaciones")]:::store
+  EV -->|"evento, ruta o lote,&lt;br/&gt;empresa afectada"| P91
+  D1 -->|"administradores de&lt;br/&gt;la company o transportista"| P91
+  P91 -->|"un mensaje&lt;br/&gt;por usuario"| P92
+  P92 -->|"tipo, título, cuerpo,&lt;br/&gt;entidad"| D11
+  P92 -->|"asunto y HTML"| P93
+  P93 -->|"correo"| SM
+  EV -->|"ruta asignada"| P94
+  D3 -->|"token del dispositivo"| P94
+  P94 -->|"push"| EX
+  EV -->|"cambio de lote, parada,&lt;br/&gt;entrega o incidencia"| P95
+  D4 -->|"contacto y preferencias"| P95
+  P95 -->|"correo"| SM
+  P95 -->|"aviso"| CL
+  U -->|"consulta cada 30 s,&lt;br/&gt;marcar leída"| P96
+  D11 -->|"notificaciones propias"| P96
+  P96 -->|"lista y contador"| U
+  </pre></div>
+  <div class="diagram"><pre class="mermaid">
+%%{init: {"flowchart": {"useMaxWidth": false, "curve": "basis", "nodeSpacing": 45, "rankSpacing": 100}}}%%
+flowchart LR
+  classDef proc fill:transparent,stroke:#2563c9,stroke-width:2px
+  classDef ent fill:transparent,stroke:#6b7585,stroke-width:1.5px
+  classDef store fill:transparent,stroke:#b86e0b,stroke-width:2px
+  ANY["Cualquier proceso&lt;br/&gt;que escribe en la base"]:::ent
+  MW["Middleware ASGI"]:::ent
+  SA["Super admin&lt;br/&gt;(permiso audit.view)"]:::ent
+  P101(("10.1&lt;br/&gt;Capturar cambios&lt;br/&gt;del ORM")):::proc
+  P102(("10.2&lt;br/&gt;Registrar&lt;br/&gt;auditoría")):::proc
+  P103(("10.3&lt;br/&gt;Consultar&lt;br/&gt;bitácora")):::proc
+  P104(("10.4&lt;br/&gt;Registrar historial&lt;br/&gt;de perfiles")):::proc
+  D12[("D12 Auditoría")]:::store
+  ANY -->|"insert, update, delete"| P101
+  MW -->|"usuario actual&lt;br/&gt;(ContextVar)"| P101
+  P101 -->|"tabla, registro, acción,&lt;br/&gt;antes y después"| P102
+  P102 -->|"fila de auditoría"| D12
+  ANY -->|"cambios en perfiles,&lt;br/&gt;permisos y accesos"| P104
+  MW -->|"usuario actual"| P104
+  P104 -->|"quién, cuándo, valor&lt;br/&gt;anterior y actual"| D12
+  SA -->|"filtros"| P103
+  D12 -->|"registros"| P103
+  P103 -->|"bitácora e historial&lt;br/&gt;de perfiles"| SA
+  </pre></div>
+  <p class="note">Un segundo listener (10.4) guarda en una tabla aparte, de solo lectura, el historial legible de cambios de perfiles, permisos y accesos: quién, cuándo, valor anterior y valor actual. Si el cambio no tiene usuario autenticado (por ejemplo un script de carga de datos), el registro queda con usuario vacío y se interpreta como acción del sistema.</p>
+</section>
+
+<section id="registro">
+  <h2>Nivel 2 · 12.0 Registro de transportistas</h2>
+  <p>Una empresa no entra sola: el formulario público solo crea una solicitud pendiente. Un admin de Muevo verifica el DOT o MC y el seguro, y recién al aprobar se crean la empresa verificada, su administrador y su perfil. La contraseña se guarda con hash desde la solicitud y nunca se muestra.</p>
+  <div class="diagram"><pre class="mermaid">
+%%{init: {"flowchart": {"useMaxWidth": false, "curve": "basis", "nodeSpacing": 45, "rankSpacing": 100}}}%%
+flowchart LR
+  classDef proc fill:transparent,stroke:#2563c9,stroke-width:2px
+  classDef ent fill:transparent,stroke:#6b7585,stroke-width:1.5px
+  classDef store fill:transparent,stroke:#b86e0b,stroke-width:2px
+  TR["Empresa de&lt;br/&gt;transporte"]:::ent
+  AD["Admin de Muevo"]:::ent
+  SM["Servidor SMTP"]:::ent
+  P121(("12.1&lt;br/&gt;Validar&lt;br/&gt;solicitud")):::proc
+  P122(("12.2&lt;br/&gt;Guardar solicitud&lt;br/&gt;pendiente")):::proc
+  P123(("12.3&lt;br/&gt;Avisar&lt;br/&gt;a Muevo")):::proc
+  P124(("12.4&lt;br/&gt;Aprobar y crear&lt;br/&gt;la cuenta")):::proc
+  P125(("12.5&lt;br/&gt;Rechazar&lt;br/&gt;con motivo")):::proc
+  D1[("D1 Identidad&lt;br/&gt;y accesos")]:::store
+  D3[("D3 Transporte&lt;br/&gt;y flota")]:::store
+  D11[("D11 Notificaciones")]:::store
+  D13[("D13 Geografía")]:::store
+  TR -->|"empresa, DOT/MC, seguro,&lt;br/&gt;administrador"| P121
+  D13 -->|"estado válido"| P121
+  D1 -->|"¿correo ya registrado?"| P121
+  D3 -->|"¿EIN ya registrado?"| P121
+  P121 -->|"datos válidos"| P122
+  P122 -->|"solicitud pendiente,&lt;br/&gt;contraseña con hash"| D3
+  P122 -->|"solicitud nueva"| P123
+  P123 -->|"aviso a cada&lt;br/&gt;admin de Muevo"| D11
+  P123 -->|"correo de confirmación"| SM
+  AD -->|"aprobar"| P124
+  D3 -->|"solicitud pendiente"| P124
+  P124 -->|"empresa verificada,&lt;br/&gt;administrador"| D3
+  P124 -->|"usuario, perfil&lt;br/&gt;transport_admin"| D1
+  P124 -->|"correo: cuenta aprobada"| SM
+  AD -->|"rechazar y motivo"| P125
+  P125 -->|"estado rechazada&lt;br/&gt;y motivo"| D3
+  P125 -->|"correo con el motivo"| SM
+  </pre></div>
+</section>
+
+<section id="registrowh">
+  <h2>Nivel 2 · 13.0 Registro de warehouses</h2>
+  <p>Mismo esquema que el registro de transportistas. El solicitante elige uno o varios tipos de servicio del catálogo y, al aprobar, la compañía se crea en un holding propio para que sus datos queden aislados de los demás clientes; su administrador no es super admin, así que no ve otras compañías ni puede editar tarifas globales.</p>
+  <div class="diagram"><pre class="mermaid">
+%%{init: {"flowchart": {"useMaxWidth": false, "curve": "basis", "nodeSpacing": 45, "rankSpacing": 100}}}%%
+flowchart LR
+  classDef proc fill:transparent,stroke:#2563c9,stroke-width:2px
+  classDef ent fill:transparent,stroke:#6b7585,stroke-width:1.5px
+  classDef store fill:transparent,stroke:#b86e0b,stroke-width:2px
+  WH["Empresa&lt;br/&gt;solicitante"]:::ent
+  AD["Admin de Muevo"]:::ent
+  SM["Servidor SMTP"]:::ent
+  P131(("13.1&lt;br/&gt;Validar&lt;br/&gt;solicitud")):::proc
+  P132(("13.2&lt;br/&gt;Guardar solicitud&lt;br/&gt;pendiente")):::proc
+  P133(("13.3&lt;br/&gt;Avisar&lt;br/&gt;a Muevo")):::proc
+  P134(("13.4&lt;br/&gt;Aprobar y crear&lt;br/&gt;la cuenta")):::proc
+  P135(("13.5&lt;br/&gt;Rechazar&lt;br/&gt;con motivo")):::proc
+  D1[("D1 Identidad&lt;br/&gt;y accesos")]:::store
+  D2[("D2 Organización")]:::store
+  D10[("D10 Catálogos")]:::store
+  D11[("D11 Notificaciones")]:::store
+  D13[("D13 Geografía")]:::store
+  WH -->|"empresa, warehouse,&lt;br/&gt;servicios, administrador"| P131
+  D10 -->|"servicios habilitados&lt;br/&gt;del catálogo"| P131
+  D13 -->|"estados válidos"| P131
+  D1 -->|"¿correo ya registrado?"| P131
+  D2 -->|"¿EIN ya registrado?"| P131
+  P131 -->|"datos válidos"| P132
+  P132 -->|"solicitud pendiente,&lt;br/&gt;contraseña con hash"| D2
+  P132 -->|"solicitud nueva"| P133
+  P133 -->|"aviso a cada&lt;br/&gt;admin de Muevo"| D11
+  P133 -->|"correo de confirmación"| SM
+  AD -->|"aprobar"| P134
+  D2 -->|"solicitud pendiente"| P134
+  D13 -->|"ciudad del warehouse"| P134
+  P134 -->|"holding propio, compañía,&lt;br/&gt;warehouse, servicios elegidos"| D2
+  P134 -->|"usuario, acceso y perfil&lt;br/&gt;company_admin de su compañía"| D1
+  P134 -->|"correo: cuenta aprobada"| SM
+  AD -->|"rechazar y motivo"| P135
+  P135 -->|"estado rechazada&lt;br/&gt;y motivo"| D2
+  P135 -->|"correo con el motivo"| SM
+  </pre></div>
+</section>
+
+<section id="conductores">
+  <h2>Nivel 2 · 14.0 Registro de conductores</h2>
+  <p>Un conductor no se registra solo: lo invita su empresa. El enlace lleva un token de un solo uso del que solo se guarda el hash, y el correo sale de la invitación, no del formulario. Al registrarse el conductor queda pendiente: no ve rutas ni precios, y la empresa no puede asignarle una, hasta que la empresa lo aprueba.</p>
+  <div class="diagram"><pre class="mermaid">
+%%{init: {"flowchart": {"useMaxWidth": false, "curve": "basis", "nodeSpacing": 45, "rankSpacing": 100}}}%%
+flowchart LR
+  classDef proc fill:transparent,stroke:#2563c9,stroke-width:2px
+  classDef ent fill:transparent,stroke:#6b7585,stroke-width:1.5px
+  classDef store fill:transparent,stroke:#b86e0b,stroke-width:2px
+  TR["Empresa de&lt;br/&gt;transporte"]:::ent
+  DR["Conductor"]:::ent
+  SM["Servidor SMTP"]:::ent
+  P141(("14.1&lt;br/&gt;Crear&lt;br/&gt;invitación")):::proc
+  P142(("14.2&lt;br/&gt;Validar&lt;br/&gt;enlace")):::proc
+  P143(("14.3&lt;br/&gt;Registrar&lt;br/&gt;conductor")):::proc
+  P144(("14.4&lt;br/&gt;Aprobar o&lt;br/&gt;suspender")):::proc
+  P145(("14.5&lt;br/&gt;Revocar&lt;br/&gt;invitación")):::proc
+  D1[("D1 Identidad&lt;br/&gt;y accesos")]:::store
+  D3[("D3 Transporte&lt;br/&gt;y flota")]:::store
+  D11[("D11 Notificaciones")]:::store
+  D13[("D13 Geografía")]:::store
+  TR -->|"correo del conductor"| P141
+  D1 -->|"¿correo ya registrado?"| P141
+  P141 -->|"invitación con hash&lt;br/&gt;del token, vence en 7 días"| D3
+  P141 -->|"enlace con el token"| SM
+  P141 -->|"enlace, para compartirlo"| TR
+  DR -->|"abre el enlace"| P142
+  D3 -->|"invitación: vigente,&lt;br/&gt;usada, revocada o vencida"| P142
+  P142 -->|"empresa, correo,&lt;br/&gt;nombre invitado"| DR
+  DR -->|"nombre, teléfono, contraseña,&lt;br/&gt;licencia"| P143
+  D13 -->|"estado de la licencia"| P143
+  P143 -->|"usuario conductor"| D1
+  P143 -->|"conductor sin aprobar&lt;br/&gt;y licencia pendiente"| D3
+  P143 -->|"invitación aceptada"| D3
+  P143 -->|"aviso a la empresa"| D11
+  TR -->|"aprobar o suspender"| P144
+  D3 -->|"conductor de la empresa"| P144
+  P144 -->|"aprobado o suspendido"| D3
+  P144 -->|"correo: ya podés&lt;br/&gt;recibir rutas"| SM
+  TR -->|"revocar"| P145
+  P145 -->|"estado revocada"| D3
+  </pre></div>
+</section>
+
+<section id="almacenes">
+  <h2>Almacenes de datos</h2>
+  <p>Los trece almacenes agrupan las 49 tablas del esquema. Las tablas <code>routes</code> y <code>stops</code> son el modelo anterior de rutas y conviven con el vigente dentro de D5.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>ID</th><th>Almacén</th><th>Tablas</th></tr></thead>
+    <tbody>
+      <tr><td class="id d">D1</td><td>Identidad y accesos</td><td class="tables">users, holding_users, holding_user_companies, holding_user_profiles, company_admins, warehouse_users, transport_company_admins, profiles, profile_permissions, permissions, modules, actions</td></tr>
+      <tr><td class="id d">D2</td><td>Organización</td><td class="tables">holdings, companies, company_applications, warehouses</td></tr>
+      <tr><td class="id d">D3</td><td>Transporte y flota</td><td class="tables">transport_companies, transport_applications, driver_invitations, vehicles, drivers, certifications, contracts</td></tr>
+      <tr><td class="id d">D4</td><td>Lotes</td><td class="tables">route_batches, route_batch_items, batch_clients</td></tr>
+      <tr><td class="id d">D5</td><td>Rutas</td><td class="tables">route_headers, route_details, shipment_items, routes (anterior), stops (anterior)</td></tr>
+      <tr><td class="id d">D6</td><td>Ofertas</td><td class="tables">route_price_offers</td></tr>
+      <tr><td class="id d">D7</td><td>Inventario y recepción</td><td class="tables">warehouse_inventory_items, receptions, reception_items</td></tr>
+      <tr><td class="id d">D8</td><td>Incidencias</td><td class="tables">incidents</td></tr>
+      <tr><td class="id d">D9</td><td>Entregas y pagos</td><td class="tables">deliveries, earnings, driver_metrics</td></tr>
+      <tr><td class="id d">D10</td><td>Catálogos</td><td class="tables">service_types, vehicle_types, message_templates, incident_types</td></tr>
+      <tr><td class="id d">D11</td><td>Notificaciones</td><td class="tables">notifications</td></tr>
+      <tr><td class="id d">D12</td><td>Auditoría</td><td class="tables">audit_logs, profile_change_history</td></tr>
+      <tr><td class="id d">D13</td><td>Geografía</td><td class="tables">countries, states, cities</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="matriz">
+  <h2>Matriz proceso × almacén</h2>
+  <p>Qué operaciones hace cada proceso sobre cada almacén: <strong>C</strong> crea, <strong>R</strong> lee, <strong>U</strong> actualiza, <strong>D</strong> elimina. Sirve para ver de un vistazo qué proceso es dueño de cada dato y qué se rompe si cambia.</p>
+  <div class="tablewrap"><table class="matrix" id="matrix"></table></div>
+</section>
+
+<footer>Generado a partir de <code>main.py</code> y <code>models.py</code>. Los procesos 10.0 y 1.0 aplican a todos los demás y no se repiten en cada flujo.</footer>
+</div>
+
+<script>
+  (function () {
+    var stores = [
+      ["D1","Identidad"],["D2","Organiz."],["D3","Flota"],["D4","Lotes"],["D5","Rutas"],["D6","Ofertas"],
+      ["D7","Invent."],["D8","Incid."],["D9","Pagos"],["D10","Catál."],["D11","Notif."],["D12","Audit."],["D13","Geogr."]
+    ];
+    var rows = [
+      ["1.0 Acceso",              {D1:"RU", D2:"R"}],
+      ["2.0 Planificación",       {D2:"R", D4:"CU", D5:"CUD", D7:"RU", D10:"R", D13:"CR"}],
+      ["3.0 Aprobación",          {D1:"R", D4:"RU", D5:"RU", D6:"C"}],
+      ["4.0 Negociación",         {D1:"R", D3:"R", D5:"RU", D6:"CRU"}],
+      ["5.0 Ejecución",           {D1:"R", D3:"RU", D4:"RU", D5:"RU", D9:"C"}],
+      ["6.0 Incidencias",         {D5:"RU", D8:"CRU", D10:"R"}],
+      ["7.0 Inventario y recepción", {D2:"R", D7:"CRUD"}],
+      ["8.0 Facturación",         {D3:"R", D5:"R", D9:"R"}],
+      ["9.0 Notificaciones",      {D1:"R", D3:"R", D4:"R", D11:"CRU"}],
+      ["10.0 Auditoría",          {D1:"R", D12:"CR"}],
+      ["11.0 Administración",     {D1:"CRUD", D2:"CRU", D10:"CRU"}],
+      ["12.0 Registro de transportistas", {D1:"CR", D3:"CRU", D11:"C", D13:"R"}],
+      ["13.0 Registro de warehouses", {D1:"CR", D2:"CRU", D10:"R", D11:"C", D13:"R"}],
+      ["14.0 Registro de conductores", {D1:"CR", D3:"CRU", D11:"C", D13:"R"}]
+    ];
+    var html = "<thead><tr><th>Proceso</th>" + stores.map(function (s) {
+      return "<th title=\"" + s[1] + "\">" + s[0] + "<small>" + s[1] + "</small></th>";
+    }).join("") + "</tr></thead><tbody>";
+    rows.forEach(function (r) {
+      html += "<tr><td>" + r[0] + "</td>" + stores.map(function (s) {
+        var v = r[1][s[0]];
+        return v ? "<td class=\"on\">" + v + "</td>" : "<td class=\"off\">·</td>";
+      }).join("") + "</tr>";
+    });
+    document.getElementById("matrix").innerHTML = html + "</tbody>";
+
+  })();
+</script>

@@ -1,0 +1,6 @@
+{
+  "name": "diccionario-muevo",
+  "private": true,
+  "description": "Generador del diccionario de datos (ver build.py)",
+  "dependencies": { "docx": "^9.0.0" }
+}

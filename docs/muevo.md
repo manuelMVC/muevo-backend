@@ -1,7 +1,7 @@
 # Muevo — Resumen del proyecto
 
 **Plataforma B2B2B de logística para el mercado hispano de EE.UU.**
-Documento vivo — última actualización: 22 de octubre de 2026
+Documento vivo — última actualización: 14 de noviembre de 2026
 
 ---
 
@@ -17,7 +17,7 @@ C:\Claude\
 │   ├── transport.html      (portal empresa de transporte)
 │   ├── admin.html          (portal de administración de Muevo — versión mínima: compañías, perfiles, historial de perfiles, auditoría)
 │   ├── login.html          (login unificado)
-│   ├── alembic\versions\   (37 migraciones — 001 a 037)
+│   ├── alembic\versions\   (38 migraciones — 001 a 038)
 │   ├── seed_initial_data.py (bootstrap: holding→company→warehouse→usuario admin)
 │   ├── seed_security_extensions.py (módulos/permisos nuevos + asigna perfiles)
 │   ├── seed_test_profile_users.py (1 usuario de prueba por cada perfil de seguridad del warehouse)
@@ -28,7 +28,11 @@ C:\Claude\
 │   ├── seed_demo_data.py   (datos de demo — 8 lotes, 16 rutas, cubre cada estado de negociación)
 │   ├── fix_*.py            (scripts de corrección de datos puntuales)
 │   ├── docs\muevo.md       (este documento — vive en el repo desde octubre 2026)
-│   ├── Muevo_Diccionario_de_Datos.docx / diccionario_datos_muevo.pdf (diccionario de datos — 42 tablas)
+│   ├── Muevo_Diccionario_de_Datos.docx / diccionario_datos_muevo.pdf (diccionario de datos — 49 tablas, generado)
+│   ├── tools\diccionario\  (generador del diccionario: build.py + descripciones.json + dominios.json)
+│   ├── docs\dfd_muevo.html (fuente del DFD, publicado como artifact)
+│   ├── register-transport.html / register-warehouse.html / register-driver.html (registros públicos)
+│   ├── test_*.py           (pruebas de integración contra la base real: perfiles, conductores, registros)
 │   ├── .vscode\            (launch.json/settings.json/extensions.json — debug F5 con uvicorn)
 │   ├── .venv\              (entorno virtual Python)
 │   └── .env                (variables de entorno — no versionado)
@@ -281,7 +285,7 @@ Hasta ahora no había forma de que una empresa de transporte se registrara sola:
 - **Revisión** en `admin.html`, pestaña "Solicitudes de transporte" (Pendientes / Aprobadas / Rechazadas / Todas). `GET /admin/transport-applications`, `POST .../{id}/approve` y `POST .../{id}/reject` exigen `require_platform_admin()`
 - **Aprobar** crea en una sola transacción: la `TransportCompany` con `is_verified = true`, `verified_at` y `verified_by`; el `User` administrador con el hash que eligió el solicitante; su `TransportCompanyAdmin` (principal, con todos los permisos de la empresa); un `HoldingUser` y el perfil `transport_admin` (ver [4.1](#41-autenticación-y-multi-tenancy)). Le llega un correo y ya puede entrar al portal de transporte
 - **Rechazar** exige un motivo, que se le envía al solicitante; puede volver a enviar una solicitud nueva
-- **Seguridad, de paso**: `POST /auth/register` aceptaba el `role` que mandara quien se registraba, así que cualquiera podía crearse como `muevo_admin` (un rol que ahora abre `admin.html`); ahora siempre crea un conductor. Además `audit_logs` guardaba el `hashed_password` de los usuarios en `changes`; ahora esas columnas (`hashed_password`, `admin_password_hash`) se registran como `[oculto]`. Quedan 4 filas anteriores en `audit_logs` con hashes, que no se tocaron porque la auditoría es un registro que no se edita: borrarlas o enmascararlas es una decisión pendiente
+- **Seguridad, de paso**: `POST /auth/register` aceptaba el `role` que mandara quien se registraba, así que cualquiera podía crearse como `muevo_admin` (un rol que ahora abre `admin.html`); ahora siempre creaba un conductor (el endpoint se retiró después, ver [4.16](#416-invitación-y-registro-de-conductores-driver_invitations--noviembre-2026)). Además `audit_logs` guardaba el `hashed_password` de los usuarios en `changes`; ahora esas columnas (`hashed_password`, `admin_password_hash`) se registran como `[oculto]`. Quedan 4 filas anteriores en `audit_logs` con hashes, que no se tocaron porque la auditoría es un registro que no se edita: borrarlas o enmascararlas es una decisión pendiente
 - **Verificado**: contra la base real, 49 comprobaciones (validaciones, duplicados, permisos 403, aprobar y entrar al portal con el perfil, rechazar, auditoría sin hashes, límite de intentos) y el flujo completo en el navegador
 - **Pendiente**: registro de conductores por invitación de su empresa; subir documentos (póliza, DOT) en vez de solo los números; y que Muevo verifique el DOT/MC contra la FMCSA en lugar de revisarlos a mano
 
@@ -306,6 +310,25 @@ Una compañía puede trabajar con **un tipo de servicio o con varios**, y lo eli
 - **Verificado**: contra la base real (catálogo público, registro con varios servicios y casos inválidos, plan y confirmación con servicios habilitados y no habilitados, cambio de servicios, admin de compañía nueva creando y aprobando un lote, 403 para viewer y para otra compañía) y la pantalla en el navegador
 - **Pendiente**: el vocabulario de las empresas de transporte (`transport_companies.service_modes` y el formulario de registro de transporte) sigue siendo mensajería / logística / empleados, distinto del catálogo; y los precios son globales por tipo de servicio, no por compañía
 
+### 4.16 Invitación y registro de conductores (`driver_invitations`) — noviembre 2026
+Un conductor no se registra solo: lo invita su empresa de transporte, porque desde que el conductor pertenece a una empresa (`drivers.transport_company_id`, ver [4.1.1](#411-conductor-por-ruta-no-por-vehículo-octubre-2026-migración-031_driver_per_route)) un conductor suelto no tendría a quién asignarle rutas.
+- **Invitar** (`POST /transport/driver-invitations`, permiso `fleet.create`): pide el correo y, opcionalmente, el nombre. Genera un token aleatorio de 256 bits, guarda **solo su hash SHA-256**, envía el enlace por correo y también lo devuelve a la empresa para que lo comparta si el correo no llega. El enlace vence en 7 días y es de un solo uso. Reenviar a un mismo correo revoca la invitación anterior, así que un enlace perdido no queda activo. Tope de 50 invitaciones pendientes por empresa. Si el correo ya tiene cuenta, se avisa en el momento (409)
+- **Registrarse** (`register-driver.html`, público): el enlace muestra la empresa que invita y el correo (que sale de la invitación, no del formulario, así que nadie puede registrar otra cuenta con ese enlace). El conductor completa nombre, teléfono, contraseña y la licencia (estado que la emitió y vencimiento, que debe ser futuro). El token se quita de la barra de direcciones apenas carga. Un enlace usado, revocado o vencido responde 410 con el motivo
+- **Qué crea al aceptar**: el `User` (rol `driver`), su `Driver` con la empresa y `is_approved = false`, y una `Certification` `driver_license` en estado `pending`. No se guarda el número de la licencia, solo el vencimiento y el estado emisor; la empresa verifica el documento en persona. Se avisa a los admins de la empresa (notificación en el portal)
+- **Aprobar o suspender** (`POST /transport/drivers/{id}/approve` y `.../suspend`, permiso `fleet.edit`): hasta que la empresa lo aprueba, el conductor puede iniciar sesión pero **`GET /routes` le devuelve una lista vacía** (no ve rutas ni precios), no puede tomar una ruta (403) y la empresa no puede asignarle una (400). Suspender le quita la aprobación y lo desconecta. La revisión de la licencia por staff de Muevo (`Certification.reviewed_by`) no está conectada: queda pendiente
+- **Pantalla "Conductores" en `transport.html`**: formulario de invitación con el enlace copiable, tabla de conductores (pendientes de aprobación con botón Aprobar, aprobados con Suspender), tabla de invitaciones con su estado y Revocar. El aviso de la campanita lleva a esa pantalla. El modal de aceptar una ruta solo ofrece conductores aprobados
+- **Seguridad, de paso**: las notificaciones se mostraban sin escapar en los dos portales (`innerHTML`), y ahora llevan texto que escriben terceros (nombre de conductor, nombre de empresa registrada), lo que permitía inyectar HTML o script en el panel de otro usuario; ahora se escapan al mostrarlas. Los correos que incluyen nombres o motivos escritos por terceros también los escapan (`_h()`). `token_hash` se registra como `[oculto]` en `audit_logs`
+- **Verificado**: `test_driver_invites.py` (base real, más de 50 comprobaciones: invitar con y sin permiso, otra empresa, reenvío, aceptar con datos inválidos, enlace reusado/revocado/vencido, conductor pendiente sin rutas, aprobar, suspender, límite de intentos, auditoría sin hashes) y `test_registro_smoke.py` (registro de transporte y de warehouse, con un nombre de empresa hostil), más el flujo completo en el navegador
+- **Registro público anterior retirado**: se eliminó `POST /auth/register`, que creaba conductores sin empresa (no podían recibir rutas) y aceptaba un rol elegido por quien se registraba. Hoy un conductor solo entra por invitación de su empresa. No quedaban conductores sin empresa en la base. El cliente móvil conserva un método `register` en `src/api/client.ts` que ninguna pantalla usa y que ahora apuntaría a una ruta inexistente
+- **Pendiente**: los portales siguen mostrando sin escapar otros textos de terceros (por ejemplo nombres de empresas en las negociaciones): hace falta una revisión de todos los `innerHTML` de `warehouse.html` y `transport.html`
+
+### 4.17 Documentación generada: diccionario de datos y DFD — noviembre 2026
+El diccionario de datos se generaba con scripts que vivían en una carpeta temporal y se perdieron; ahora el generador está en el repo.
+- **`tools/diccionario/build.py`** lee el esquema real desde `models.py`, valida y escribe `Muevo_Diccionario_de_Datos.docx` y `diccionario_datos_muevo.pdf` (el PDF usa Microsoft Word por COM; sin Word se omite). Se corre con `.venv\Scripts\python tools\diccionario\build.py`; la primera vez instala `docx` con npm
+- **Falla a propósito si el diccionario quedaría desactualizado**: una tabla nueva sin descripción en `descripciones.json` o sin dominio en `dominios.json`, o una descripción o dominio de una tabla que ya no existe. Al agregar una tabla hay que sumarla a esos dos archivos
+- **Qué sale solo y qué no**: columnas, tipos, PK/FK, nulabilidad y notas se leen de los modelos; las descripciones y la agrupación por dominio son texto escrito a mano
+- **El DFD** (`docs/dfd_muevo.html`, 14 procesos, 13 almacenes y la matriz proceso × almacén) se mantiene a mano: no se deriva del código, así que cada proceso nuevo hay que agregarlo en ese archivo y volver a publicarlo
+
 ---
 
 ## 5. Decisiones de UX relevantes
@@ -320,7 +343,7 @@ Una compañía puede trabajar con **un tipo de servicio o con varios**, y lo eli
 ## 6. Estado actual (octubre 2026)
 
 ### Completado
-- Backend: 37 migraciones Alembic aplicadas, 48 tablas
+- Backend: 38 migraciones Alembic aplicadas, 49 tablas
 - Portal warehouse: dashboard, lotes (con anulación con motivo y validación de precio al aprobar), rutas (con CRUD en borrador y paradas multi-ítem), clientes, incidencias, negociación de precios multi-transportista con sugerencia automática y aprobación de holding (con pantalla propia "Ofertas por ruta" para verlas todas juntas), tarifas de servicio administrables, escaneo de inventario, recepción de mercancía (inbound)
 - Portal transportista: marketplace de negociación de precios (antes no tenía ninguna UI de negociación) — incluye un widget en el Dashboard para pujar sin salir de ahí; Dashboard con cards + gráficos y matriz de rutas por estado, alineado con el del warehouse (ver [4.7](#47-negociación-de-precios-route_price_offers))
 - App móvil: pantallas base del portal warehouse
@@ -335,14 +358,16 @@ Una compañía puede trabajar con **un tipo de servicio o con varios**, y lo eli
 - **Usuarios de prueba** (contraseña de todos: `muevo123`): warehouse — `carlos@` y `super.admin@` (Super Admin), `company.admin@`, `warehouse.admin@`, `operator@`, `viewer@`, `billing.manager@`; transporte — `transport@` (Rapid Courier Orlando, verificada) y `sunshine@` (Sunshine Logistics, sin verificar) como Admin de Transporte, más `transport.dispatcher@`, `transport.billing@` y `transport.viewer@` en Rapid Courier; Muevo — `admin@muevo.app`; todos con dominio `@muevo.app`. `driver@muevo.app` es solo de la app móvil
 - **Geografía país > estado > ciudad** (octubre 2026, ver [4.1.2](#412-geografía-país--estado--ciudad-octubre-2026-migración-032_geography)): EE.UU., 50 estados y 29.537 ciudades; las rutas se pueden armar por ciudad, estado o país
 - **Historial de cambios de perfil** (octubre 2026, ver [4.12](#412-historial-de-cambios-de-perfil-profile_change_history--octubre-2026)): tabla de solo lectura con persona, fecha, cambio, valor anterior y valor actual para perfiles, permisos, asignaciones de perfil, usuarios del holding y accesos a compañías; consulta por API y pestaña en `admin.html`; de paso se cerró el hueco de los DELETE masivos que no quedaban en la auditoría
-- **Registro de empresas de transporte con revisión de Muevo** (octubre 2026, ver [4.13](#413-registro-de-empresas-de-transporte-transport_applications--octubre-2026)) y cierre de un hueco de seguridad en `/auth/register` (permitía registrarse como `muevo_admin`)
+- **Registro de empresas de transporte con revisión de Muevo** (octubre 2026, ver [4.13](#413-registro-de-empresas-de-transporte-transport_applications--octubre-2026)) y cierre de un hueco de seguridad en `/auth/register` (permitía registrarse como `muevo_admin`), endpoint retirado después
 - **Registro de warehouses con revisión de Muevo** (octubre 2026, ver [4.14](#414-registro-de-warehouses-company_applications--octubre-2026)): formulario público, solicitud pendiente y aprobación que crea la compañía en su propio holding, su primer warehouse y su administrador
 - **Tipos de servicio por compañía** (octubre 2026, ver [4.15](#415-tipos-de-servicio-por-compañía--octubre-2026)): cada compañía elige uno o varios servicios del catálogo al registrarse, los cambia en "Mis servicios" y el armado de lotes solo acepta los habilitados. Corrige además que la segunda compañía no podía crear su primer lote y que las compañías del registro nuevo no podían crear ni aprobar lotes
+- **Invitación y registro de conductores por su empresa** (noviembre 2026, ver [4.16](#416-invitación-y-registro-de-conductores-driver_invitations--noviembre-2026)): enlace por correo de un solo uso, aprobación de la empresa antes de ver rutas y pantalla "Conductores"; incluye el escape de notificaciones (inyección de HTML) en ambos portales
 - **Notificaciones in-app + email en ambos portales** (ver [4.11](#411-notificaciones-notifications--septiembre-2026)): todo el ciclo de negociación/despacho (marketplace se abre, ofertas, holding, aceptar/rechazar rutas) avisa a los usuarios correspondientes — campanita con polling, sin necesidad de refrescar la pantalla a mano
 
 ### Pendiente / próximos pasos
+- Revisar todos los `innerHTML` de `warehouse.html` y `transport.html`: solo se escaparon las notificaciones y las pantallas nuevas; el resto muestra sin escapar textos que ahora pueden escribir terceros (nombres de empresas, de conductores, notas)
+- Pruebas automatizadas: hay `test_profile_history.py`, `test_driver_invites.py` y `test_registro_smoke.py` en la raíz; las pruebas de geografía, tipos de servicio, conductor por ruta y perfiles de transporte se hicieron con scripts temporales y no quedaron en el repo
 - Las empresas de transporte usan otro vocabulario de servicios (mensajería, logística, empleados) que el catálogo `service_types`: unificarlo permitiría emparejar bien lotes y transportistas
-- Registro de conductores por invitación de su empresa: falta (el de transportistas es [4.13](#413-registro-de-empresas-de-transporte-transport_applications--octubre-2026) y el de warehouses [4.14](#414-registro-de-warehouses-company_applications--octubre-2026))
 - El administrador de una compañía registrada no puede invitar a su equipo: `/holding/users` exige ser super admin del holding. Falta un alta de usuarios a nivel compañía
 - `audit_logs` tiene 4 filas anteriores con hashes de contraseña en `changes`: decidir si se enmascaran (la auditoría es un registro inmutable, no se tocó)
 - Geografía: `warehouse.html` no expone todavía el agrupamiento por zona ni los selectores de país/estado/ciudad; `companies` y `transport_companies` siguen con ciudad y estado en texto libre

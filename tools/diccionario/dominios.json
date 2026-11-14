@@ -1,0 +1,111 @@
+[
+  {
+    "name": "Identidad y conductores",
+    "tables": [
+      "users",
+      "drivers",
+      "vehicles",
+      "certifications",
+      "driver_metrics"
+    ]
+  },
+  {
+    "name": "Holdings, companies y warehouses",
+    "tables": [
+      "holdings",
+      "holding_users",
+      "holding_user_companies",
+      "companies",
+      "company_applications",
+      "company_admins",
+      "warehouses",
+      "warehouse_users"
+    ]
+  },
+  {
+    "name": "Empresas de transporte",
+    "tables": [
+      "transport_companies",
+      "transport_applications",
+      "contracts",
+      "transport_company_admins",
+      "driver_invitations"
+    ]
+  },
+  {
+    "name": "Rutas — modelo vigente (encabezado/detalle)",
+    "tables": [
+      "route_headers",
+      "route_details",
+      "shipment_items"
+    ]
+  },
+  {
+    "name": "Rutas — modelo legacy",
+    "tables": [
+      "routes",
+      "stops"
+    ]
+  },
+  {
+    "name": "Geografía",
+    "tables": [
+      "countries",
+      "states",
+      "cities"
+    ]
+  },
+  {
+    "name": "Lotes y negociación de precios",
+    "tables": [
+      "route_batches",
+      "route_batch_items",
+      "route_price_offers",
+      "batch_clients"
+    ]
+  },
+  {
+    "name": "Operación y pagos",
+    "tables": [
+      "deliveries",
+      "earnings"
+    ]
+  },
+  {
+    "name": "Incidencias, inventario y recepción",
+    "tables": [
+      "incident_types",
+      "incidents",
+      "warehouse_inventory_items",
+      "receptions",
+      "reception_items"
+    ]
+  },
+  {
+    "name": "Catálogos y configuración",
+    "tables": [
+      "service_types",
+      "vehicle_types",
+      "message_templates"
+    ]
+  },
+  {
+    "name": "Seguridad y permisos (RBAC)",
+    "tables": [
+      "modules",
+      "actions",
+      "permissions",
+      "profiles",
+      "profile_permissions",
+      "holding_user_profiles"
+    ]
+  },
+  {
+    "name": "Auditoría y notificaciones",
+    "tables": [
+      "audit_logs",
+      "profile_change_history",
+      "notifications"
+    ]
+  }
+]
