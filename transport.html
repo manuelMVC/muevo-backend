@@ -904,7 +904,7 @@ function statusBadge(status) {
     pending:     ['badge-muted', 'Pendiente'],
   };
   const [cls, label] = map[status] || ['badge-muted', status];
-  return `<span class="badge ${cls}">${label}</span>`;
+  return `<span class="badge ${escHtml(cls)}">${escHtml(label)}</span>`;
 }
 
 function modeBadge(mode) {
@@ -914,7 +914,7 @@ function modeBadge(mode) {
     'Logística':  ['badge-yellow', '🏭'],
   };
   const [cls, icon] = map[mode] || ['badge-muted','📋'];
-  return `<span class="badge ${cls}">${icon} ${mode}</span>`;
+  return `<span class="badge ${escHtml(cls)}">${escHtml(icon)} ${escHtml(mode)}</span>`;
 }
 
 function stopDot(status) {
@@ -994,7 +994,7 @@ function renderDashboard() {
       <!-- Bloque 1: Total rutas -->
       <div class="kpi-card">
         <div class="kpi-label">Total rutas</div>
-        <div class="kpi-value">${allRoutes.length}</div>
+        <div class="kpi-value">${escHtml(allRoutes.length)}</div>
         <div class="kpi-sub" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
           ${[
             { key:'offered',     label:'Ofrecida',    color:'var(--yellow)' },
@@ -1004,7 +1004,7 @@ function renderDashboard() {
             { key:'cancelled',   label:'Cancelada',   color:'var(--red)'    },
           ].map(s => ({ ...s, count: allRoutes.filter(r=>r.status===s.key).length }))
            .filter(s => s.count > 0)
-           .map(s => `<span style="color:${s.color};font-size:11px">${s.count} ${s.label}</span>`)
+           .map(s => `<span style="color:${escHtml(s.color)};font-size:11px">${escHtml(s.count)} ${escHtml(s.label)}</span>`)
            .join('<span style="color:var(--border);font-size:11px"> · </span>')}
         </div>
       </div>
@@ -1012,7 +1012,7 @@ function renderDashboard() {
       <!-- Bloque 2: Vehículos en línea -->
       <div class="kpi-card">
         <div class="kpi-label">Vehículos en línea</div>
-        <div class="kpi-value green">${onlineVehicles}/${fleet.length}</div>
+        <div class="kpi-value green">${escHtml(onlineVehicles)}/${escHtml(fleet.length)}</div>
         <div class="kpi-sub" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
           ${[
             { key:'en_ruta',       label:'En ruta',       color:'var(--orange)', count: fleet.filter(v=>v.driver_online && v.active_route_id).length },
@@ -1020,7 +1020,7 @@ function renderDashboard() {
             { key:'desconectado',  label:'Desconectado',  color:'var(--muted)',  count: fleet.filter(v=>v.driver_name && !v.driver_online).length },
             { key:'sin_conductor', label:'Sin conductor', color:'var(--muted)',  count: fleet.filter(v=>!v.driver_name).length },
           ].filter(s => s.count > 0)
-           .map(s => `<span style="color:${s.color};font-size:11px">${s.count} ${s.label}</span>`)
+           .map(s => `<span style="color:${escHtml(s.color)};font-size:11px">${escHtml(s.count)} ${escHtml(s.label)}</span>`)
            .join('<span style="color:var(--border);font-size:11px"> · </span>')}
         </div>
       </div>
@@ -1054,7 +1054,7 @@ function renderDashboard() {
     <div class="alert warn">
       <div class="alert-icon">⏳</div>
       <div class="alert-body">
-        <div class="alert-title">Tenés ${offered.length} ruta${offered.length===1?'':'s'} esperando respuesta</div>
+        <div class="alert-title">Tenés ${escHtml(offered.length)} ruta${offered.length===1?'':'s'} esperando respuesta</div>
         El dispatcher te asignó ${offered.length===1?'esta ruta':'estas rutas'} — aceptá o rechazá antes de que pase a otra empresa.
       </div>
     </div>
@@ -1105,10 +1105,10 @@ function renderDashboardRouteMatrix(allRoutes, offered, scheduled, active, compl
     <!-- Filtros por estado -->
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:16px;row-gap:8px">
       ${FILTERS.map(f => `
-        <button onclick="setDashRouteFilter('${f.key}')"
+        <button onclick="setDashRouteFilter(${jsArg(f.key)})"
           class="btn ${dashRouteFilter===f.key?'btn-primary':'btn-ghost'}"
           style="font-size:12px;padding:5px 12px;flex-shrink:0">
-          ${f.label}${f.count > 0 ? ` <span style="opacity:.7">(${f.count})</span>` : ''}
+          ${escHtml(f.label)}${f.count > 0 ? ` <span style="opacity:.7">(${escHtml(f.count)})</span>` : ''}
         </button>
       `).join('')}
     </div>
@@ -1134,22 +1134,22 @@ function renderDashboardRouteMatrix(allRoutes, offered, scheduled, active, compl
               No hay rutas en este estado
             </td></tr>
           ` : filtered.map(r => `
-            <tr style="cursor:pointer;font-size:12px" onclick="openRoute('${r.id}')">
+            <tr style="cursor:pointer;font-size:12px" onclick="openRoute(${jsArg(r.id)})">
               <td style="padding:8px">
-                <div style="font-weight:600;color:var(--white)">${r.title}</div>
-                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${r.num}</div>
+                <div style="font-weight:600;color:var(--white)">${escHtml(r.title)}</div>
+                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${escHtml(r.num)}</div>
               </td>
               <td style="padding:8px">${modeBadge(r.mode)}</td>
               <td style="padding:8px;color:var(--muted)">
-                <div style="font-size:12px">${r.date}</div>
-                <div style="font-size:11px">${r.time}</div>
+                <div style="font-size:12px">${escHtml(r.date)}</div>
+                <div style="font-size:11px">${escHtml(r.time)}</div>
               </td>
               <td style="padding:8px">
-                <div style="font-size:12px">${r.vehicle || '<span style="color:var(--muted)">Sin vehículo</span>'}</div>
-                <div style="font-size:11px;color:var(--muted)">${r.driver || 'Sin asignar'}</div>
+                <div style="font-size:12px">${escHtml(r.vehicle) || '<span style="color:var(--muted)">Sin vehículo</span>'}</div>
+                <div style="font-size:11px;color:var(--muted)">${escHtml(r.driver || 'Sin asignar')}</div>
               </td>
               <td style="padding:8px">
-                <div style="font-size:12px">${r.stops_done}/${r.stops_total}</div>
+                <div style="font-size:12px">${escHtml(r.stops_done)}/${escHtml(r.stops_total)}</div>
                 <div style="width:50px;height:3px;background:var(--border);border-radius:2px;margin-top:4px">
                   <div style="width:${pct(r.stops_done,r.stops_total)}%;height:100%;background:var(--orange);border-radius:2px"></div>
                 </div>
@@ -1160,9 +1160,9 @@ function renderDashboardRouteMatrix(allRoutes, offered, scheduled, active, compl
                 <div style="display:flex;gap:4px;align-items:center;justify-content:flex-end">
                   ${r.status === 'offered' ? `
                     <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;color:var(--red,#D85A30)"
-                      onclick="event.stopPropagation();rejectRoute('${r.id}')">✕ Rechazar</button>
+                      onclick="event.stopPropagation();rejectRoute(${jsArg(r.id)})">✕ Rechazar</button>
                     <button class="btn btn-primary" style="font-size:11px;padding:3px 8px"
-                      onclick="event.stopPropagation();openAcceptModal('${r.id}')">✓ Aceptar</button>
+                      onclick="event.stopPropagation();openAcceptModal(${jsArg(r.id)})">✓ Aceptar</button>
                   ` : `
                     <span style="font-size:11px;color:var(--orange)">Ver detalle →</span>
                   `}
@@ -1279,9 +1279,9 @@ function setupPieChart(canvas, DATA, borderColor, mutedColor, legendId) {
     legEl.innerHTML = slices.map((d, i) => `
       <span style="display:flex;align-items:center;gap:3px;font-size:10px;color:${hoverIdx===i?d.color:mutedColor};
                    font-weight:${hoverIdx===i?'700':'400'};transition:color .1s">
-        <span style="width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,${shadeColor(d.color,0.2)},${d.color});
+        <span style="width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,${shadeColor(d.color,0.2)},${escHtml(d.color)});
                      flex-shrink:0;display:inline-block;box-shadow:0 1px 2px rgba(0,0,0,.3)"></span>
-        ${d.label} <b style="color:${d.color}">${d.count}</b>
+        ${escHtml(d.label)} <b style="color:${escHtml(d.color)}">${escHtml(d.count)}</b>
       </span>`).join('');
   }
 
@@ -1414,9 +1414,9 @@ function setupBarChart(canvas, DATA, mutedColor, legendId) {
     legEl.innerHTML = bars.map((d, i) => `
       <span style="display:flex;align-items:center;gap:3px;font-size:10px;color:${hoverIdx===i?d.color:mutedColor};
                    font-weight:${hoverIdx===i?'700':'400'};transition:color .1s">
-        <span style="width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,${shadeColor(d.color,0.2)},${d.color});
+        <span style="width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,${shadeColor(d.color,0.2)},${escHtml(d.color)});
                      flex-shrink:0;display:inline-block;box-shadow:0 1px 2px rgba(0,0,0,.3)"></span>
-        ${d.label} <b style="color:${d.color}">${d.count}</b>
+        ${escHtml(d.label)} <b style="color:${escHtml(d.color)}">${escHtml(d.count)}</b>
       </span>`).join('');
   }
 
@@ -1461,7 +1461,7 @@ function setupBarChart(canvas, DATA, mutedColor, legendId) {
 function renderRutas() {
   return `
     <div class="tabs">
-      <button class="tab ${activeTab==='todas'?'active':''}"    onclick="setTab('todas')">Todas (${ROUTES.length})</button>
+      <button class="tab ${activeTab==='todas'?'active':''}"    onclick="setTab('todas')">Todas (${escHtml(ROUTES.length)})</button>
       <button class="tab ${activeTab==='ofrecidas'?'active':''}" onclick="setTab('ofrecidas')">Ofrecidas (${ROUTES.filter(r=>r.status==='offered').length})</button>
       <button class="tab ${activeTab==='activas'?'active':''}"  onclick="setTab('activas')">En curso (${ROUTES.filter(r=>r.status==='in_progress').length})</button>
       <button class="tab ${activeTab==='proximas'?'active':''}" onclick="setTab('proximas')">Programadas (${ROUTES.filter(r=>r.status==='scheduled'||r.status==='assigned').length})</button>
@@ -1493,22 +1493,22 @@ function renderRutas() {
         </thead>
         <tbody>
           ${filteredRoutes().map(r => `
-            <tr onclick="openRoute('${r.id}')">
+            <tr onclick="openRoute(${jsArg(r.id)})">
               <td>
-                <div style="font-weight:500">${r.title}</div>
-                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${r.num}</div>
+                <div style="font-weight:500">${escHtml(r.title)}</div>
+                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${escHtml(r.num)}</div>
               </td>
               <td>${modeBadge(r.mode)}</td>
               <td>
-                <div style="font-size:12px">${r.date}</div>
-                <div style="font-size:11px;color:var(--muted)">${r.time}</div>
+                <div style="font-size:12px">${escHtml(r.date)}</div>
+                <div style="font-size:11px;color:var(--muted)">${escHtml(r.time)}</div>
               </td>
               <td>
-                <div style="font-size:12px">${r.vehicle || '—'}</div>
-                <div style="font-size:11px;color:var(--muted)">${r.driver || 'Sin asignar'}</div>
+                <div style="font-size:12px">${escHtml(r.vehicle || '—')}</div>
+                <div style="font-size:11px;color:var(--muted)">${escHtml(r.driver || 'Sin asignar')}</div>
               </td>
               <td>
-                <div style="font-size:12px">${r.stops_done}/${r.stops_total}</div>
+                <div style="font-size:12px">${escHtml(r.stops_done)}/${escHtml(r.stops_total)}</div>
                 <div style="width:60px;height:3px;background:var(--border);border-radius:2px;margin-top:4px">
                   <div style="width:${pct(r.stops_done,r.stops_total)}%;height:100%;background:var(--orange);border-radius:2px"></div>
                 </div>
@@ -1517,14 +1517,14 @@ function renderRutas() {
               <td style="font-weight:500;color:var(--orange)">${fmt$(r.net)}</td>
               <td>
                 ${r.shipment
-                  ? `<button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();openShipmentModal('${r.id}')">📦 ${r.shipment.total_packages} pkg</button>`
+                  ? `<button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();openShipmentModal(${jsArg(r.id)})">📦 ${escHtml(r.shipment.total_packages)} pkg</button>`
                   : `<span style="font-size:11px;color:var(--muted)">—</span>`}
               </td>
               <td>
                 ${r.status === 'offered'
                   ? `<div style="display:flex;gap:4px" onclick="event.stopPropagation()">
-                      <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;color:var(--red,#D85A30)" onclick="rejectRoute('${r.id}')">✕</button>
-                      <button class="btn btn-primary" style="font-size:11px;padding:4px 8px" onclick="openAcceptModal('${r.id}')">✓ Aceptar</button>
+                      <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;color:var(--red,#D85A30)" onclick="rejectRoute(${jsArg(r.id)})">✕</button>
+                      <button class="btn btn-primary" style="font-size:11px;padding:4px 8px" onclick="openAcceptModal(${jsArg(r.id)})">✓ Aceptar</button>
                     </div>`
                   : `<span style="color:var(--muted);font-size:12px">Ver →</span>`}
               </td>
@@ -1559,17 +1559,17 @@ function renderFlota() {
     <div class="kpi-grid">
       <div class="kpi-card">
         <div class="kpi-label">Vehículos totales</div>
-        <div class="kpi-value">${fleet.length}</div>
+        <div class="kpi-value">${escHtml(fleet.length)}</div>
         <div class="kpi-sub">Flota registrada</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Conductores en línea</div>
-        <div class="kpi-value green">${onlineCount}</div>
+        <div class="kpi-value green">${escHtml(onlineCount)}</div>
         <div class="kpi-sub up">Disponibles ahora</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">En ruta ahora</div>
-        <div class="kpi-value orange">${busyCount}</div>
+        <div class="kpi-value orange">${escHtml(busyCount)}</div>
         <div class="kpi-sub">Vehículos ocupados</div>
       </div>
       <div class="kpi-card">
@@ -1603,11 +1603,11 @@ function renderFlota() {
           ${fleet.map(v => `
             <tr>
               <td>
-                <div style="font-weight:500;font-family:var(--font-mono)">${v.plate}</div>
-                <div style="font-size:11px;color:var(--muted)">${v.make} ${v.model} ${v.year}</div>
+                <div style="font-weight:500;font-family:var(--font-mono)">${escHtml(v.plate)}</div>
+                <div style="font-size:11px;color:var(--muted)">${escHtml(v.make)} ${escHtml(v.model)} ${escHtml(v.year)}</div>
               </td>
-              <td><span class="badge badge-muted">${v.vehicle_type}</span></td>
-              <td style="font-size:13px">${v.driver_name || '<span style="color:var(--muted)">Sin asignar</span>'}</td>
+              <td><span class="badge badge-muted">${escHtml(v.vehicle_type)}</span></td>
+              <td style="font-size:13px">${escHtml(v.driver_name) || '<span style="color:var(--muted)">Sin asignar</span>'}</td>
               <td>${v.driver_rating ? '★ ' + v.driver_rating : '—'}</td>
               <td>
                 ${!v.driver_name ? '<span class="badge badge-muted">Sin conductor</span>'
@@ -1616,7 +1616,7 @@ function renderFlota() {
               </td>
               <td>
                 ${v.active_route_number
-                  ? `<span class="badge badge-orange" style="cursor:pointer" onclick="openRoute('${v.active_route_id}')">${v.active_route_number} →</span>`
+                  ? `<span class="badge badge-orange" style="cursor:pointer" onclick="openRoute(${jsArg(v.active_route_id)})">${escHtml(v.active_route_number)} →</span>`
                   : '<span style="color:var(--muted);font-size:12px">Disponible</span>'}
               </td>
               <td><button class="btn btn-ghost" style="font-size:11px;padding:4px 10px">Editar</button></td>
@@ -1635,20 +1635,20 @@ function renderTracking() {
     <div class="grid2">
       <div>
         <div class="section-hdr">
-          <div class="section-title">Vehículos en línea (${onFleet.length})</div>
+          <div class="section-title">Vehículos en línea (${escHtml(onFleet.length)})</div>
         </div>
         ${onFleet.length === 0 ? '<div class="card" style="text-align:center;color:var(--muted);padding:24px">Ningún vehículo conectado en este momento.</div>' : onFleet.map(v => `
-          <div class="card" style="margin-bottom:10px;${v.active_route_id?'cursor:pointer':''}" ${v.active_route_id?`onclick="openRoute('${v.active_route_id}')"`:''}>
+          <div class="card" style="margin-bottom:10px;${v.active_route_id?'cursor:pointer':''}" ${v.active_route_id?`onclick="openRoute(${jsArg(v.active_route_id)})"`:''}>
             <div style="display:flex;justify-content:space-between;margin-bottom:8px">
               <div>
-                <div class="card-title" style="font-size:13px">${v.plate} — ${v.make} ${v.model}</div>
-                <div class="card-sub">${v.driver_name || 'Sin conductor'}</div>
+                <div class="card-title" style="font-size:13px">${escHtml(v.plate)} — ${escHtml(v.make)} ${escHtml(v.model)}</div>
+                <div class="card-sub">${escHtml(v.driver_name || 'Sin conductor')}</div>
               </div>
               ${v.active_route_id ? '<span class="badge badge-orange">En ruta</span>' : '<span class="badge badge-green">● Disponible</span>'}
             </div>
             <div style="display:flex;gap:6px">
-              <span class="badge badge-muted">★ ${v.driver_rating || '—'}</span>
-              ${v.active_route_number ? `<span class="badge badge-muted">🗺 ${v.active_route_number}</span>` : ''}
+              <span class="badge badge-muted">★ ${escHtml(v.driver_rating || '—')}</span>
+              ${v.active_route_number ? `<span class="badge badge-muted">🗺 ${escHtml(v.active_route_number)}</span>` : ''}
               <span style="margin-left:auto;font-size:12px;color:var(--orange)">${v.active_route_id ? 'Ver ruta →' : ''}</span>
             </div>
           </div>
@@ -1688,11 +1688,11 @@ function renderFacturacion() {
       <div class="kpi-card">
         <div class="kpi-label">Ingreso neto recibido</div>
         <div class="kpi-value orange">${fmt$(kpiNet)}</div>
-        <div class="kpi-sub">${kpiCount} ruta${kpiCount===1?'':'s'} completada${kpiCount===1?'':'s'}</div>
+        <div class="kpi-sub">${escHtml(kpiCount)} ruta${kpiCount===1?'':'s'} completada${kpiCount===1?'':'s'}</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Comisión Muevo descontada</div>
-        <div class="kpi-value">~${avgCommission}%</div>
+        <div class="kpi-value">~${escHtml(avgCommission)}%</div>
         <div class="kpi-sub">Promedio sobre tarifa bruta</div>
       </div>
       <div class="kpi-card">
@@ -1724,11 +1724,11 @@ function renderFacturacion() {
             <tr>
               <td style="font-family:var(--font-mono);font-size:12px;color:var(--muted)">PAY-2026-00${i+1}</td>
               <td>
-                <div style="font-weight:500;font-size:13px">${r.route_number || r.num} · ${r.title}</div>
-                <div style="font-size:11px;color:var(--muted)">${r.date}</div>
+                <div style="font-weight:500;font-size:13px">${escHtml(r.route_number || r.num)} · ${escHtml(r.title)}</div>
+                <div style="font-size:11px;color:var(--muted)">${escHtml(r.date)}</div>
               </td>
-              <td style="font-size:12px">${r.date}</td>
-              <td style="font-size:12px">${r.client_company || r.client || '—'}</td>
+              <td style="font-size:12px">${escHtml(r.date)}</td>
+              <td style="font-size:12px">${escHtml(r.client_company || r.client || '—')}</td>
               <td style="font-weight:500">${fmt$(r.gross_pay)}</td>
               <td style="color:var(--muted);font-size:12px">−${fmt$(r.commission)}</td>
               <td style="font-weight:600;color:var(--orange)">${fmt$(r.net_pay)}</td>
@@ -1757,8 +1757,8 @@ function openRoute(id) {
   document.getElementById('panelBody').innerHTML = `
     <div style="margin-bottom:16px;display:flex;gap:6px;flex-wrap:wrap">
       ${statusBadge(r.status)} ${modeBadge(r.mode)}
-      <span class="badge badge-muted">📅 ${r.date}</span>
-      <span class="badge badge-muted">🕐 ${r.time}</span>
+      <span class="badge badge-muted">📅 ${escHtml(r.date)}</span>
+      <span class="badge badge-muted">🕐 ${escHtml(r.time)}</span>
     </div>
 
     ${r.status === 'offered' ? `
@@ -1770,8 +1770,8 @@ function openRoute(id) {
       </div>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:16px">
-      <button class="btn btn-ghost" style="flex:1;color:var(--red,#D85A30)" onclick="closePanel();rejectRoute('${r.id}')">✕ Rechazar</button>
-      <button class="btn btn-primary" style="flex:1" onclick="closePanel();openAcceptModal('${r.id}')">✓ Aceptar ruta</button>
+      <button class="btn btn-ghost" style="flex:1;color:var(--red,#D85A30)" onclick="closePanel();rejectRoute(${jsArg(r.id)})">✕ Rechazar</button>
+      <button class="btn btn-primary" style="flex:1" onclick="closePanel();openAcceptModal(${jsArg(r.id)})">✓ Aceptar ruta</button>
     </div>
     ` : `
     <div class="map-box">
@@ -1782,10 +1782,10 @@ function openRoute(id) {
     <div class="prog-wrap">
       <div class="prog-label">
         <span>Progreso general</span>
-        <span style="color:var(--orange)">${r.stops_done}/${r.stops_total} paradas · ${pctDone}%</span>
+        <span style="color:var(--orange)">${escHtml(r.stops_done)}/${escHtml(r.stops_total)} paradas · ${escHtml(pctDone)}%</span>
       </div>
       <div class="prog-track">
-        <div class="prog-fill ${r.status==='completed'?'green':''}" style="width:${pctDone}%"></div>
+        <div class="prog-fill ${r.status==='completed'?'green':''}" style="width:${escHtml(pctDone)}%"></div>
       </div>
     </div>
 
@@ -1794,45 +1794,45 @@ function openRoute(id) {
       <div style="display:flex;align-items:center;gap:10px">
         <div style="width:36px;height:36px;border-radius:10px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:16px">🚐</div>
         <div style="flex:1">
-          <div style="font-size:13px;font-weight:500;color:var(--white)">${r.vehicle || 'Sin vehículo asignado'}</div>
-          <div style="font-size:11px;color:var(--muted)">${r.driver || 'Sin conductor asignado'}</div>
+          <div style="font-size:13px;font-weight:500;color:var(--white)">${escHtml(r.vehicle || 'Sin vehículo asignado')}</div>
+          <div style="font-size:11px;color:var(--muted)">${escHtml(r.driver || 'Sin conductor asignado')}</div>
         </div>
       </div>
     </div>
     `}
 
     ${r.shipment ? `
-    <div class="card" style="margin-bottom:16px;border-color:var(--orange-bdr);cursor:pointer" onclick="openShipmentModal('${r.id}')">
+    <div class="card" style="margin-bottom:16px;border-color:var(--orange-bdr);cursor:pointer" onclick="openShipmentModal(${jsArg(r.id)})">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <div style="font-size:11px;font-weight:600;color:var(--orange);text-transform:uppercase;letter-spacing:.8px">📦 Detalle del envío</div>
         <span style="font-size:11px;color:var(--orange)">Ver completo →</span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0">
-        <div class="cost-row"><span class="cost-label">Total de paquetes</span><span class="cost-value">${r.shipment.total_packages} unidades</span></div>
+        <div class="cost-row"><span class="cost-label">Total de paquetes</span><span class="cost-value">${escHtml(r.shipment.total_packages)} unidades</span></div>
         <div class="cost-row"><span class="cost-label">Peso total</span><span class="cost-value">${r.shipment.total_weight_lbs.toLocaleString()} lbs</span></div>
       </div>
     </div>` : ''}
 
     <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px">
-      ${r.stops.length} PARADAS${r.status !== 'offered' ? ' — clic para ver detalle' : ''}
+      ${escHtml(r.stops.length)} PARADAS${r.status !== 'offered' ? ' — clic para ver detalle' : ''}
     </div>
     <div class="stop-timeline">
       ${r.stops.map(s => `
-        <div class="stop-item" ${r.status !== 'offered' ? `style="cursor:pointer" onclick="openStopModal('${r.id}','${s.order}')"` : ''}>
+        <div class="stop-item" ${r.status !== 'offered' ? `style="cursor:pointer" onclick="openStopModal(${jsArg(r.id)},${jsArg(s.order)})"` : ''}>
           <div class="stop-dot ${stopDot(s.status)}">${stopIcon(s.status)}</div>
           <div class="stop-content">
-            <div class="stop-company">${s.company}</div>
-            <div class="stop-address">${s.address}</div>
+            <div class="stop-company">${escHtml(s.company)}</div>
+            <div class="stop-address">${escHtml(s.address)}</div>
             <div class="stop-meta">
-              <span class="badge badge-muted" style="font-size:10px">🕐 ${s.eta}</span>
-              ${s.code ? `<span class="badge badge-blue" style="font-size:10px">📦 ${s.code}</span>` : ''}
-              ${s.packages ? `<span class="badge badge-muted" style="font-size:10px">${s.packages} pkg · ${s.weight_lbs} lbs · ${s.volume_ft3} ft³</span>` : ''}
-              ${s.dock ? `<span class="badge badge-yellow" style="font-size:10px">🏭 ${s.dock}</span>` : ''}
-              ${s.wait_min ? `<span class="badge badge-muted" style="font-size:10px">⏳ ~${s.wait_min} min espera</span>` : ''}
-              <span class="badge badge-muted" style="font-size:10px">PoD: ${s.pod}</span>
+              <span class="badge badge-muted" style="font-size:10px">🕐 ${escHtml(s.eta)}</span>
+              ${s.code ? `<span class="badge badge-blue" style="font-size:10px">📦 ${escHtml(s.code)}</span>` : ''}
+              ${s.packages ? `<span class="badge badge-muted" style="font-size:10px">${escHtml(s.packages)} pkg · ${escHtml(s.weight_lbs)} lbs · ${escHtml(s.volume_ft3)} ft³</span>` : ''}
+              ${s.dock ? `<span class="badge badge-yellow" style="font-size:10px">🏭 ${escHtml(s.dock)}</span>` : ''}
+              ${s.wait_min ? `<span class="badge badge-muted" style="font-size:10px">⏳ ~${escHtml(s.wait_min)} min espera</span>` : ''}
+              <span class="badge badge-muted" style="font-size:10px">PoD: ${escHtml(s.pod)}</span>
               ${s.status==='done' ? `<span class="badge badge-green" style="font-size:10px">✓ Entregado</span>` : ''}
             </div>
-            ${s.notes ? `<div style="font-size:11px;color:var(--muted);margin-top:5px;padding:5px 8px;background:var(--card2);border-radius:5px;border:1px solid var(--border)">ℹ ${s.notes}</div>` : ''}
+            ${s.notes ? `<div style="font-size:11px;color:var(--muted);margin-top:5px;padding:5px 8px;background:var(--card2);border-radius:5px;border:1px solid var(--border)">ℹ ${escHtml(s.notes)}</div>` : ''}
           </div>
         </div>
       `).join('')}
@@ -1868,9 +1868,9 @@ function openShipmentModal(routeId) {
   document.getElementById('shipmentModalSub').textContent = `${r.num} — ${r.title}`;
   document.getElementById('shipmentModalBody').innerHTML = `
     <div class="metric-row" style="margin-bottom:16px">
-      <div class="metric"><div class="metric-val" style="color:var(--orange)">${r.shipment.total_packages}</div><div class="metric-lbl">Paquetes</div></div>
+      <div class="metric"><div class="metric-val" style="color:var(--orange)">${escHtml(r.shipment.total_packages)}</div><div class="metric-lbl">Paquetes</div></div>
       <div class="metric"><div class="metric-val">${r.shipment.total_weight_lbs.toLocaleString()}</div><div class="metric-lbl">Libras (lbs)</div></div>
-      <div class="metric"><div class="metric-val">${r.shipment.total_volume_ft3}</div><div class="metric-lbl">ft³ volumen</div></div>
+      <div class="metric"><div class="metric-val">${escHtml(r.shipment.total_volume_ft3)}</div><div class="metric-lbl">ft³ volumen</div></div>
       <div class="metric"><div class="metric-val" style="color:var(--orange)">$${r.shipment.cargo_value.toLocaleString()}</div><div class="metric-lbl">Valor carga</div></div>
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
@@ -1882,19 +1882,19 @@ function openShipmentModal(routeId) {
     </div>
     ${r.shipment.special_instructions ? `
       <div style="padding:10px 12px;background:var(--card2);border-radius:8px;font-size:12px;color:var(--muted);border:1px solid var(--border);margin-bottom:16px">
-        ℹ ${r.shipment.special_instructions}
+        ℹ ${escHtml(r.shipment.special_instructions)}
       </div>` : ''}
     <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">
-      Desglose por parada (${r.stops.length})
+      Desglose por parada (${escHtml(r.stops.length)})
     </div>
     <div class="table-wrap" style="margin-bottom:0">
       <table>
         <thead><tr><th>#</th><th>Destino</th><th>Pkg</th><th>Peso</th></tr></thead>
         <tbody>
           ${r.stops.map(s => `
-            <tr style="cursor:pointer" onclick="closeShipmentModal();openStopModal('${r.id}','${s.order}')">
-              <td>${s.order}</td><td>${s.company}</td>
-              <td>${s.packages || 0}</td><td>${s.weight_lbs || 0} lbs</td>
+            <tr style="cursor:pointer" onclick="closeShipmentModal();openStopModal(${jsArg(r.id)},${jsArg(s.order)})">
+              <td>${escHtml(s.order)}</td><td>${escHtml(s.company)}</td>
+              <td>${escHtml(s.packages || 0)}</td><td>${escHtml(s.weight_lbs || 0)} lbs</td>
             </tr>
           `).join('')}
         </tbody>
@@ -1922,7 +1922,7 @@ function openStopModal(routeId, stopOrder) {
 
   const itemsHtml = (s.items && s.items.length > 0) ? `
     <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin:16px 0 10px">
-      Items individuales (${s.items.length})
+      Items individuales (${escHtml(s.items.length)})
     </div>
     <div class="table-wrap" style="margin-bottom:0">
       <table>
@@ -1930,10 +1930,10 @@ function openStopModal(routeId, stopOrder) {
         <tbody>
           ${s.items.map(it => `
             <tr>
-              <td style="font-family:var(--font-mono);font-size:11px">${it.package_code || '—'}</td>
-              <td>${it.description || '—'}</td>
-              <td>${it.quantity}</td>
-              <td>${it.weight_lbs} lbs</td>
+              <td style="font-family:var(--font-mono);font-size:11px">${escHtml(it.package_code || '—')}</td>
+              <td>${escHtml(it.description || '—')}</td>
+              <td>${escHtml(it.quantity)}</td>
+              <td>${escHtml(it.weight_lbs)} lbs</td>
               <td>$${(it.declared_value||0).toLocaleString()}</td>
             </tr>
           `).join('')}
@@ -1945,19 +1945,19 @@ function openStopModal(routeId, stopOrder) {
   document.getElementById('stopModalBody').innerHTML = `
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
       <span class="badge ${s.status==='done'?'badge-green':'badge-muted'}">${s.status==='done'?'✓ Entregado':'⏳ Pendiente'}</span>
-      <span class="badge badge-muted">🕐 ${s.eta}</span>
-      <span class="badge badge-muted">PoD: ${s.pod}</span>
-      ${s.dock ? `<span class="badge badge-yellow">🏭 ${s.dock}</span>` : ''}
+      <span class="badge badge-muted">🕐 ${escHtml(s.eta)}</span>
+      <span class="badge badge-muted">PoD: ${escHtml(s.pod)}</span>
+      ${s.dock ? `<span class="badge badge-yellow">🏭 ${escHtml(s.dock)}</span>` : ''}
     </div>
     <div class="metric-row" style="margin-bottom:16px">
-      <div class="metric"><div class="metric-val" style="color:var(--orange)">${s.packages || 0}</div><div class="metric-lbl">Paquetes</div></div>
-      <div class="metric"><div class="metric-val">${s.weight_lbs || 0}</div><div class="metric-lbl">Libras (lbs)</div></div>
-      <div class="metric"><div class="metric-val">${s.volume_ft3 || 0}</div><div class="metric-lbl">ft³ volumen</div></div>
+      <div class="metric"><div class="metric-val" style="color:var(--orange)">${escHtml(s.packages || 0)}</div><div class="metric-lbl">Paquetes</div></div>
+      <div class="metric"><div class="metric-val">${escHtml(s.weight_lbs || 0)}</div><div class="metric-lbl">Libras (lbs)</div></div>
+      <div class="metric"><div class="metric-val">${escHtml(s.volume_ft3 || 0)}</div><div class="metric-lbl">ft³ volumen</div></div>
     </div>
-    ${s.code ? `<div class="cost-row"><span class="cost-label">Código de paquete</span><span class="cost-value">${s.code}</span></div>` : ''}
+    ${s.code ? `<div class="cost-row"><span class="cost-label">Código de paquete</span><span class="cost-value">${escHtml(s.code)}</span></div>` : ''}
     ${s.notes ? `
       <div style="margin-top:12px;padding:10px 12px;background:var(--card2);border-radius:8px;font-size:12px;color:var(--muted);border:1px solid var(--border)">
-        ℹ ${s.notes}
+        ℹ ${escHtml(s.notes)}
       </div>` : ''}
     ${itemsHtml}
   `;
@@ -1975,7 +1975,10 @@ function showToast(msg, type='info') {
   const el = document.getElementById('toast');
   const icons = { success:'✅', info:'ℹ️', warn:'⚠️' };
   el.className = `toast ${type}`;
-  el.innerHTML = `<span>${icons[type]||'ℹ️'}</span><span>${msg}</span>`;
+  // textContent: el mensaje puede incluir texto de terceros (errores del servidor, nombres)
+  const icon = document.createElement('span'); icon.textContent = icons[type] || 'ℹ️';
+  const text = document.createElement('span'); text.textContent = msg;
+  el.replaceChildren(icon, text);
   el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 3000);
 }
@@ -2044,7 +2047,7 @@ async function renderNotificationList() {
       return;
     }
     list.innerHTML = items.map(n => `
-      <div onclick="openNotification('${n.id}','${n.entity_type||''}','${n.entity_id||''}')"
+      <div onclick="openNotification(${jsArg(n.id)},${jsArg(n.entity_type||'')},${jsArg(n.entity_id||'')})"
         style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;${n.is_read?'opacity:.55':''}">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
           <span style="font-size:12.5px;font-weight:600;color:var(--white)">${escHtml(n.title)}</span>
@@ -2270,7 +2273,7 @@ function marketplaceDashboardWidget() {
     <div class="section-hdr" style="margin-top:8px">
       <div>
         <div class="section-title">💬 Rutas abiertas a pujas</div>
-        <div class="section-sub">${routes.length} ruta${routes.length===1?'':'s'} del marketplace de negociación</div>
+        <div class="section-sub">${escHtml(routes.length)} ruta${routes.length===1?'':'s'} del marketplace de negociación</div>
       </div>
       <button class="btn btn-ghost" onclick="showView('negociacion')">Ver todas →</button>
     </div>
@@ -2285,9 +2288,9 @@ function marketplaceDashboardCard(r) {
     <div class="card" style="margin-bottom:10px">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
         <div style="flex:1">
-          <div style="font-size:12px;color:var(--muted);font-family:var(--font-mono);margin-bottom:4px">${r.route_number}</div>
-          <div class="card-title">${r.title}</div>
-          <div class="card-sub">${r.total_stops} parada${r.total_stops===1?'':'s'} · ${r.total_weight_lbs} lbs</div>
+          <div style="font-size:12px;color:var(--muted);font-family:var(--font-mono);margin-bottom:4px">${escHtml(r.route_number)}</div>
+          <div class="card-title">${escHtml(r.title)}</div>
+          <div class="card-sub">${escHtml(r.total_stops)} parada${r.total_stops===1?'':'s'} · ${escHtml(r.total_weight_lbs)} lbs</div>
         </div>
         <div style="text-align:right;flex-shrink:0;margin-left:16px">
           <div style="font-size:18px;font-weight:600;color:var(--orange)">${r.current_ask != null ? fmt$(r.current_ask) : '—'}</div>
@@ -2296,11 +2299,11 @@ function marketplaceDashboardCard(r) {
       </div>
       ${canBid ? `
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-          <button class="btn btn-primary" style="font-size:12px" onclick="acceptMarketAsk('${r.route_id}')">✓ Aceptar precio</button>
-          <input id="counterAmount-${r.route_id}" type="number" step="0.01" placeholder="Monto"
+          <button class="btn btn-primary" style="font-size:12px" onclick="acceptMarketAsk(${jsArg(r.route_id)})">✓ Aceptar precio</button>
+          <input id="counterAmount-${escHtml(r.route_id)}" type="number" step="0.01" placeholder="Monto"
             value="${r.current_ask != null ? r.current_ask.toFixed(2) : ''}"
             style="width:90px;padding:6px 8px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:12px">
-          <button class="btn btn-ghost" style="font-size:12px" onclick="sendMarketCounter('${r.route_id}')">Contraofertar</button>
+          <button class="btn btn-ghost" style="font-size:12px" onclick="sendMarketCounter(${jsArg(r.route_id)})">Contraofertar</button>
         </div>
       ` : `<div style="font-size:12px;color:var(--muted)">⏳ Tu oferta de ${fmt$(lastMine.amount)} está pendiente de que el warehouse elija un ganador</div>`}
     </div>
@@ -2320,10 +2323,10 @@ function renderNegociacion() {
           <div class="table-wrap" style="padding:16px">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
               <div>
-                <div style="font-weight:600;color:var(--white)">${r.title}</div>
-                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${r.route_number}</div>
+                <div style="font-weight:600;color:var(--white)">${escHtml(r.title)}</div>
+                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${escHtml(r.route_number)}</div>
                 <div style="font-size:12px;color:var(--muted);margin-top:4px">
-                  ${r.total_stops} paradas · ${r.total_weight_lbs} lbs · ${r.total_volume_ft3} ft³
+                  ${escHtml(r.total_stops)} paradas · ${escHtml(r.total_weight_lbs)} lbs · ${escHtml(r.total_volume_ft3)} ft³
                   ${r.scheduled_date ? ' · ' + new Date(r.scheduled_date).toLocaleDateString('es-ES',{day:'numeric',month:'short'}) : ''}
                 </div>
               </div>
@@ -2338,7 +2341,7 @@ function renderNegociacion() {
                 <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Mi historial en esta ruta</div>
                 ${r.my_thread.offers.map(o => `
                   <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px">
-                    <span style="color:var(--white)">${fmt$(o.amount)} ${o.note ? '· '+o.note : ''}</span>
+                    <span style="color:var(--white)">${fmt$(o.amount)} ${escHtml(o.note ? '· '+o.note : '')}</span>
                     <span class="badge ${o.status==='pending'?'badge-orange':o.status==='accepted'?'badge-green':'badge-muted'}" style="font-size:9px">
                       ${o.status==='pending' ? 'Pendiente' : o.status==='selected' ? 'Seleccionada — en holding' : o.status==='accepted' ? '✓ Aceptada' : o.status==='rejected' ? 'No seleccionada' : 'Reemplazada'}
                     </span>
@@ -2349,15 +2352,15 @@ function renderNegociacion() {
 
             ${canBid ? `
               <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-                <button class="btn btn-primary" style="font-size:12px" onclick="acceptMarketAsk('${r.route_id}')">✓ Aceptar precio público</button>
-                <input id="counterAmount-${r.route_id}" type="number" step="0.01" placeholder="Monto"
+                <button class="btn btn-primary" style="font-size:12px" onclick="acceptMarketAsk(${jsArg(r.route_id)})">✓ Aceptar precio público</button>
+                <input id="counterAmount-${escHtml(r.route_id)}" type="number" step="0.01" placeholder="Monto"
                   value="${r.current_ask != null ? r.current_ask.toFixed(2) : ''}"
                   style="width:100px;padding:7px 10px;background:var(--card2);border:1px solid var(--border);
                          border-radius:8px;color:var(--white);font-size:13px">
-                <input id="counterNote-${r.route_id}" type="text" placeholder="Nota (opcional)"
+                <input id="counterNote-${escHtml(r.route_id)}" type="text" placeholder="Nota (opcional)"
                   style="flex:1;min-width:140px;padding:7px 10px;background:var(--card2);border:1px solid var(--border);
                          border-radius:8px;color:var(--white);font-size:13px">
-                <button class="btn btn-ghost" style="font-size:12px" onclick="sendMarketCounter('${r.route_id}')">Enviar contraoferta</button>
+                <button class="btn btn-ghost" style="font-size:12px" onclick="sendMarketCounter(${jsArg(r.route_id)})">Enviar contraoferta</button>
               </div>
             ` : `
               <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)">
@@ -2429,6 +2432,11 @@ async function rejectRoute(routeId) {
 function escHtml(v) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+// Argumento de cadena seguro dentro de onclick="...": JSON + escape HTML.
+// escHtml solo NO alcanza: el navegador decodifica las entidades antes de ejecutar el JS.
+function jsArg(v) { return escHtml(JSON.stringify(String(v ?? ''))); }
+// Solo enlaces http(s); cualquier otra cosa (javascript:, data:) queda en '#'.
+function safeUrl(u) { const s = String(u ?? '').trim(); return /^https?:[/][/]/i.test(s) ? escHtml(s) : '#'; }
 
 // Los errores del backend llegan como "API error 409: {"detail":"..."}": se muestra solo el detalle
 function apiErrorText(e) {
@@ -2484,8 +2492,8 @@ async function loadConductores() {
               ? (d.on_route ? '<span class="badge badge-orange">En ruta</span>' : '<span class="badge badge-green">Aprobado</span>')
               : '<span class="badge badge-yellow">Pendiente de aprobación</span>'}</td>
           <td style="text-align:right;white-space:nowrap">${d.is_approved
-              ? `<button class="btn btn-ghost" style="font-size:11px;padding:4px 10px;color:var(--red,#D85A30)" onclick="suspendDriver('${d.id}')">Suspender</button>`
-              : `<button class="btn btn-primary" style="font-size:11px;padding:4px 10px" onclick="approveDriver('${d.id}')">✓ Aprobar</button>`}</td>
+              ? `<button class="btn btn-ghost" style="font-size:11px;padding:4px 10px;color:var(--red,#D85A30)" onclick="suspendDriver(${jsArg(d.id)})">Suspender</button>`
+              : `<button class="btn btn-primary" style="font-size:11px;padding:4px 10px" onclick="approveDriver(${jsArg(d.id)})">✓ Aprobar</button>`}</td>
         </tr>`).join('')}
       </tbody></table>` : '<div style="padding:20px;color:var(--muted)">Todavía no tenés conductores. Invitá al primero con el formulario de arriba.</div>';
     const label = { pending: ['badge-yellow', 'Pendiente'], accepted: ['badge-green', 'Aceptada'], expired: ['badge-muted', 'Vencida'], revoked: ['badge-muted', 'Revocada'] };
@@ -2494,9 +2502,9 @@ async function loadConductores() {
       ${invs.map(i => { const [cls, txt] = label[i.status] || ['badge-muted', i.status]; return `
         <tr>
           <td><div style="font-size:12px">${escHtml(i.email)}</div><div style="font-size:11px;color:var(--muted)">${escHtml(i.full_name || '')}</div></td>
-          <td><span class="badge ${cls}">${txt}</span></td>
+          <td><span class="badge ${escHtml(cls)}">${escHtml(txt)}</span></td>
           <td style="font-size:12px">${escHtml((i.expires_at || '').slice(0, 10))}</td>
-          <td style="text-align:right">${i.status === 'pending' ? `<button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="revokeInvitation('${i.id}')">Revocar</button>` : ''}</td>
+          <td style="text-align:right">${i.status === 'pending' ? `<button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="revokeInvitation(${jsArg(i.id)})">Revocar</button>` : ''}</td>
         </tr>`; }).join('')}
       </tbody></table>` : '<div style="padding:20px;color:var(--muted)">No hay invitaciones.</div>';
   } catch (e) {
@@ -2562,15 +2570,15 @@ function openAcceptModal(routeId) {
     <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Elegí el vehículo y el conductor que van a cubrir esta ruta. El conductor se asigna a esta ruta, no al vehículo.</p>
     <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px" for="acceptVehicle">Vehículo</label>
     <select id="acceptVehicle" style="width:100%;margin-bottom:12px;padding:8px;background:var(--card);color:var(--white);border:1px solid var(--border);border-radius:8px">
-      ${available.map(v => `<option value="${v.id}">${v.plate} — ${v.make} ${v.model}</option>`).join('')}
+      ${available.map(v => `<option value="${escHtml(v.id)}">${escHtml(v.plate)} — ${escHtml(v.make)} ${escHtml(v.model)}</option>`).join('')}
     </select>
     ${useRealData ? `
     <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px" for="acceptDriver">Conductor</label>
     <select id="acceptDriver" style="width:100%;margin-bottom:16px;padding:8px;background:var(--card);color:var(--white);border:1px solid var(--border);border-radius:8px">
       <option value="">Sin asignar todavía</option>
-      ${drivers.map(d => `<option value="${d.id}" ${d.on_route ? 'disabled' : ''}>${d.name}${d.rating ? ' · ★ ' + d.rating : ''}${d.on_route ? ' (en ruta)' : ''}</option>`).join('')}
+      ${drivers.map(d => `<option value="${escHtml(d.id)}" ${d.on_route ? 'disabled' : ''}>${escHtml(d.name)}${d.rating ? ' · ★ ' + d.rating : ''}${d.on_route ? ' (en ruta)' : ''}</option>`).join('')}
     </select>` : ''}
-    <button class="btn btn-primary" style="width:100%" onclick="confirmAccept('${routeId}', document.getElementById('acceptVehicle').value, (document.getElementById('acceptDriver') || {}).value || '')">✓ Aceptar ruta</button>
+    <button class="btn btn-primary" style="width:100%" onclick="confirmAccept(${jsArg(routeId)}, document.getElementById('acceptVehicle').value, (document.getElementById('acceptDriver') || {}).value || '')">✓ Aceptar ruta</button>
   `;
   document.getElementById('stopModalOverlay').style.display = 'block';
   document.getElementById('stopModal').style.display = 'block';
@@ -2613,7 +2621,7 @@ function openAddVehicleModal() {
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">Tipo de vehículo *</label>
         <select id="newVehicleType" style="width:100%;padding:8px 10px;background:#222;border:1px solid rgba(255,255,255,0.07);border-radius:6px;color:#fff;font-size:13px;box-sizing:border-box">
-          ${getVehicleTypesTC().map(vt => `<option value="${vt.code}">${vt.name}</option>`).join('')}
+          ${getVehicleTypesTC().map(vt => `<option value="${escHtml(vt.code)}">${escHtml(vt.name)}</option>`).join('')}
         </select>
       </div>
     </div>
@@ -2752,7 +2760,7 @@ function updateVehicleOnMap(vehicleId, lat, lng, plate) {
     });
     vehicleMarkers[vehicleId] = L.marker([lat, lng], { icon })
       .addTo(liveMapInstance)
-      .bindPopup(`<b>${plate || vehicleId}</b><br>Posición en vivo`);
+      .bindPopup(`<b>${escHtml(plate || vehicleId)}</b><br>Posición en vivo`);
     routePolylines[vehicleId] = L.polyline([[lat, lng]], { color: '#F47B20', weight: 2, opacity: 0.6 }).addTo(liveMapInstance);
     liveMapInstance.setView([lat, lng], 12);
   } else {
@@ -2764,7 +2772,7 @@ function updateVehicleOnMap(vehicleId, lat, lng, plate) {
 
   const infoEl = document.getElementById('trackingInfo');
   if (infoEl) {
-    infoEl.innerHTML = `<strong style="color:var(--white)">${plate || vehicleId}</strong> · ${lat.toFixed(5)}, ${lng.toFixed(5)} · ${new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
+    infoEl.innerHTML = `<strong style="color:var(--white)">${escHtml(plate || vehicleId)}</strong> · ${lat.toFixed(5)}, ${lng.toFixed(5)} · ${new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
   }
 }
 

@@ -1096,7 +1096,7 @@ function batchStatusBadge(status) {
     expired:              ['badge-muted',   '⏱ Expirado'],
   };
   const [cls, label] = map[status] || ['badge-muted', status];
-  return `<span class="badge ${cls}">${label}</span>`;
+  return `<span class="badge ${escHtml(cls)}">${escHtml(label)}</span>`;
 }
 
 function batchRouteStats(batch) {
@@ -1118,7 +1118,7 @@ function statusBadge(status) {
     pending:     ['badge-muted', 'Pendiente'],
   };
   const [cls, label] = map[status] || ['badge-muted', status];
-  return `<span class="badge ${cls}">${label}</span>`;
+  return `<span class="badge ${escHtml(cls)}">${escHtml(label)}</span>`;
 }
 
 function modeBadge(mode) {
@@ -1128,7 +1128,7 @@ function modeBadge(mode) {
     'Logística':  ['badge-yellow', '🏭'],
   };
   const [cls, icon] = map[mode] || ['badge-muted','📋'];
-  return `<span class="badge ${cls}">${icon} ${mode}</span>`;
+  return `<span class="badge ${escHtml(cls)}">${escHtml(icon)} ${escHtml(mode)}</span>`;
 }
 
 function stopDot(status) {
@@ -1256,7 +1256,7 @@ function renderDashboard() {
       <!-- Bloque 1: Total lotes -->
       <div class="kpi-card">
         <div class="kpi-label">Total lotes</div>
-        <div class="kpi-value">${total}</div>
+        <div class="kpi-value">${escHtml(total)}</div>
         <div class="kpi-sub" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
           ${[
             { key:'draft',               label:'Borrador',    color:'var(--muted)'   },
@@ -1268,7 +1268,7 @@ function renderDashboard() {
             { key:'closed_with_incidents','label':'Incidencias',color:'var(--red)'   },
             { key:'cancelled',           label:'Cancelado',   color:'var(--muted)'   },
           ].filter(s => batches.filter(b=>b.status===s.key).length > 0)
-           .map(s => `<span style="color:${s.color};font-size:11px">${batches.filter(b=>b.status===s.key).length} ${s.label}</span>`)
+           .map(s => `<span style="color:${escHtml(s.color)};font-size:11px">${batches.filter(b=>b.status===s.key).length} ${escHtml(s.label)}</span>`)
            .join('<span style="color:var(--border);font-size:11px"> · </span>')}
         </div>
       </div>
@@ -1276,7 +1276,7 @@ function renderDashboard() {
       <!-- Bloque 2: Rutas en total -->
       <div class="kpi-card">
         <div class="kpi-label">Rutas en total</div>
-        <div class="kpi-value orange">${totalRoutes}</div>
+        <div class="kpi-value orange">${escHtml(totalRoutes)}</div>
         <div class="kpi-sub" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
           ${[
             { key:'draft',             label:'Borrador',   color:'var(--muted)'  },
@@ -1290,7 +1290,7 @@ function renderDashboard() {
             ...s,
             count: batches.reduce((sum,b) => sum + (b.routes||[]).filter(r=>r.status===s.key).length, 0)
           })).filter(s => s.count > 0)
-           .map(s => `<span style="color:${s.color};font-size:11px">${s.count} ${s.label}</span>`)
+           .map(s => `<span style="color:${escHtml(s.color)};font-size:11px">${escHtml(s.count)} ${escHtml(s.label)}</span>`)
            .join('<span style="color:var(--border);font-size:11px"> · </span>')}
         </div>
       </div>
@@ -1323,10 +1323,10 @@ function renderDashboard() {
     <!-- Filtros por estado -->
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:16px;row-gap:8px">
       ${FILTERS.map(f => `
-        <button onclick="activeBatchFilter='${f.key}';document.getElementById('content').innerHTML=renderDashboard()"
+        <button onclick="activeBatchFilter=${jsArg(f.key)};document.getElementById('content').innerHTML=renderDashboard()"
           class="btn ${activeBatchFilter===f.key?'btn-primary':'btn-ghost'}"
           style="font-size:12px;padding:5px 12px;flex-shrink:0">
-          ${f.label}${f.count > 0 ? ` <span style="opacity:.7">(${f.count})</span>` : ''}
+          ${escHtml(f.label)}${f.count > 0 ? ` <span style="opacity:.7">(${escHtml(f.count)})</span>` : ''}
         </button>
       `).join('')}
       <div style="margin-left:auto;flex-shrink:0">
@@ -1372,26 +1372,26 @@ function renderDashboard() {
             const vehiculoLabel = b.vehicle_type  ? (VT_LABELS[b.vehicle_type]  || b.vehicle_type)  : '—';
 
             return `
-              <tr style="cursor:pointer;font-size:12px" onclick="openBatch('${b.id}')">
+              <tr style="cursor:pointer;font-size:12px" onclick="openBatch(${jsArg(b.id)})">
                 <td style="padding:8px">
-                  <div style="font-weight:600;color:var(--white);font-family:var(--font-mono);font-size:11px">${b.numero}</div>
-                  <div style="font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px">${b.nombre}</div>
+                  <div style="font-weight:600;color:var(--white);font-family:var(--font-mono);font-size:11px">${escHtml(b.numero)}</div>
+                  <div style="font-size:11px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px">${escHtml(b.nombre)}</div>
                 </td>
-                <td style="padding:8px;color:var(--muted)">${b.fecha_creacion}</td>
-                <td style="padding:8px;color:var(--muted)">${b.fecha_estado}</td>
-                <td style="padding:8px;color:var(--muted)">${fechaEntrega}</td>
-                <td style="padding:8px;color:var(--muted)">${servicioLabel}</td>
-                <td style="padding:8px;color:var(--muted)">${vehiculoLabel}</td>
+                <td style="padding:8px;color:var(--muted)">${escHtml(b.fecha_creacion)}</td>
+                <td style="padding:8px;color:var(--muted)">${escHtml(b.fecha_estado)}</td>
+                <td style="padding:8px;color:var(--muted)">${escHtml(fechaEntrega)}</td>
+                <td style="padding:8px;color:var(--muted)">${escHtml(servicioLabel)}</td>
+                <td style="padding:8px;color:var(--muted)">${escHtml(vehiculoLabel)}</td>
                 <td style="padding:8px">${batchStatusBadge(b.status)}</td>
-                <td style="text-align:center;padding:8px;font-weight:600">${s.total}</td>
+                <td style="text-align:center;padding:8px;font-weight:600">${escHtml(s.total)}</td>
                 <td style="text-align:center;padding:8px">
                   ${s.pending > 0
-                    ? `<span style="font-weight:600;color:var(--orange)">${s.pending}</span>`
+                    ? `<span style="font-weight:600;color:var(--orange)">${escHtml(s.pending)}</span>`
                     : `<span style="color:var(--muted)">0</span>`}
                 </td>
                 <td style="text-align:center;padding:8px">
                   ${s.completed > 0
-                    ? `<span style="font-weight:600;color:var(--green)">${s.completed}</span>`
+                    ? `<span style="font-weight:600;color:var(--green)">${escHtml(s.completed)}</span>`
                     : `<span style="color:var(--muted)">0</span>`}
                 </td>
                 <td style="text-align:right;padding:8px;font-weight:600;color:var(--orange)">${fmt$(b.total_cost !== undefined ? b.total_cost : (b.routes||[]).reduce((s,r)=>s+(r.gross||r.gross_pay||0),0))}</td>
@@ -1399,11 +1399,11 @@ function renderDashboard() {
                   <div style="display:flex;gap:4px;align-items:center;justify-content:flex-end">
                     ${b.status === 'draft' ? `
                       <button class="btn btn-primary" style="font-size:11px;padding:3px 8px"
-                        onclick="event.stopPropagation();changeBatchStatus('${b.id}','approved')">✓ Aprobar</button>
+                        onclick="event.stopPropagation();changeBatchStatus(${jsArg(b.id)},'approved')">✓ Aprobar</button>
                     ` : ''}
                     ${['draft','approved'].includes(b.status) ? `
                       <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;color:var(--red,#D85A30)"
-                        onclick="event.stopPropagation();changeBatchStatus('${b.id}','cancelled')">${b.status==='approved' ? '✕ Anular' : '✕ Cancelar'}</button>
+                        onclick="event.stopPropagation();changeBatchStatus(${jsArg(b.id)},'cancelled')">${b.status==='approved' ? '✕ Anular' : '✕ Cancelar'}</button>
                     ` : `
                       <span style="font-size:11px;color:var(--orange)">Ver detalle →</span>
                     `}
@@ -1534,9 +1534,9 @@ function setupPieChart(canvas, DATA, borderColor, mutedColor, legendId) {
     legEl.innerHTML = slices.map((d, i) => `
       <span style="display:flex;align-items:center;gap:3px;font-size:10px;color:${hoverIdx===i?d.color:mutedColor};
                    font-weight:${hoverIdx===i?'700':'400'};transition:color .1s">
-        <span style="width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,${shadeColor(d.color,0.2)},${d.color});
+        <span style="width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,${shadeColor(d.color,0.2)},${escHtml(d.color)});
                      flex-shrink:0;display:inline-block;box-shadow:0 1px 2px rgba(0,0,0,.3)"></span>
-        ${d.label} <b style="color:${d.color}">${d.count}</b>
+        ${escHtml(d.label)} <b style="color:${escHtml(d.color)}">${escHtml(d.count)}</b>
       </span>`).join('');
   }
 
@@ -1669,9 +1669,9 @@ function setupBarChart(canvas, DATA, mutedColor, legendId) {
     legEl.innerHTML = bars.map((d, i) => `
       <span style="display:flex;align-items:center;gap:3px;font-size:10px;color:${hoverIdx===i?d.color:mutedColor};
                    font-weight:${hoverIdx===i?'700':'400'};transition:color .1s">
-        <span style="width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,${shadeColor(d.color,0.2)},${d.color});
+        <span style="width:8px;height:8px;border-radius:2px;background:linear-gradient(135deg,${shadeColor(d.color,0.2)},${escHtml(d.color)});
                      flex-shrink:0;display:inline-block;box-shadow:0 1px 2px rgba(0,0,0,.3)"></span>
-        ${d.label} <b style="color:${d.color}">${d.count}</b>
+        ${escHtml(d.label)} <b style="color:${escHtml(d.color)}">${escHtml(d.count)}</b>
       </span>`).join('');
   }
 
@@ -1748,19 +1748,19 @@ function openBatch(batchId) {
   document.getElementById('content').innerHTML = `
     <!-- Header con breadcrumb -->
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
-      <button class="btn btn-ghost" onclick="showView('${fromView}')" style="padding:6px 12px">← Volver</button>
+      <button class="btn btn-ghost" onclick="showView(${jsArg(fromView)})" style="padding:6px 12px">← Volver</button>
       <div style="flex:1"></div>
-      ${batch.client_code ? `<span class="badge badge-blue" style="font-size:12px">👤 ${batch.client_code}</span>` : ''}
+      ${batch.client_code ? `<span class="badge badge-blue" style="font-size:12px">👤 ${escHtml(batch.client_code)}</span>` : ''}
       ${batchStatusBadge(batch.status)}
       ${batch.status === 'draft' ? `
         <button class="btn btn-ghost" style="font-size:13px;padding:6px 14px"
-          onclick="openAddRouteModal('${batch.id}')">+ Agregar ruta</button>
+          onclick="openAddRouteModal(${jsArg(batch.id)})">+ Agregar ruta</button>
         <button class="btn btn-primary" style="font-size:13px;padding:6px 14px"
-          onclick="changeBatchStatus('${batch.id}','approved')">✓ Aprobar lote</button>
+          onclick="changeBatchStatus(${jsArg(batch.id)},'approved')">✓ Aprobar lote</button>
       ` : ''}
       ${['draft','approved'].includes(batch.status) ? `
         <button class="btn btn-ghost" style="font-size:13px;padding:6px 14px;color:var(--red,#D85A30)"
-          onclick="changeBatchStatus('${batch.id}','cancelled')">${batch.status==='approved' ? '✕ Anular lote' : '✕ Cancelar lote'}</button>
+          onclick="changeBatchStatus(${jsArg(batch.id)},'cancelled')">${batch.status==='approved' ? '✕ Anular lote' : '✕ Cancelar lote'}</button>
       ` : ''}
       <button class="btn btn-ghost" onclick="showToast('Exportando lote...','success')" style="font-size:12px">↓ Exportar</button>
     </div>
@@ -1770,7 +1770,7 @@ function openBatch(batchId) {
         <div class="alert-icon">✕</div>
         <div class="alert-body">
           <div class="alert-title">Lote anulado</div>
-          <strong>Motivo:</strong> ${batch.cancellation_reason}
+          <strong>Motivo:</strong> ${escHtml(batch.cancellation_reason)}
           ${batch.cancelled_at ? ` · ${batch.cancelled_at.split('T')[0]}` : ''}
         </div>
       </div>
@@ -1778,12 +1778,8 @@ function openBatch(batchId) {
 
     <!-- Sub-header: tipo servicio / tipo vehículo / fecha estimada -->
     <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;padding:10px 14px;background:var(--card2);border-radius:8px;font-size:12px">
-      <div><span style="color:var(--muted)">Tipo de servicio:</span> <b style="color:var(--white)">${
-        { mensajeria:'📨 Mensajería', logistica:'📦 Logística', paqueteria:'🛍 Paquetería', empleados:'👥 Empleados', mixto:'🔀 Mixto' }[batch.service_type] || batch.service_type || '—'
-      }</b></div>
-      <div><span style="color:var(--muted)">Tipo de vehículo:</span> <b style="color:var(--white)">${
-        { moto:'🏍 Moto', sedan:'🚗 Sedán', furgoneta:'🚐 Furgoneta', furgon:'🚚 Furgón' }[batch.vehicle_type] || batch.vehicle_type || '—'
-      }</b></div>
+      <div><span style="color:var(--muted)">Tipo de servicio:</span> <b style="color:var(--white)">${escHtml({ mensajeria:'📨 Mensajería', logistica:'📦 Logística', paqueteria:'🛍 Paquetería', empleados:'👥 Empleados', mixto:'🔀 Mixto' }[batch.service_type] || batch.service_type || '—')}</b></div>
+      <div><span style="color:var(--muted)">Tipo de vehículo:</span> <b style="color:var(--white)">${escHtml({ moto:'🏍 Moto', sedan:'🚗 Sedán', furgoneta:'🚐 Furgoneta', furgon:'🚚 Furgón' }[batch.vehicle_type] || batch.vehicle_type || '—')}</b></div>
       <div><span style="color:var(--muted)">Fecha estimada de entrega:</span> <b style="color:var(--white)">${(() => {
         const dates = routes.map(r => r.scheduled_date || r.scheduled_end).filter(Boolean).sort();
         return dates.length > 0 ? dates[dates.length-1].split('T')[0] : '—';
@@ -1797,14 +1793,14 @@ function openBatch(batchId) {
       <div class="kpi-card">
         <div class="kpi-label">Estado de las rutas</div>
         <div style="display:flex;align-items:baseline;gap:8px;margin:6px 0">
-          <div class="kpi-value">${s.total}</div>
+          <div class="kpi-value">${escHtml(s.total)}</div>
           <div style="font-size:12px;color:var(--muted)">ruta${s.total!==1?'s':''} en total</div>
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:6px">
-          ${s.pending > 0   ? `<span style="font-size:11px;color:var(--muted)">${s.pending} pendiente${s.pending!==1?'s':''}</span>` : ''}
-          ${s.active > 0    ? `<span style="font-size:11px;color:var(--orange)">${s.active} en curso</span>` : ''}
-          ${s.completed > 0 ? `<span style="font-size:11px;color:var(--green)">${s.completed} completada${s.completed!==1?'s':''}</span>` : ''}
-          ${s.rejected > 0  ? `<span style="font-size:11px;color:var(--red,#D85A30)">${s.rejected} cancelada${s.rejected!==1?'s':''}</span>` : ''}
+          ${s.pending > 0   ? `<span style="font-size:11px;color:var(--muted)">${escHtml(s.pending)} pendiente${s.pending!==1?'s':''}</span>` : ''}
+          ${s.active > 0    ? `<span style="font-size:11px;color:var(--orange)">${escHtml(s.active)} en curso</span>` : ''}
+          ${s.completed > 0 ? `<span style="font-size:11px;color:var(--green)">${escHtml(s.completed)} completada${s.completed!==1?'s':''}</span>` : ''}
+          ${s.rejected > 0  ? `<span style="font-size:11px;color:var(--red,#D85A30)">${escHtml(s.rejected)} cancelada${s.rejected!==1?'s':''}</span>` : ''}
         </div>
       </div>
 
@@ -1875,36 +1871,36 @@ function openBatch(batchId) {
                 const stopsTotal= r.stops_total  || 0;
                 const stopsPend = stopsTotal - stopsDone;
                 return `
-                  <tr style="cursor:pointer" onclick="openRoute('${r.id}','${batch.id}')">
+                  <tr style="cursor:pointer" onclick="openRoute(${jsArg(r.id)},${jsArg(batch.id)})">
                     <td>
                       <div style="display:flex;align-items:center;gap:8px">
-                        <div style="width:4px;height:36px;border-radius:2px;background:${color};flex-shrink:0"></div>
+                        <div style="width:4px;height:36px;border-radius:2px;background:${escHtml(color)};flex-shrink:0"></div>
                         <div>
-                          <div style="font-weight:600;font-size:13px;color:var(--white);font-family:var(--font-mono)">${r.num}</div>
-                          <div style="font-size:12px;color:var(--muted);margin-top:2px">${r.title}</div>
+                          <div style="font-weight:600;font-size:13px;color:var(--white);font-family:var(--font-mono)">${escHtml(r.num)}</div>
+                          <div style="font-size:12px;color:var(--muted);margin-top:2px">${escHtml(r.title)}</div>
                         </div>
                       </div>
                     </td>
-                    <td style="font-size:13px">${r.date || '—'}</td>
-                    <td style="font-size:13px;color:var(--muted)">${r.time || '—'}</td>
+                    <td style="font-size:13px">${escHtml(r.date || '—')}</td>
+                    <td style="font-size:13px;color:var(--muted)">${escHtml(r.time || '—')}</td>
                     <td>${statusBadge(r.status)}</td>
-                    <td style="font-size:13px;color:var(--muted)">${r.transportista || 'Sin asignar'}</td>
-                    <td style="text-align:center;font-size:14px;font-weight:600">${stopsTotal}</td>
+                    <td style="font-size:13px;color:var(--muted)">${escHtml(r.transportista || 'Sin asignar')}</td>
+                    <td style="text-align:center;font-size:14px;font-weight:600">${escHtml(stopsTotal)}</td>
                     <td style="text-align:center">
                       ${stopsPend > 0
-                        ? `<span style="font-size:14px;font-weight:600;color:var(--orange)">${stopsPend}</span>`
+                        ? `<span style="font-size:14px;font-weight:600;color:var(--orange)">${escHtml(stopsPend)}</span>`
                         : `<span style="font-size:14px;color:var(--muted)">0</span>`}
                     </td>
                     <td style="text-align:center">
                       ${stopsDone > 0
-                        ? `<span style="font-size:14px;font-weight:600;color:var(--green)">${stopsDone}</span>`
+                        ? `<span style="font-size:14px;font-weight:600;color:var(--green)">${escHtml(stopsDone)}</span>`
                         : `<span style="font-size:14px;color:var(--muted)">0</span>`}
                     </td>
                     <td style="text-align:right;font-weight:600;color:var(--orange)">${fmt$(r.gross || 0)}</td>
                     <td style="font-size:12px;color:var(--orange);white-space:nowrap">
                       Ver ruta →
                       ${batch.status === 'draft' ? `
-                        <button title="Eliminar ruta" onclick="event.stopPropagation();deleteRouteFromBatch('${batch.id}','${r.id}')"
+                        <button title="Eliminar ruta" onclick="event.stopPropagation();deleteRouteFromBatch(${jsArg(batch.id)},${jsArg(r.id)})"
                           style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;margin-left:8px">🗑</button>
                       ` : ''}
                     </td>
@@ -1985,7 +1981,7 @@ function initBatchMap(batch, routeColors) {
         radius: 7, fillColor: color, color: '#fff',
         weight: 2, opacity: 1, fillOpacity: 0.9
       }).addTo(map)
-        .bindPopup(`<b>${r.num} — Parada ${si+1}</b><br>${r.stops[si]?.company || ''}`);
+        .bindPopup(`<b>${escHtml(r.num)} — Parada ${si+1}</b><br>${escHtml(r.stops[si]?.company || '')}`);
     });
 
     // Route label at centroid
@@ -1994,7 +1990,7 @@ function initBatchMap(batch, routeColors) {
     L.marker([cLat, cLng], {
       icon: L.divIcon({
         className: '',
-        html: `<div style="background:${color};color:#111;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)">${r.num}</div>`,
+        html: `<div style="background:${escHtml(color)};color:#111;font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.4)">${escHtml(r.num)}</div>`,
         iconAnchor: [20, 10],
       })
     }).addTo(map);
@@ -2006,7 +2002,7 @@ function renderRutas() {
   const allRoutes = getActiveRoutes();
   return `
     <div class="tabs">
-      <button class="tab ${activeTab==='todas'?'active':''}"       onclick="setTab('todas')">Todas (${allRoutes.length})</button>
+      <button class="tab ${activeTab==='todas'?'active':''}"       onclick="setTab('todas')">Todas (${escHtml(allRoutes.length)})</button>
       <button class="tab ${activeTab==='activas'?'active':''}"     onclick="setTab('activas')">En curso (${allRoutes.filter(r=>r.status==='in_progress').length})</button>
       <button class="tab ${activeTab==='proximas'?'active':''}"    onclick="setTab('proximas')">Programadas (${allRoutes.filter(r=>r.status==='scheduled').length})</button>
       <button class="tab ${activeTab==='completadas'?'active':''}" onclick="setTab('completadas')">Completadas (${allRoutes.filter(r=>r.status==='completed').length})</button>
@@ -2037,22 +2033,22 @@ function renderRutas() {
         </thead>
         <tbody>
           ${filteredRoutes().map(r => `
-            <tr onclick="openRoute('${r.id}')">
+            <tr onclick="openRoute(${jsArg(r.id)})">
               <td>
-                <div style="font-weight:500">${r.title}</div>
-                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${r.num}</div>
+                <div style="font-weight:500">${escHtml(r.title)}</div>
+                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${escHtml(r.num)}</div>
               </td>
               <td>${modeBadge(r.mode)}</td>
               <td>
-                <div style="font-size:12px">${r.date}</div>
-                <div style="font-size:11px;color:var(--muted)">${r.time}</div>
+                <div style="font-size:12px">${escHtml(r.date)}</div>
+                <div style="font-size:11px;color:var(--muted)">${escHtml(r.time)}</div>
               </td>
               <td>
-                <div style="font-size:12px">${r.transportista}</div>
-                <div style="font-size:11px;color:var(--muted)">★ ${r.transportista_rating}</div>
+                <div style="font-size:12px">${escHtml(r.transportista)}</div>
+                <div style="font-size:11px;color:var(--muted)">★ ${escHtml(r.transportista_rating)}</div>
               </td>
               <td>
-                <div style="font-size:12px">${r.stops_done}/${r.stops_total}</div>
+                <div style="font-size:12px">${escHtml(r.stops_done)}/${escHtml(r.stops_total)}</div>
                 <div style="width:60px;height:3px;background:var(--border);border-radius:2px;margin-top:4px">
                   <div style="width:${pct(r.stops_done,r.stops_total)}%;height:100%;background:var(--orange);border-radius:2px"></div>
                 </div>
@@ -2061,7 +2057,7 @@ function renderRutas() {
               <td style="font-weight:500;color:var(--orange)">${fmt$(r.net)}</td>
               <td>
                 ${r.shipment
-                  ? `<button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();openShipmentModal('${r.id}')">📦 ${r.shipment.total_packages} pkg</button>`
+                  ? `<button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="event.stopPropagation();openShipmentModal(${jsArg(r.id)})">📦 ${escHtml(r.shipment.total_packages)} pkg</button>`
                   : `<span style="font-size:11px;color:var(--muted)">—</span>`}
               </td>
               <td style="color:var(--muted);font-size:12px">Ver →</td>
@@ -2167,7 +2163,7 @@ function renderBatchPlanner() {
               color:${batchStep>=i?'#fff':'var(--muted)'};display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">
           ${batchStep > i ? '✓' : i+1}
         </span>
-        ${s}
+        ${escHtml(s)}
       </div>
     </div>
   `).join('');
@@ -2189,13 +2185,13 @@ function batchStep0() {
 
         <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Nombre del lote *</label>
         <input id="bNombre" type="text" placeholder="Ej: Entregas zona norte — semana jul 7"
-          value="${batchConfig.nombre}"
+          value="${escHtml(batchConfig.nombre)}"
           style="width:100%;padding:9px 12px;margin-bottom:14px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
           <div>
             <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Fecha de operación *</label>
-            <input id="bFecha" type="date" value="${batchConfig.fecha || today}"
+            <input id="bFecha" type="date" value="${escHtml(batchConfig.fecha || today)}"
               style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">
           </div>
           <div>
@@ -2203,7 +2199,7 @@ function batchStep0() {
             <select id="bVehicleType" onchange="updateVehicleDefaults()"
               style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">
               ${getVehicleTypes().map(vt =>
-                `<option value="${vt.code}" ${batchConfig.vehicle_type===vt.code?'selected':''}>${vt.name}</option>`
+                `<option value="${escHtml(vt.code)}" ${batchConfig.vehicle_type===vt.code?'selected':''}>${escHtml(vt.name)}</option>`
               ).join('')}
             </select>
           </div>
@@ -2215,7 +2211,7 @@ function batchStep0() {
                 const opts = getBatchServiceTypes();
                 if (opts.length && !opts.some(st => st.code === batchConfig.service_type)) batchConfig.service_type = opts[0].code;
                 return opts.map(st =>
-                  `<option value="${st.code}" ${batchConfig.service_type===st.code?'selected':''}>${st.name}</option>`
+                  `<option value="${escHtml(st.code)}" ${batchConfig.service_type===st.code?'selected':''}>${escHtml(st.name)}</option>`
                 ).join('');
               })()}
             </select>
@@ -2225,17 +2221,17 @@ function batchStep0() {
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px">
           <div>
             <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Peso máx. (lbs)</label>
-            <input id="bPesoMax" type="number" value="${batchConfig.peso_max}"
+            <input id="bPesoMax" type="number" value="${escHtml(batchConfig.peso_max)}"
               style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">
           </div>
           <div>
             <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Volumen máx. (ft³)</label>
-            <input id="bVolMax" type="number" value="${batchConfig.vol_max}"
+            <input id="bVolMax" type="number" value="${escHtml(batchConfig.vol_max)}"
               style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">
           </div>
           <div>
             <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Máx. paradas/ruta</label>
-            <input id="bMaxStops" type="number" value="${batchConfig.max_stops}" min="1" max="30"
+            <input id="bMaxStops" type="number" value="${escHtml(batchConfig.max_stops)}" min="1" max="30"
               style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">
           </div>
         </div>
@@ -2246,7 +2242,7 @@ function batchStep0() {
             style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">
             <option value="">— Sin cliente —</option>
             ${(useRealData && REAL_CLIENTS ? REAL_CLIENTS : clientesList).filter(c=>c.is_active).map(c =>
-              `<option value="${c.id}" ${batchConfig.client_id===c.id?'selected':''}>${c.name} (${c.email})</option>`
+              `<option value="${escHtml(c.id)}" ${batchConfig.client_id===c.id?'selected':''}>${escHtml(c.name)} (${escHtml(c.email)})</option>`
             ).join('')}
           </select>
         </div>
@@ -2452,7 +2448,7 @@ function batchStep1() {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
           <div>
             <div style="font-size:14px;font-weight:600;color:var(--white)" id="stopCountLabel">
-              ${batchStops.length} parada${batchStops.length===1?'':'s'} cargadas
+              ${escHtml(batchStops.length)} parada${batchStops.length===1?'':'s'} cargadas
             </div>
             <div style="font-size:12px;color:var(--muted)">
               ${batchStops.length > 0 ? `${batchStops.reduce((s,p)=>s+p.peso_lbs,0).toFixed(1)} lbs · ${batchStops.reduce((s,p)=>s+p.volumen_ft3,0).toFixed(1)} ft³` : 'Agregá paradas para continuar'}
@@ -2484,16 +2480,16 @@ function batchStep1() {
               <tbody>
                 ${batchStops.map((s,i) => `
                   <tr style="border-bottom:1px solid var(--border)">
-                    <td style="padding:6px 8px;font-family:var(--font-mono);font-size:12px;color:var(--orange)">${s.codigo_cliente||'—'}</td>
+                    <td style="padding:6px 8px;font-family:var(--font-mono);font-size:12px;color:var(--orange)">${escHtml(s.codigo_cliente||'—')}</td>
                     <td style="padding:6px 8px">
-                      <div style="color:var(--white)">${s.destino}</div>
-                      <div style="color:var(--muted);font-size:11px">${s.direccion.substring(0,30)}${s.direccion.length>30?'…':''}</div>
+                      <div style="color:var(--white)">${escHtml(s.destino)}</div>
+                      <div style="color:var(--muted);font-size:11px">${escHtml(s.direccion.substring(0,30))}${s.direccion.length>30?'…':''}</div>
                     </td>
-                    <td style="padding:6px 8px;color:var(--muted)">${s.peso_lbs} lbs</td>
-                    <td style="padding:6px 8px;color:var(--muted)">${s.volumen_ft3} ft³</td>
-                    <td style="padding:6px 8px;color:var(--muted)">${s.hora_limite}</td>
+                    <td style="padding:6px 8px;color:var(--muted)">${escHtml(s.peso_lbs)} lbs</td>
+                    <td style="padding:6px 8px;color:var(--muted)">${escHtml(s.volumen_ft3)} ft³</td>
+                    <td style="padding:6px 8px;color:var(--muted)">${escHtml(s.hora_limite)}</td>
                     <td style="padding:6px 8px">
-                      <span class="badge ${s.source==='manual'?'badge-blue':'badge-muted'}" style="font-size:10px">${s.source}</span>
+                      <span class="badge ${s.source==='manual'?'badge-blue':'badge-muted'}" style="font-size:10px">${escHtml(s.source)}</span>
                     </td>
                     <td style="padding:6px 8px">
                       <button onclick="removeStop(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px">✕</button>
@@ -2581,14 +2577,14 @@ function renderCsvErrorBox() {
     <div style="margin-top:10px;padding:10px 12px;background:rgba(216,90,48,0.08);border:1px solid rgba(216,90,48,0.3);border-radius:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <div style="font-size:12px;font-weight:600;color:var(--red,#D85A30)">
-          ⚠ ${csvImportErrors.length} fila${csvImportErrors.length===1?'':'s'} con errores — no se importaron
+          ⚠ ${escHtml(csvImportErrors.length)} fila${csvImportErrors.length===1?'':'s'} con errores — no se importaron
         </div>
         <button onclick="csvImportErrors=[];document.getElementById('csvErrorBox').innerHTML=''" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:12px">✕</button>
       </div>
       <div style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:3px">
         ${csvImportErrors.map(e => `
           <div style="font-size:11px;color:var(--muted)">
-            Fila ${e.row}: <span style="color:var(--red,#D85A30)">${e.errors.join(', ')}</span>
+            Fila ${escHtml(e.row)}: <span style="color:var(--red,#D85A30)">${escHtml(e.errors.join(', '))}</span>
           </div>
         `).join('')}
       </div>
@@ -2754,13 +2750,13 @@ function renderCurrentStopItemsHtml() {
   const totalPeso = currentStopItems.reduce((s,it) => s + it.weight_lbs, 0);
   return `
     <div style="font-size:11px;color:var(--muted);margin-bottom:4px">
-      ${currentStopItems.length} paquete${currentStopItems.length===1?'':'s'} ya agregados a esta parada · ${totalPeso.toFixed(1)} lbs
+      ${escHtml(currentStopItems.length)} paquete${currentStopItems.length===1?'':'s'} ya agregados a esta parada · ${totalPeso.toFixed(1)} lbs
     </div>
     <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:8px">
       ${currentStopItems.map((it,i) => `
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:11px">
-          <span style="color:var(--white);font-family:var(--font-mono)">${it.package_code || '(sin código)'}</span>
-          <span style="color:var(--muted)">${it.weight_lbs} lbs · ${it.volume_ft3} ft³</span>
+          <span style="color:var(--white);font-family:var(--font-mono)">${escHtml(it.package_code || '(sin código)')}</span>
+          <span style="color:var(--muted)">${escHtml(it.weight_lbs)} lbs · ${escHtml(it.volume_ft3)} ft³</span>
           <button onclick="removeCurrentStopItem(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px">✕</button>
         </div>
       `).join('')}
@@ -2867,7 +2863,7 @@ function refreshStopsList() {
     </div>
   ` : `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <div style="font-size:12px;color:var(--muted)">${totalPeso} lbs · ${totalVol} ft³ total</div>
+      <div style="font-size:12px;color:var(--muted)">${escHtml(totalPeso)} lbs · ${escHtml(totalVol)} ft³ total</div>
       <button class="btn btn-ghost" style="font-size:12px;color:var(--red,#D85A30)" onclick="clearAllStops()">✕ Limpiar todo</button>
     </div>
     <div style="max-height:400px;overflow-y:auto">
@@ -2886,16 +2882,16 @@ function refreshStopsList() {
         <tbody>
           ${batchStops.map((s,i) => `
             <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:6px 8px;font-family:var(--font-mono);font-size:12px;color:var(--orange)">${s.codigo_cliente||'—'}</td>
+              <td style="padding:6px 8px;font-family:var(--font-mono);font-size:12px;color:var(--orange)">${escHtml(s.codigo_cliente||'—')}</td>
               <td style="padding:6px 8px">
-                <div style="color:var(--white)">${s.destino}</div>
-                <div style="color:var(--muted);font-size:11px">${s.direccion.substring(0,30)}${s.direccion.length>30?'…':''}</div>
+                <div style="color:var(--white)">${escHtml(s.destino)}</div>
+                <div style="color:var(--muted);font-size:11px">${escHtml(s.direccion.substring(0,30))}${s.direccion.length>30?'…':''}</div>
               </td>
-              <td style="padding:6px 8px;color:var(--muted)">${s.peso_lbs} lbs</td>
-              <td style="padding:6px 8px;color:var(--muted)">${s.volumen_ft3} ft³</td>
-              <td style="padding:6px 8px;color:var(--muted)">${s.hora_limite}</td>
+              <td style="padding:6px 8px;color:var(--muted)">${escHtml(s.peso_lbs)} lbs</td>
+              <td style="padding:6px 8px;color:var(--muted)">${escHtml(s.volumen_ft3)} ft³</td>
+              <td style="padding:6px 8px;color:var(--muted)">${escHtml(s.hora_limite)}</td>
               <td style="padding:6px 8px">
-                <span class="badge ${s.source==='manual'?'badge-blue':'badge-muted'}" style="font-size:10px">${s.source}</span>
+                <span class="badge ${s.source==='manual'?'badge-blue':'badge-muted'}" style="font-size:10px">${escHtml(s.source)}</span>
               </td>
               <td style="padding:6px 8px">
                 <button onclick="removeStop(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px">✕</button>
@@ -3015,7 +3011,7 @@ function batchStep2() {
     <div class="alert ok" style="margin-bottom:16px">
       <div class="alert-icon">✅</div>
       <div class="alert-body">
-        <div class="alert-title">${total_paradas} paradas agrupadas en ${total_rutas} ruta${total_rutas===1?'':'s'}</div>
+        <div class="alert-title">${escHtml(total_paradas)} paradas agrupadas en ${escHtml(total_rutas)} ruta${total_rutas===1?'':'s'}</div>
         Podés mover paradas entre rutas antes de confirmar.
       </div>
     </div>
@@ -3023,23 +3019,23 @@ function batchStep2() {
     <div class="grid2">
       <div>
         ${rutas.map((r, ri) => `
-          <div class="card" style="margin-bottom:10px;border-left:4px solid ${r.color}">
+          <div class="card" style="margin-bottom:10px;border-left:4px solid ${escHtml(r.color)}">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
               <div>
                 <div style="font-weight:600;color:var(--white)">Ruta ${ri+1}</div>
-                <div style="font-size:12px;color:var(--muted)">${r.stop_count} paradas · ${r.total_peso_lbs} lbs · ${r.total_vol_ft3} ft³ · hasta ${r.earliest_limit}</div>
+                <div style="font-size:12px;color:var(--muted)">${escHtml(r.stop_count)} paradas · ${escHtml(r.total_peso_lbs)} lbs · ${escHtml(r.total_vol_ft3)} ft³ · hasta ${escHtml(r.earliest_limit)}</div>
               </div>
-              <span class="badge badge-muted" style="font-size:11px">${VEHICLE_DEFAULTS[batchConfig.vehicle_type]?.label || batchConfig.vehicle_type}</span>
+              <span class="badge badge-muted" style="font-size:11px">${escHtml(VEHICLE_DEFAULTS[batchConfig.vehicle_type]?.label || batchConfig.vehicle_type)}</span>
             </div>
             <div>
               ${r.stops.map((s, si) => `
                 <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)">
-                  <div style="width:20px;height:20px;border-radius:50%;background:${r.color};color:#111;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${si+1}</div>
+                  <div style="width:20px;height:20px;border-radius:50%;background:${escHtml(r.color)};color:#111;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0">${si+1}</div>
                   <div style="flex:1;min-width:0">
-                    <div style="font-size:13px;color:var(--white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s.destino}</div>
-                    <div style="font-size:11px;color:var(--muted)">${s.peso_lbs} lbs · ${s.volumen_ft3} ft³ · ${s.hora_limite}</div>
+                    <div style="font-size:13px;color:var(--white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(s.destino)}</div>
+                    <div style="font-size:11px;color:var(--muted)">${escHtml(s.peso_lbs)} lbs · ${escHtml(s.volumen_ft3)} ft³ · ${escHtml(s.hora_limite)}</div>
                   </div>
-                  <span class="badge ${s.source==='manual'?'badge-blue':'badge-muted'}" style="font-size:10px;flex-shrink:0">${s.source}</span>
+                  <span class="badge ${s.source==='manual'?'badge-blue':'badge-muted'}" style="font-size:10px;flex-shrink:0">${escHtml(s.source)}</span>
                 </div>
               `).join('')}
             </div>
@@ -3055,9 +3051,9 @@ function batchStep2() {
           <div class="card-title" style="margin-bottom:8px">Resumen</div>
           ${rutas.map((r, ri) => `
             <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-              <div style="width:12px;height:12px;border-radius:3px;background:${r.color};flex-shrink:0"></div>
-              <div style="font-size:13px;flex:1">Ruta ${ri+1}: ${r.stop_count} paradas</div>
-              <div style="font-size:12px;color:var(--muted)">${r.total_peso_lbs} lbs</div>
+              <div style="width:12px;height:12px;border-radius:3px;background:${escHtml(r.color)};flex-shrink:0"></div>
+              <div style="font-size:13px;flex:1">Ruta ${ri+1}: ${escHtml(r.stop_count)} paradas</div>
+              <div style="font-size:12px;color:var(--muted)">${escHtml(r.total_peso_lbs)} lbs</div>
             </div>
           `).join('')}
         </div>
@@ -3091,7 +3087,7 @@ function renderPlanMap() {
       L.circleMarker([s.lat, s.lng], {
         radius: 7, fillColor: r.color, color: '#fff',
         weight: 2, opacity: 1, fillOpacity: 0.9
-      }).addTo(map).bindPopup(`<b>${idx+1}. ${s.destino}</b><br>${s.peso_lbs} lbs · hasta ${s.hora_limite}`);
+      }).addTo(map).bindPopup(`<b>${idx+1}. ${escHtml(s.destino)}</b><br>${escHtml(s.peso_lbs)} lbs · hasta ${escHtml(s.hora_limite)}`);
     });
   });
 }
@@ -3107,7 +3103,7 @@ function batchStep3() {
         <div class="alert ok" style="margin-bottom:16px">
           <div class="alert-icon">📦</div>
           <div class="alert-body">
-            <div class="alert-title">Se crearán ${totalRutas} ruta${totalRutas===1?'':'s'} en la base de datos</div>
+            <div class="alert-title">Se crearán ${escHtml(totalRutas)} ruta${totalRutas===1?'':'s'} en la base de datos</div>
             Quedarán en estado <strong>Borrador</strong> dentro del lote — podés ofertarlas a una empresa de transporte desde la sección "Mis rutas".
           </div>
         </div>
@@ -3127,13 +3123,13 @@ function batchStep3() {
 
         <div class="card" style="background:var(--card2);margin-bottom:14px">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px;margin-bottom:10px">
-            <div><span style="color:var(--muted)">Lote:</span> ${batchConfig.nombre}</div>
-            <div><span style="color:var(--muted)">Fecha:</span> ${batchConfig.fecha}</div>
-            <div><span style="color:var(--muted)">Vehículo:</span> ${getVehicleTypeByCode(batchConfig.vehicle_type)?.name || batchConfig.vehicle_type}</div>
-            <div><span style="color:var(--muted)">Servicio:</span> ${getServiceTypes().find(s=>s.code===batchConfig.service_type)?.name || batchConfig.service_type}</div>
-            <div><span style="color:var(--muted)">Rutas:</span> ${totalRutas}</div>
-            <div><span style="color:var(--muted)">Paradas:</span> ${batchPlan?.total_paradas}</div>
-            ${batchConfig.client_id ? `<div><span style="color:var(--muted)">Cliente:</span> ${(useRealData&&REAL_CLIENTS?REAL_CLIENTS:clientesList).find(c=>c.id===batchConfig.client_id)?.name||'—'}</div>` : ''}
+            <div><span style="color:var(--muted)">Lote:</span> ${escHtml(batchConfig.nombre)}</div>
+            <div><span style="color:var(--muted)">Fecha:</span> ${escHtml(batchConfig.fecha)}</div>
+            <div><span style="color:var(--muted)">Vehículo:</span> ${escHtml(getVehicleTypeByCode(batchConfig.vehicle_type)?.name || batchConfig.vehicle_type)}</div>
+            <div><span style="color:var(--muted)">Servicio:</span> ${escHtml(getServiceTypes().find(s=>s.code===batchConfig.service_type)?.name || batchConfig.service_type)}</div>
+            <div><span style="color:var(--muted)">Rutas:</span> ${escHtml(totalRutas)}</div>
+            <div><span style="color:var(--muted)">Paradas:</span> ${escHtml(batchPlan?.total_paradas)}</div>
+            ${batchConfig.client_id ? `<div><span style="color:var(--muted)">Cliente:</span> ${escHtml((useRealData&&REAL_CLIENTS?REAL_CLIENTS:clientesList).find(c=>c.id===batchConfig.client_id)?.name||'—')}</div>` : ''}
             <div><span style="color:var(--muted)">CSV:</span> ${batchStops.filter(s=>s.source==='csv').length} · Manual: ${batchStops.filter(s=>s.source==='manual').length}</div>
           </div>
           ${(() => {
@@ -3144,11 +3140,11 @@ function batchStep3() {
                 ${(() => {
                   const vt = getVehicleTypeByCode(batchConfig.vehicle_type);
                   if (!vt || !vt.maneja_unidades) return '';
-                  return `<div><span style="color:var(--muted)">Unidades máx.:</span> <span style="color:var(--orange)">${vt.unidades_max || '—'}</span></div>`;
+                  return `<div><span style="color:var(--muted)">Unidades máx.:</span> <span style="color:var(--orange)">${escHtml(vt.unidades_max || '—')}</span></div>`;
                 })()}
-                <div><span style="color:var(--muted)">% Muevo:</span> <span style="color:var(--orange)">${st.porcentaje_muevo}%</span></div>
-                <div><span style="color:var(--muted)">Precio base:</span> <span style="color:var(--orange)">$${st.precio_servicio}</span></div>
-                <div><span style="color:var(--muted)">Rango:</span> $${st.importe_minimo} – ${st.importe_maximo ? '$'+st.importe_maximo : '∞'}</div>
+                <div><span style="color:var(--muted)">% Muevo:</span> <span style="color:var(--orange)">${escHtml(st.porcentaje_muevo)}%</span></div>
+                <div><span style="color:var(--muted)">Precio base:</span> <span style="color:var(--orange)">$${escHtml(st.precio_servicio)}</span></div>
+                <div><span style="color:var(--muted)">Rango:</span> $${escHtml(st.importe_minimo)} – ${st.importe_maximo ? '$'+st.importe_maximo : '∞'}</div>
               </div>
             `;
           })()}
@@ -3164,7 +3160,7 @@ function batchStep3() {
         <div style="display:flex;gap:8px">
           <button class="btn btn-ghost" onclick="batchStep=2;document.getElementById('content').innerHTML=renderBatchPlanner()">← Volver</button>
           <button class="btn btn-primary" style="flex:1" id="btnConfirm" onclick="batchConfirm()">
-            ✓ Crear lote de ${totalRutas} ruta${totalRutas===1?'':'s'}
+            ✓ Crear lote de ${escHtml(totalRutas)} ruta${totalRutas===1?'':'s'}
           </button>
         </div>
       </div>
@@ -3221,24 +3217,24 @@ function renderTracking() {
     <div class="grid2">
       <div>
         <div class="section-hdr">
-          <div class="section-title">Rutas en curso (${active.length})</div>
+          <div class="section-title">Rutas en curso (${escHtml(active.length)})</div>
         </div>
         ${active.map(r => `
-          <div class="card" style="margin-bottom:10px;cursor:pointer" onclick="openRoute('${r.id}')">
+          <div class="card" style="margin-bottom:10px;cursor:pointer" onclick="openRoute(${jsArg(r.id)})">
             <div style="display:flex;justify-content:space-between;margin-bottom:8px">
               <div>
-                <div class="card-title" style="font-size:13px">${r.title}</div>
-                <div class="card-sub">${r.transportista}</div>
+                <div class="card-title" style="font-size:13px">${escHtml(r.title)}</div>
+                <div class="card-sub">${escHtml(r.transportista)}</div>
               </div>
               ${statusBadge(r.status)}
             </div>
             <div class="prog-wrap" style="margin-bottom:8px">
-              <div class="prog-label"><span>Progreso</span><span>${r.stops_done}/${r.stops_total} paradas</span></div>
+              <div class="prog-label"><span>Progreso</span><span>${escHtml(r.stops_done)}/${escHtml(r.stops_total)} paradas</span></div>
               <div class="prog-track"><div class="prog-fill" style="width:${pct(r.stops_done,r.stops_total)}%"></div></div>
             </div>
             <div style="display:flex;gap:6px">
-              <span class="badge badge-muted">🚐 ${r.vehicle}</span>
-              <span class="badge badge-muted">👤 ${r.driver}</span>
+              <span class="badge badge-muted">🚐 ${escHtml(r.vehicle)}</span>
+              <span class="badge badge-muted">👤 ${escHtml(r.driver)}</span>
               <span style="margin-left:auto;font-size:12px;color:var(--orange)">Ver paradas →</span>
             </div>
           </div>
@@ -3288,16 +3284,16 @@ function renderPoD() {
           ${completedStops.map(s => `
             <tr>
               <td>
-                <div style="font-weight:500">${s.company}</div>
-                <div style="font-size:11px;color:var(--muted)">${s.address}</div>
+                <div style="font-weight:500">${escHtml(s.company)}</div>
+                <div style="font-size:11px;color:var(--muted)">${escHtml(s.address)}</div>
               </td>
               <td>
-                <div style="font-size:12px">${s.route.num}</div>
-                <div style="font-size:11px;color:var(--muted)">${s.route.transportista}</div>
+                <div style="font-size:12px">${escHtml(s.route.num)}</div>
+                <div style="font-size:11px;color:var(--muted)">${escHtml(s.route.transportista)}</div>
               </td>
-              <td style="font-size:12px;color:var(--muted)">${s.eta}</td>
-              <td style="font-family:var(--font-mono);font-size:11px;color:var(--muted)">${s.code || '—'}</td>
-              <td><span class="badge badge-muted">${s.pod}</span></td>
+              <td style="font-size:12px;color:var(--muted)">${escHtml(s.eta)}</td>
+              <td style="font-family:var(--font-mono);font-size:11px;color:var(--muted)">${escHtml(s.code || '—')}</td>
+              <td><span class="badge badge-muted">${escHtml(s.pod)}</span></td>
               <td><span class="badge badge-green">✓ Confirmada</span></td>
               <td>
                 <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px"
@@ -3334,18 +3330,18 @@ function renderTransportistas() {
                 <div style="display:flex;align-items:center;gap:10px">
                   <div style="width:32px;height:32px;border-radius:8px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">🚐</div>
                   <div>
-                    <div style="font-weight:500;font-size:13px">${t.name}</div>
+                    <div style="font-weight:500;font-size:13px">${escHtml(t.name)}</div>
                     <div style="font-size:11px;color:var(--muted)">Orlando, FL</div>
                   </div>
                 </div>
               </td>
-              <td style="font-size:13px">${t.vehicles} vehículos</td>
+              <td style="font-size:13px">${escHtml(t.vehicles)} vehículos</td>
               <td>
-                <div style="font-size:13px;font-weight:500;color:var(--orange)">★ ${t.rating}</div>
+                <div style="font-size:13px;font-weight:500;color:var(--orange)">★ ${escHtml(t.rating)}</div>
               </td>
-              <td style="font-size:13px">${t.routes} rutas</td>
+              <td style="font-size:13px">${escHtml(t.routes)} rutas</td>
               <td>
-                <div style="font-size:13px;font-weight:500;color:var(--green)">${t.ontime}</div>
+                <div style="font-size:13px;font-weight:500;color:var(--green)">${escHtml(t.ontime)}</div>
               </td>
               <td>${t.status === 'active'
                 ? '<span class="badge badge-green">Activo</span>'
@@ -3387,7 +3383,7 @@ function renderFacturacion() {
       <div class="kpi-card">
         <div class="kpi-label">Gasto total ${real ? '' : 'junio'}</div>
         <div class="kpi-value orange">${fmt$(kpiSpend)}</div>
-        <div class="kpi-sub">${kpiCount} rutas completadas</div>
+        <div class="kpi-sub">${escHtml(kpiCount)} rutas completadas</div>
       </div>
       <div class="kpi-card">
         <div class="kpi-label">Rutas facturadas</div>
@@ -3423,11 +3419,11 @@ function renderFacturacion() {
             <tr>
               <td style="font-family:var(--font-mono);font-size:12px;color:var(--muted)">INV-2024-00${i+1}</td>
               <td>
-                <div style="font-weight:500;font-size:13px">${r.route_number || r.num} · ${r.title}</div>
-                <div style="font-size:11px;color:var(--muted)">${r.date}</div>
+                <div style="font-weight:500;font-size:13px">${escHtml(r.route_number || r.num)} · ${escHtml(r.title)}</div>
+                <div style="font-size:11px;color:var(--muted)">${escHtml(r.date)}</div>
               </td>
-              <td style="font-size:12px">${r.date}</td>
-              <td style="font-size:12px">${r.transport_company || r.transportista || 'Sin asignar'}</td>
+              <td style="font-size:12px">${escHtml(r.date)}</td>
+              <td style="font-size:12px">${escHtml(r.transport_company || r.transportista || 'Sin asignar')}</td>
               <td style="font-weight:500">${fmt$(r.gross_pay)}</td>
 
               <td>
@@ -3473,11 +3469,11 @@ function renderReportes() {
         <div class="card-title" style="margin-bottom:14px">Rutas por tipo de servicio</div>
         ${[['Mensajería', 1, '#2E86DE'],['Empleados', 1, '#27AE60'],['Logística', 1, '#F1C40F']].map(([label, n, color]) => `
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-            <div style="width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0"></div>
-            <div style="flex:1;font-size:12px">${label}</div>
-            <div style="font-size:12px;font-weight:500">${n} ruta</div>
+            <div style="width:8px;height:8px;border-radius:50%;background:${escHtml(color)};flex-shrink:0"></div>
+            <div style="flex:1;font-size:12px">${escHtml(label)}</div>
+            <div style="font-size:12px;font-weight:500">${escHtml(n)} ruta</div>
             <div style="width:80px;height:4px;background:var(--card2);border-radius:2px;overflow:hidden">
-              <div style="width:33%;height:100%;background:${color};border-radius:2px"></div>
+              <div style="width:33%;height:100%;background:${escHtml(color)};border-radius:2px"></div>
             </div>
           </div>
         `).join('')}
@@ -3488,10 +3484,10 @@ function renderReportes() {
         ${TRANSPORTISTAS.filter(t=>t.status==='active').map(t => `
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
             <div style="flex:1">
-              <div style="font-size:12px;font-weight:500">${t.name.split(' ').slice(0,2).join(' ')}</div>
-              <div style="font-size:11px;color:var(--muted)">${t.routes} rutas · ${t.ontime} on-time</div>
+              <div style="font-size:12px;font-weight:500">${escHtml(t.name.split(' ').slice(0,2).join(' '))}</div>
+              <div style="font-size:11px;color:var(--muted)">${escHtml(t.routes)} rutas · ${escHtml(t.ontime)} on-time</div>
             </div>
-            <div style="font-size:13px;font-weight:500;color:var(--orange)">★ ${t.rating}</div>
+            <div style="font-size:13px;font-weight:500;color:var(--orange)">★ ${escHtml(t.rating)}</div>
           </div>
         `).join('')}
       </div>
@@ -3528,24 +3524,24 @@ function openRoute(id, fromBatchId) {
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap">
       <button class="btn btn-ghost" onclick="${backAction}" style="padding:6px 12px">← Volver</button>
       <div>
-        <div style="font-size:18px;font-weight:600;color:var(--white)">${r.num} — ${r.title}</div>
+        <div style="font-size:18px;font-weight:600;color:var(--white)">${escHtml(r.num)} — ${escHtml(r.title)}</div>
       </div>
       <div style="flex:1"></div>
       ${statusBadge(r.status)} ${modeBadge(r.mode)}
-      <button class="btn btn-ghost" style="font-size:12px" onclick="openNegotiationPanel('${r.id}')">💬 ${negotiationBadgeLabel(r.negotiation_status)}</button>
+      <button class="btn btn-ghost" style="font-size:12px" onclick="openNegotiationPanel(${jsArg(r.id)})">💬 ${negotiationBadgeLabel(r.negotiation_status)}</button>
       <button class="btn btn-ghost" style="font-size:12px" onclick="showToast('Descargando factura PDF...','success')">↓ Factura PDF</button>
-      ${r.status==='draft' ? `<button class="btn btn-ghost" style="font-size:12px" onclick="openEditRouteModal('${r.id}')">✏️ Editar ruta</button>` : ''}
+      ${r.status==='draft' ? `<button class="btn btn-ghost" style="font-size:12px" onclick="openEditRouteModal(${jsArg(r.id)})">✏️ Editar ruta</button>` : ''}
       ${r.status==='draft' && fromBatchId
-        ? `<button class="btn btn-ghost" style="font-size:12px;color:var(--red)" onclick="deleteRouteFromBatch('${fromBatchId}','${r.id}')">✕ Eliminar ruta</button>`
+        ? `<button class="btn btn-ghost" style="font-size:12px;color:var(--red)" onclick="deleteRouteFromBatch(${jsArg(fromBatchId)},${jsArg(r.id)})">✕ Eliminar ruta</button>`
         : r.status!=='completed' ? `<button class="btn btn-ghost" style="font-size:12px;color:var(--red)" onclick="showToast('Contactá soporte para cancelar','info')">✕ Cancelar ruta</button>` : ''}
     </div>
 
     <!-- Franja de datos rápidos -->
     <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:center;margin-bottom:20px;padding:10px 14px;background:var(--card2);border-radius:8px;font-size:12px">
-      <div><span style="color:var(--muted)">Fecha:</span> <b style="color:var(--white)">📅 ${r.date}</b></div>
-      <div><span style="color:var(--muted)">Horario:</span> <b style="color:var(--white)">🕐 ${r.time}</b></div>
-      <div><span style="color:var(--muted)">Transportista:</span> <b style="color:var(--white)">🚐 ${r.transportista}</b> <span style="color:var(--muted)">(${r.vehicle} · ${r.driver})</span></div>
-      <div><span style="color:var(--muted)">Rating:</span> <b style="color:var(--orange)">★ ${r.transportista_rating}</b></div>
+      <div><span style="color:var(--muted)">Fecha:</span> <b style="color:var(--white)">📅 ${escHtml(r.date)}</b></div>
+      <div><span style="color:var(--muted)">Horario:</span> <b style="color:var(--white)">🕐 ${escHtml(r.time)}</b></div>
+      <div><span style="color:var(--muted)">Transportista:</span> <b style="color:var(--white)">🚐 ${escHtml(r.transportista)}</b> <span style="color:var(--muted)">(${escHtml(r.vehicle)} · ${escHtml(r.driver)})</span></div>
+      <div><span style="color:var(--muted)">Rating:</span> <b style="color:var(--orange)">★ ${escHtml(r.transportista_rating)}</b></div>
     </div>
 
     <!-- Cards de resumen — una sola fila -->
@@ -3557,11 +3553,11 @@ function openRoute(id, fromBatchId) {
         <div class="kpi-label">Progreso general</div>
         <div class="prog-wrap" style="margin:8px 0 0">
           <div class="prog-label">
-            <span style="font-size:12px;color:var(--muted)">${r.stops_done}/${r.stops_total} paradas</span>
-            <span style="color:var(--orange)">${pctDone}%</span>
+            <span style="font-size:12px;color:var(--muted)">${escHtml(r.stops_done)}/${escHtml(r.stops_total)} paradas</span>
+            <span style="color:var(--orange)">${escHtml(pctDone)}%</span>
           </div>
           <div class="prog-track">
-            <div class="prog-fill ${r.status==='completed'?'green':''}" style="width:${pctDone}%"></div>
+            <div class="prog-fill ${r.status==='completed'?'green':''}" style="width:${escHtml(pctDone)}%"></div>
           </div>
         </div>
       </div>
@@ -3587,11 +3583,11 @@ function openRoute(id, fromBatchId) {
         <div class="kpi-label">Detalle de carga</div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px">
           <div style="text-align:center">
-            <div style="font-size:18px;font-weight:600;color:var(--white)">${totalStops}</div>
+            <div style="font-size:18px;font-weight:600;color:var(--white)">${escHtml(totalStops)}</div>
             <div style="font-size:10px;color:var(--muted);margin-top:2px">Paradas</div>
           </div>
           <div style="text-align:center">
-            <div style="font-size:18px;font-weight:600;color:var(--orange)">${r.shipment.total_packages}</div>
+            <div style="font-size:18px;font-weight:600;color:var(--orange)">${escHtml(r.shipment.total_packages)}</div>
             <div style="font-size:10px;color:var(--muted);margin-top:2px">Paquetes</div>
           </div>
           <div style="text-align:center">
@@ -3599,7 +3595,7 @@ function openRoute(id, fromBatchId) {
             <div style="font-size:10px;color:var(--muted);margin-top:2px">Libras</div>
           </div>
           <div style="text-align:center">
-            <div style="font-size:18px;font-weight:600;color:var(--white)">${r.shipment.total_volume_ft3}</div>
+            <div style="font-size:18px;font-weight:600;color:var(--white)">${escHtml(r.shipment.total_volume_ft3)}</div>
             <div style="font-size:10px;color:var(--muted);margin-top:2px">ft³ vol.</div>
           </div>
         </div>
@@ -3612,9 +3608,9 @@ function openRoute(id, fromBatchId) {
       <div style="min-width:0">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
           <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px">
-            ${r.stops.length} PARADA${r.stops.length !== 1 ? 'S' : ''}
+            ${escHtml(r.stops.length)} PARADA${r.stops.length !== 1 ? 'S' : ''}
           </div>
-          ${r.status==='draft' ? `<button class="btn btn-ghost" style="font-size:12px" onclick="openAddStopModal('${r.id}')">+ Agregar parada</button>` : ''}
+          ${r.status==='draft' ? `<button class="btn btn-ghost" style="font-size:12px" onclick="openAddStopModal(${jsArg(r.id)})">+ Agregar parada</button>` : ''}
         </div>
         <div style="overflow-x:auto">
           <table style="width:100%;font-size:13px;border-collapse:collapse;min-width:1150px">
@@ -3646,23 +3642,23 @@ function openRoute(id, fromBatchId) {
             const isDone = s.status==='done' || s.status==='completed';
             return `
               <tr style="border-bottom:1px solid var(--border);cursor:pointer"
-                  onclick="openStopModal('${r.id}','${s.order}')"
-                  onmouseover="this.style.background='rgba(128,128,128,0.05)';highlightRouteStop('${s.order}')"
-                  onmouseout="this.style.background='';unhighlightRouteStop('${s.order}')">
+                  onclick="openStopModal(${jsArg(r.id)},${jsArg(s.order)})"
+                  onmouseover="this.style.background='rgba(128,128,128,0.05)';highlightRouteStop(${jsArg(s.order)})"
+                  onmouseout="this.style.background='';unhighlightRouteStop(${jsArg(s.order)})">
                 <td style="text-align:center;padding:10px 8px">
                   <div style="width:24px;height:24px;border-radius:50%;
                     background:${s.status==='done'||s.status==='completed'?'var(--green)':s.status==='active'||s.status==='in_progress'?'var(--orange)':'var(--card2)'};
                     color:${s.status==='done'||s.status==='completed'||s.status==='active'?'#111':'var(--muted)'};
                     display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">
-                    ${s.order}
+                    ${escHtml(s.order)}
                   </div>
                 </td>
                 <td style="padding:10px 8px">
-                  <div style="font-weight:600;color:var(--white)">${s.company}</div>
-                  ${s.notes ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">ℹ ${s.notes.substring(0,40)}${s.notes.length>40?'…':''}</div>` : ''}
+                  <div style="font-weight:600;color:var(--white)">${escHtml(s.company)}</div>
+                  ${s.notes ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">ℹ ${escHtml(s.notes.substring(0,40))}${s.notes.length>40?'…':''}</div>` : ''}
                 </td>
-                <td style="padding:10px 8px;font-size:12px;color:var(--muted)">${s.address}${s.zip ? ', ' + s.zip : ''}</td>
-                <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">${s.eta || '—'}</td>
+                <td style="padding:10px 8px;font-size:12px;color:var(--muted)">${escHtml(s.address)}${escHtml(s.zip ? ', ' + s.zip : '')}</td>
+                <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">${escHtml(s.eta || '—')}</td>
                 <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">${isDone ? r.date : '—'}</td>
                 <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">—</td>
                 <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">${s.volume_ft3 ? s.volume_ft3+' ft³' : '—'}</td>
@@ -3670,13 +3666,13 @@ function openRoute(id, fromBatchId) {
                 <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">${(s.items && s.items.length) || s.packages || '—'}</td>
                 <td style="text-align:center;padding:10px 8px;font-size:14px">${(s.pod||'').includes('foto') ? '📷' : '<span style="color:var(--muted);font-size:12px">—</span>'}</td>
                 <td style="text-align:center;padding:10px 8px">
-                  <span style="font-size:12px;font-weight:600;color:${statusCfg.color}">${statusCfg.label}</span>
+                  <span style="font-size:12px;font-weight:600;color:${escHtml(statusCfg.color)}">${escHtml(statusCfg.label)}</span>
                 </td>
                 ${r.status==='draft' ? `
                 <td style="text-align:center;padding:10px 8px;white-space:nowrap">
-                  <button title="Editar parada" onclick="event.stopPropagation();openEditStopModal('${r.id}','${s.order}')"
+                  <button title="Editar parada" onclick="event.stopPropagation();openEditStopModal(${jsArg(r.id)},${jsArg(s.order)})"
                     style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px">✏️</button>
-                  <button title="Eliminar parada" onclick="event.stopPropagation();deleteStopFromRoute('${r.id}','${s.order}')"
+                  <button title="Eliminar parada" onclick="event.stopPropagation();deleteStopFromRoute(${jsArg(r.id)},${jsArg(s.order)})"
                     style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px">🗑</button>
                 </td>` : ''}
               </tr>
@@ -3690,7 +3686,7 @@ function openRoute(id, fromBatchId) {
       <!-- Mapa de ruta — panel chico al lado de la matriz -->
       <div>
         <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">Mapa de ruta</div>
-        <div id="routeMapDetail_${r.id}" style="position:relative;z-index:0;height:220px;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--card2);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px">
+        <div id="routeMapDetail_${escHtml(r.id)}" style="position:relative;z-index:0;height:220px;border-radius:10px;overflow:hidden;border:1px solid var(--border);background:var(--card2);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px">
           <div style="font-size:28px">🗺</div>
           <div style="font-size:12px;color:var(--muted)">Cargando mapa...</div>
         </div>
@@ -3749,7 +3745,7 @@ function initRouteDetailMap(r) {
 
       const marker = L.marker(ll, { icon: routeStopIcon(idx + 1, color, false) })
         .addTo(map)
-        .bindPopup(`<b>#${idx + 1} — ${s.company || ''}</b><br>${s.address || ''}`);
+        .bindPopup(`<b>#${idx + 1} — ${escHtml(s.company || '')}</b><br>${escHtml(s.address || '')}`);
 
       window._routeDetailMarkers[s.order] = { marker, num: idx + 1, color };
     });
@@ -3771,10 +3767,10 @@ function routeStopIcon(num, color, highlighted) {
   const size = highlighted ? 32 : 22;
   return L.divIcon({
     className: '',
-    html: `<div style="background:${highlighted ? '#F47B20' : color};color:#111;width:${size}px;height:${size}px;border-radius:50%;
+    html: `<div style="background:${highlighted ? '#F47B20' : color};color:#111;width:${escHtml(size)}px;height:${escHtml(size)}px;border-radius:50%;
             display:flex;align-items:center;justify-content:center;font-size:${highlighted ? 12 : 10}px;font-weight:700;
             border:2px solid #fff;
-            box-shadow:${highlighted ? '0 0 0 5px rgba(244,123,32,.35), 0 2px 8px rgba(0,0,0,.5)' : '0 1px 4px rgba(0,0,0,.4)'}">${num}</div>`,
+            box-shadow:${highlighted ? '0 0 0 5px rgba(244,123,32,.35), 0 2px 8px rgba(0,0,0,.5)' : '0 1px 4px rgba(0,0,0,.4)'}">${escHtml(num)}</div>`,
     iconSize: [size, size], iconAnchor: [size / 2, size / 2],
   });
 }
@@ -3812,19 +3808,19 @@ function openShipmentModal(routeId) {
     </div>
     ${r.shipment.special_instructions ? `
       <div style="padding:10px 12px;background:var(--card2);border-radius:8px;font-size:12px;color:var(--muted);border:1px solid var(--border);margin-bottom:16px">
-        ℹ ${r.shipment.special_instructions}
+        ℹ ${escHtml(r.shipment.special_instructions)}
       </div>` : ''}
     <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:10px">
-      Desglose por parada (${r.stops.length})
+      Desglose por parada (${escHtml(r.stops.length)})
     </div>
     <div class="table-wrap" style="margin-bottom:0">
       <table>
         <thead><tr><th>#</th><th>Destino</th><th>Pkg</th><th>Peso</th></tr></thead>
         <tbody>
           ${r.stops.map(s => `
-            <tr style="cursor:pointer" onclick="closeShipmentModal();openStopModal('${r.id}','${s.order}')">
-              <td>${s.order}</td><td>${s.company}</td>
-              <td>${s.packages || 0}</td><td>${s.weight_lbs || 0} lbs</td>
+            <tr style="cursor:pointer" onclick="closeShipmentModal();openStopModal(${jsArg(r.id)},${jsArg(s.order)})">
+              <td>${escHtml(s.order)}</td><td>${escHtml(s.company)}</td>
+              <td>${escHtml(s.packages || 0)}</td><td>${escHtml(s.weight_lbs || 0)} lbs</td>
             </tr>
           `).join('')}
         </tbody>
@@ -3852,7 +3848,7 @@ function openStopModal(routeId, stopOrder) {
 
   const itemsHtml = (s.items && s.items.length > 0) ? `
     <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;margin:16px 0 10px">
-      Items individuales (${s.items.length})
+      Items individuales (${escHtml(s.items.length)})
     </div>
     <div class="table-wrap" style="margin-bottom:0">
       <table>
@@ -3860,10 +3856,10 @@ function openStopModal(routeId, stopOrder) {
         <tbody>
           ${s.items.map(it => `
             <tr>
-              <td style="font-family:var(--font-mono);font-size:11px">${it.package_code || '—'}</td>
-              <td>${it.description || '—'}</td>
-              <td>${it.quantity}</td>
-              <td>${it.weight_lbs} lbs</td>
+              <td style="font-family:var(--font-mono);font-size:11px">${escHtml(it.package_code || '—')}</td>
+              <td>${escHtml(it.description || '—')}</td>
+              <td>${escHtml(it.quantity)}</td>
+              <td>${escHtml(it.weight_lbs)} lbs</td>
             </tr>
           `).join('')}
         </tbody>
@@ -3874,19 +3870,19 @@ function openStopModal(routeId, stopOrder) {
   document.getElementById('stopModalBody').innerHTML = `
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px">
       <span class="badge ${s.status==='done'?'badge-green':'badge-muted'}">${s.status==='done'?'✓ Entregado':'⏳ Pendiente'}</span>
-      <span class="badge badge-muted">🕐 ${s.eta}</span>
-      <span class="badge badge-muted">PoD: ${s.pod}</span>
-      ${s.dock ? `<span class="badge badge-yellow">🏭 ${s.dock}</span>` : ''}
+      <span class="badge badge-muted">🕐 ${escHtml(s.eta)}</span>
+      <span class="badge badge-muted">PoD: ${escHtml(s.pod)}</span>
+      ${s.dock ? `<span class="badge badge-yellow">🏭 ${escHtml(s.dock)}</span>` : ''}
     </div>
     <div class="metric-row" style="margin-bottom:16px">
-      <div class="metric"><div class="metric-val" style="color:var(--orange)">${s.packages || 0}</div><div class="metric-lbl">Paquetes</div></div>
-      <div class="metric"><div class="metric-val">${s.weight_lbs || 0}</div><div class="metric-lbl">Libras (lbs)</div></div>
-      <div class="metric"><div class="metric-val">${s.volume_ft3 || 0}</div><div class="metric-lbl">ft³ volumen</div></div>
+      <div class="metric"><div class="metric-val" style="color:var(--orange)">${escHtml(s.packages || 0)}</div><div class="metric-lbl">Paquetes</div></div>
+      <div class="metric"><div class="metric-val">${escHtml(s.weight_lbs || 0)}</div><div class="metric-lbl">Libras (lbs)</div></div>
+      <div class="metric"><div class="metric-val">${escHtml(s.volume_ft3 || 0)}</div><div class="metric-lbl">ft³ volumen</div></div>
     </div>
-    ${s.code ? `<div class="cost-row"><span class="cost-label">Código de paquete</span><span class="cost-value">${s.code}</span></div>` : ''}
+    ${s.code ? `<div class="cost-row"><span class="cost-label">Código de paquete</span><span class="cost-value">${escHtml(s.code)}</span></div>` : ''}
     ${s.notes ? `
       <div style="margin-top:12px;padding:10px 12px;background:var(--card2);border-radius:8px;font-size:12px;color:var(--muted);border:1px solid var(--border)">
-        ℹ ${s.notes}
+        ℹ ${escHtml(s.notes)}
       </div>` : ''}
     ${itemsHtml}
   `;
@@ -3904,7 +3900,10 @@ function showToast(msg, type='info') {
   const el = document.getElementById('toast');
   const icons = { success:'✅', info:'ℹ️', warn:'⚠️' };
   el.className = `toast ${type}`;
-  el.innerHTML = `<span>${icons[type]||'ℹ️'}</span><span>${msg}</span>`;
+  // textContent: el mensaje puede incluir texto de terceros (errores del servidor, nombres)
+  const icon = document.createElement('span'); icon.textContent = icons[type] || 'ℹ️';
+  const text = document.createElement('span'); text.textContent = msg;
+  el.replaceChildren(icon, text);
   el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), 3000);
 }
@@ -4016,6 +4015,11 @@ document.addEventListener('click', (e) => {
 function escHtml(v) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+// Argumento de cadena seguro dentro de onclick="...": JSON + escape HTML.
+// escHtml solo NO alcanza: el navegador decodifica las entidades antes de ejecutar el JS.
+function jsArg(v) { return escHtml(JSON.stringify(String(v ?? ''))); }
+// Solo enlaces http(s); cualquier otra cosa (javascript:, data:) queda en '#'.
+function safeUrl(u) { const s = String(u ?? '').trim(); return /^https?:[/][/]/i.test(s) ? escHtml(s) : '#'; }
 
 async function renderNotificationList() {
   const list = document.getElementById('notifList');
@@ -4032,7 +4036,7 @@ async function renderNotificationList() {
       return;
     }
     list.innerHTML = items.map(n => `
-      <div onclick="openNotification('${n.id}','${n.entity_type||''}','${n.entity_id||''}')"
+      <div onclick="openNotification(${jsArg(n.id)},${jsArg(n.entity_type||'')},${jsArg(n.entity_id||'')})"
         style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;${n.is_read?'opacity:.55':''}">
         <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
           <span style="font-size:12.5px;font-weight:600;color:var(--white)">${escHtml(n.title)}</span>
@@ -4173,21 +4177,21 @@ async function loadHoldingUsers() {
           ${holdingUsers.map(u => `
             <tr>
               <td>
-                <div style="font-weight:500">${u.full_name}</div>
-                <div style="font-size:12px;color:var(--muted)">${u.email}</div>
+                <div style="font-weight:500">${escHtml(u.full_name)}</div>
+                <div style="font-size:12px;color:var(--muted)">${escHtml(u.email)}</div>
               </td>
-              <td>${u.is_super_admin ? '<span class="badge badge-orange">👑 Super Admin</span>' : `<span class="badge badge-muted">${u.role}</span>`}</td>
+              <td>${u.is_super_admin ? '<span class="badge badge-orange">👑 Super Admin</span>' : `<span class="badge badge-muted">${escHtml(u.role)}</span>`}</td>
               <td>
                 <div style="display:flex;flex-wrap:wrap;gap:4px">
-                  ${u.companies.map(c => `<span class="badge badge-blue" style="font-size:11px">${c.name}</span>`).join('')}
+                  ${u.companies.map(c => `<span class="badge badge-blue" style="font-size:11px">${escHtml(c.name)}</span>`).join('')}
                   ${u.companies.length===0?'<span style="color:var(--muted);font-size:12px">Sin acceso</span>':''}
                 </div>
               </td>
               <td>${u.is_active?'<span class="badge badge-green">● Activo</span>':'<span class="badge badge-muted">○ Inactivo</span>'}</td>
               <td>
                 <div style="display:flex;gap:4px">
-                  <button class="btn btn-ghost" style="font-size:12px;padding:4px 8px" onclick="openEditUserModal('${u.holding_user_id}')">Editar</button>
-                  ${!u.is_super_admin?`<button class="btn btn-ghost" style="font-size:12px;padding:4px 8px;color:var(--red,#D85A30)" onclick="deactivateUser('${u.holding_user_id}','${u.full_name}')">${u.is_active?'Desactivar':'Reactivar'}</button>`:''}
+                  <button class="btn btn-ghost" style="font-size:12px;padding:4px 8px" onclick="openEditUserModal(${jsArg(u.holding_user_id)})">Editar</button>
+                  ${!u.is_super_admin?`<button class="btn btn-ghost" style="font-size:12px;padding:4px 8px;color:var(--red,#D85A30)" onclick="deactivateUser(${jsArg(u.holding_user_id)},${jsArg(u.full_name)})">${u.is_active?'Desactivar':'Reactivar'}</button>`:''}
                 </div>
               </td>
             </tr>
@@ -4242,21 +4246,21 @@ function userFormHTML(u) {
       const ex=u?.companies?.find(x=>x.id===c.id);
       return `<div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <div style="font-size:13px;font-weight:500">${c.name}</div>
+          <div style="font-size:13px;font-weight:500">${escHtml(c.name)}</div>
           <label style="display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer">
-            <input type="checkbox" id="acc_${c.id}" ${ex?"checked":""} onchange="toggleCompanyPerms('${c.id}',this.checked)"> Acceso
+            <input type="checkbox" id="acc_${escHtml(c.id)}" ${ex?"checked":""} onchange="toggleCompanyPerms(${jsArg(c.id)},this.checked)"> Acceso
           </label>
         </div>
-        <div id="perms_${c.id}" style="display:${ex?"grid":"none"};grid-template-columns:1fr 1fr 1fr;gap:6px">
-          <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="view_${c.id}" ${ex?.can_view?"checked":""}> Ver rutas</label>
-          <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="op_${c.id}"   ${ex?.can_operate?"checked":""}> Operar</label>
-          <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="inv_${c.id}"  ${ex?.can_invoice?"checked":""}> Facturación</label>
+        <div id="perms_${escHtml(c.id)}" style="display:${ex?"grid":"none"};grid-template-columns:1fr 1fr 1fr;gap:6px">
+          <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="view_${escHtml(c.id)}" ${ex?.can_view?"checked":""}> Ver rutas</label>
+          <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="op_${escHtml(c.id)}"   ${ex?.can_operate?"checked":""}> Operar</label>
+          <label style="font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" id="inv_${escHtml(c.id)}"  ${ex?.can_invoice?"checked":""}> Facturación</label>
         </div>
       </div>`;
     }).join("")}
     <div id="userFormError" style="color:var(--red,#D85A30);font-size:12px;margin-top:8px;display:none"></div>
     <button class="btn btn-primary" style="width:100%;margin-top:12px"
-      onclick="${isNew?"submitNewUser()":("submitEditUser('" + u.holding_user_id + "')")}">
+      onclick="${isNew?"submitNewUser()":("submitEditUser(" + jsArg(u.holding_user_id) + ")")}">
       ${isNew?"Crear usuario":"Guardar cambios"}
     </button>
   `;
@@ -4372,7 +4376,7 @@ function openAnularLoteModal(batchId, numero) {
       </div>
       <div id="anularError" style="color:var(--red,#D85A30);font-size:13px;display:none"></div>
       <button class="btn btn-primary" style="width:100%;background:var(--red,#D85A30);border-color:var(--red,#D85A30)"
-        id="anularSubmitBtn" onclick="submitAnularLote('${batchId}')">✕ Anular lote</button>
+        id="anularSubmitBtn" onclick="submitAnularLote(${jsArg(batchId)})">✕ Anular lote</button>
     </div>
   `;
   document.getElementById('stopModalOverlay').style.display = 'block';
@@ -4455,17 +4459,17 @@ function renderAddRouteForm() {
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Tipo de servicio</label>
         <select id="arServiceMode" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
-          ${getServiceTypes().map(st => `<option value="${st.code}">${st.name}</option>`).join('')}
+          ${getServiceTypes().map(st => `<option value="${escHtml(st.code)}">${escHtml(st.name)}</option>`).join('')}
         </select>
       </div>
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Fecha *</label>
-        <input id="arFecha" type="date" value="${today}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="arFecha" type="date" value="${escHtml(today)}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
       </div>
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Tipo de vehículo</label>
         <select id="arVehicleType" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
-          ${getVehicleTypes().map(vt => `<option value="${vt.code}">${vt.name}</option>`).join('')}
+          ${getVehicleTypes().map(vt => `<option value="${escHtml(vt.code)}">${escHtml(vt.name)}</option>`).join('')}
         </select>
       </div>
       <div>
@@ -4505,8 +4509,8 @@ function renderAddRouteStopsList() {
     <div style="display:flex;flex-direction:column;gap:4px">
       ${addRouteState.stops.map((s,i) => `
         <div style="display:flex;justify-content:space-between;align-items:center;background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px">
-          <span style="color:var(--white)">${s.destino}</span>
-          <span style="color:var(--muted)">${s.peso_lbs} lbs · ${s.volumen_ft3} ft³</span>
+          <span style="color:var(--white)">${escHtml(s.destino)}</span>
+          <span style="color:var(--muted)">${escHtml(s.peso_lbs)} lbs · ${escHtml(s.volumen_ft3)} ft³</span>
           <button onclick="removeAddRouteStop(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer">✕</button>
         </div>
       `).join('')}
@@ -4612,7 +4616,7 @@ async function openEditRouteModal(routeId) {
     try {
       route = await apiGet(`/warehouse/routes/${routeId}`);
     } catch (e) {
-      document.getElementById('stopModalBody').innerHTML = `<div style="color:var(--red,#D85A30)">Error: ${e.message}</div>`;
+      document.getElementById('stopModalBody').innerHTML = `<div style="color:var(--red,#D85A30)">Error: ${escHtml(e.message)}</div>`;
       return;
     }
   } else {
@@ -4630,27 +4634,27 @@ function renderEditRouteForm(route) {
   return `
     <div style="margin-bottom:8px">
       <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Título</label>
-      <input id="erTitle" value="${(route.title || '').replace(/"/g, '&quot;')}"
+      <input id="erTitle" value="${escHtml(route.title || '')}"
         style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Fecha</label>
-        <input id="erFecha" type="date" value="${dateVal}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="erFecha" type="date" value="${escHtml(dateVal)}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
       </div>
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Hora inicio</label>
-        <input id="erStart" type="time" value="${startVal}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="erStart" type="time" value="${escHtml(startVal)}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
       </div>
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Hora fin</label>
-        <input id="erEnd" type="time" value="${endVal}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="erEnd" type="time" value="${escHtml(endVal)}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
       </div>
     </div>
     <div style="margin-bottom:12px">
       <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Tipo de vehículo</label>
       <select id="erVehicleType" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
-        ${getVehicleTypes().map(vt => `<option value="${vt.code}" ${vt.code===route.required_vehicle_type?'selected':''}>${vt.name}</option>`).join('')}
+        ${getVehicleTypes().map(vt => `<option value="${escHtml(vt.code)}" ${vt.code===route.required_vehicle_type?'selected':''}>${escHtml(vt.name)}</option>`).join('')}
       </select>
     </div>
     <div id="erError" style="color:var(--red,#D85A30);font-size:13px;display:none;margin-bottom:8px"></div>
@@ -4713,15 +4717,15 @@ function renderStopForm(routeId, stop) {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Destino *</label>
-        <input id="stDestino" value="${isEdit ? (stop.company||'').replace(/"/g,'&quot;') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="stDestino" value="${isEdit ? escHtml(stop.company||'') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
       </div>
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Dirección *</label>
-        <input id="stDireccion" value="${isEdit ? (stop.address||'').replace(/"/g,'&quot;') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="stDireccion" value="${isEdit ? escHtml(stop.address||'') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
       </div>
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Código postal</label>
-        <input id="stZip" value="${isEdit ? (stop.zip||'') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="stZip" value="${escHtml(isEdit ? (stop.zip||'') : '')}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
       </div>
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Hora límite</label>
@@ -4729,11 +4733,11 @@ function renderStopForm(routeId, stop) {
       </div>
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Lat ${isEdit?'':'*'}</label>
-        <input id="stLat" type="number" step="0.000001" value="${isEdit ? (stop.lat??'') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="stLat" type="number" step="0.000001" value="${escHtml(isEdit ? (stop.lat??'') : '')}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
       </div>
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Lng ${isEdit?'':'*'}</label>
-        <input id="stLng" type="number" step="0.000001" value="${isEdit ? (stop.lng??'') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+        <input id="stLng" type="number" step="0.000001" value="${escHtml(isEdit ? (stop.lng??'') : '')}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
       </div>
       ${!isEdit ? `
       <div>
@@ -4751,12 +4755,12 @@ function renderStopForm(routeId, stop) {
     </div>
     <div style="margin-bottom:8px">
       <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Notas</label>
-      <input id="stNotas" value="${isEdit ? (stop.notes||'').replace(/"/g,'&quot;') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
+      <input id="stNotas" value="${isEdit ? escHtml(stop.notes||'') : ''}" style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
     </div>
     ${isEdit ? `<div style="font-size:11px;color:var(--muted);margin-bottom:10px">ℹ Los paquetes de esta parada no se editan acá — borrala y agregala de nuevo si necesitás cambiarlos.</div>` : ''}
     <div id="stError" style="color:var(--red,#D85A30);font-size:13px;display:none;margin-bottom:8px"></div>
     <button id="stSubmitBtn" class="btn btn-primary" style="width:100%"
-      onclick="${isEdit ? `submitEditStop('${routeId}','${stop.order}')` : `submitAddStop('${routeId}')`}">
+      onclick="${isEdit ? `submitEditStop(${jsArg(routeId)},${jsArg(stop.order)})` : `submitAddStop(${jsArg(routeId)})`}">
       ${isEdit ? 'Guardar cambios' : 'Agregar parada'}
     </button>
   `;
@@ -4879,7 +4883,7 @@ function renderClientes() {
     <!-- Search -->
     <div style="margin-bottom:14px">
       <input id="clienteSearchInput" type="text" placeholder="Buscar por nombre, email o código cliente..."
-        value="${clienteSearch}"
+        value="${escHtml(clienteSearch)}"
         oninput="clienteSearch=this.value;renderClientesTable()"
         style="width:100%;max-width:400px;padding:9px 14px;background:var(--card2);border:1px solid var(--border);
                border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">
@@ -4938,7 +4942,7 @@ function renderClientesTable() {
     body.innerHTML = `
       <div class="card" style="text-align:center;padding:48px;color:var(--muted)">
         <div style="font-size:40px;margin-bottom:12px">🤝</div>
-        <div style="margin-bottom:16px">${q ? 'Sin resultados para "'+q+'"' : 'Sin clientes registrados'}</div>
+        <div style="margin-bottom:16px">${escHtml(q ? 'Sin resultados para "'+q+'"' : 'Sin clientes registrados')}</div>
         ${!q ? '<button class="btn btn-primary" onclick="openNewClienteModal()">+ Agregar primer cliente</button>' : ''}
       </div>`;
     return;
@@ -4963,19 +4967,19 @@ function renderClientesTable() {
         </thead>
         <tbody>
           ${filtered.map(c => `
-            <tr style="cursor:pointer" onclick="openClienteDetail('${c.id}')">
-              <td style="font-family:var(--font-mono);font-size:12px;color:var(--orange)">${c.codigo_cliente||'—'}</td>
+            <tr style="cursor:pointer" onclick="openClienteDetail(${jsArg(c.id)})">
+              <td style="font-family:var(--font-mono);font-size:12px;color:var(--orange)">${escHtml(c.codigo_cliente||'—')}</td>
               <td>
-                <div style="font-weight:600">${c.name}</div>
-                ${c.direccion ? `<div style="font-size:11px;color:var(--muted)">${c.direccion}</div>` : ''}
+                <div style="font-weight:600">${escHtml(c.name)}</div>
+                ${c.direccion ? `<div style="font-size:11px;color:var(--muted)">${escHtml(c.direccion)}</div>` : ''}
               </td>
               <td>
-                <div style="font-size:13px">${c.email}</div>
-                <div style="font-size:12px;color:var(--muted)">${c.phone||'—'}</div>
+                <div style="font-size:13px">${escHtml(c.email)}</div>
+                <div style="font-size:12px;color:var(--muted)">${escHtml(c.phone||'—')}</div>
               </td>
-              <td style="font-size:13px;color:var(--muted)">${[c.ciudad,c.estado].filter(Boolean).join(', ')||'—'}</td>
-              <td style="text-align:center;font-weight:600">${c.metrics?.total_batches||0}</td>
-              <td style="text-align:center;color:var(--green);font-weight:600">${c.metrics?.completed_batches||0}</td>
+              <td style="font-size:13px;color:var(--muted)">${escHtml([c.ciudad,c.estado].filter(Boolean).join(', ')||'—')}</td>
+              <td style="text-align:center;font-weight:600">${escHtml(c.metrics?.total_batches||0)}</td>
+              <td style="text-align:center;color:var(--green);font-weight:600">${escHtml(c.metrics?.completed_batches||0)}</td>
               <td style="text-align:right;color:var(--orange);font-weight:600">$${(c.metrics?.total_cost||0).toFixed(2)}</td>
               <td style="text-align:center">
                 <div style="display:flex;gap:3px;justify-content:center;flex-wrap:wrap">
@@ -4989,9 +4993,9 @@ function renderClientesTable() {
               <td onclick="event.stopPropagation()">
                 <div style="display:flex;gap:4px">
                   <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px"
-                    onclick="openEditClienteModal('${c.id}')">Editar</button>
+                    onclick="openEditClienteModal(${jsArg(c.id)})">Editar</button>
                   <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px"
-                    onclick="testClienteNotification('${c.id}','${c.email}')">✉</button>
+                    onclick="testClienteNotification(${jsArg(c.id)},${jsArg(c.email)})">✉</button>
                 </div>
               </td>
             </tr>
@@ -5000,7 +5004,7 @@ function renderClientesTable() {
       </table>
     </div>
     <div style="font-size:12px;color:var(--muted);margin-top:8px;padding:0 4px">
-      ${filtered.length} cliente${filtered.length!==1?'s':''} · 
+      ${escHtml(filtered.length)} cliente${filtered.length!==1?'s':''} · 
       $${filtered.reduce((s,c)=>s+(c.metrics?.total_cost||0),0).toFixed(2)} costo total acumulado
     </div>
   `;
@@ -5019,8 +5023,8 @@ async function openClienteDetail(id) {
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
         <div>
-          <div style="font-size:16px;font-weight:700;color:var(--white)">${c.name||'...'}</div>
-          <div style="font-size:12px;color:var(--orange);font-family:var(--font-mono)">${c.codigo_cliente||''}</div>
+          <div style="font-size:16px;font-weight:700;color:var(--white)">${escHtml(c.name||'...')}</div>
+          <div style="font-size:12px;color:var(--orange);font-family:var(--font-mono)">${escHtml(c.codigo_cliente||'')}</div>
         </div>
         <button onclick="clienteDetailId=null;document.getElementById('content').innerHTML=renderClientes();loadClientes()"
           style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px">✕</button>
@@ -5029,11 +5033,11 @@ async function openClienteDetail(id) {
       <!-- Métricas -->
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px">
         <div style="background:var(--card2);border-radius:8px;padding:10px;text-align:center">
-          <div style="font-size:20px;font-weight:700;color:var(--white)">${c.metrics?.total_batches||0}</div>
+          <div style="font-size:20px;font-weight:700;color:var(--white)">${escHtml(c.metrics?.total_batches||0)}</div>
           <div style="font-size:10px;color:var(--muted);text-transform:uppercase">Lotes</div>
         </div>
         <div style="background:var(--card2);border-radius:8px;padding:10px;text-align:center">
-          <div style="font-size:20px;font-weight:700;color:var(--green)">${c.metrics?.completed_batches||0}</div>
+          <div style="font-size:20px;font-weight:700;color:var(--green)">${escHtml(c.metrics?.completed_batches||0)}</div>
           <div style="font-size:10px;color:var(--muted);text-transform:uppercase">Completados</div>
         </div>
         <div style="background:var(--card2);border-radius:8px;padding:10px;text-align:center">
@@ -5045,10 +5049,10 @@ async function openClienteDetail(id) {
       <!-- Datos del cliente -->
       <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Datos de contacto</div>
       <div style="font-size:13px;display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
-        <div><span style="color:var(--muted)">Email:</span> ${c.email||'—'}</div>
-        <div><span style="color:var(--muted)">Teléfono:</span> ${c.phone||'—'}</div>
-        <div><span style="color:var(--muted)">Dirección:</span> ${c.direccion||'—'}</div>
-        <div><span style="color:var(--muted)">Ciudad / Estado:</span> ${[c.ciudad,c.estado].filter(Boolean).join(', ')||'—'}</div>
+        <div><span style="color:var(--muted)">Email:</span> ${escHtml(c.email||'—')}</div>
+        <div><span style="color:var(--muted)">Teléfono:</span> ${escHtml(c.phone||'—')}</div>
+        <div><span style="color:var(--muted)">Dirección:</span> ${escHtml(c.direccion||'—')}</div>
+        <div><span style="color:var(--muted)">Ciudad / Estado:</span> ${escHtml([c.ciudad,c.estado].filter(Boolean).join(', ')||'—')}</div>
       </div>
 
       <!-- Notificaciones -->
@@ -5066,9 +5070,9 @@ async function openClienteDetail(id) {
 
       <div style="display:flex;gap:8px;margin-top:16px">
         <button class="btn btn-ghost" style="flex:1;font-size:13px"
-          onclick="openEditClienteModal('${c.id}')">✏ Editar</button>
+          onclick="openEditClienteModal(${jsArg(c.id)})">✏ Editar</button>
         <button class="btn btn-ghost" style="font-size:13px"
-          onclick="testClienteNotification('${c.id}','${c.email}')">✉ Probar email</button>
+          onclick="testClienteNotification(${jsArg(c.id)},${jsArg(c.email)})">✉ Probar email</button>
       </div>
     </div>
   `;
@@ -5101,8 +5105,8 @@ async function loadClienteBatchHistory(clienteId) {
   container.innerHTML = batches.map(b => `
     <div style="padding:8px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
       <div>
-        <div style="font-weight:500;color:var(--white);font-size:13px">${b.notes||b.id.substring(0,8)}</div>
-        <div style="color:var(--muted);font-size:11px">${b.created_at?.split('T')[0]||'—'} · ${b.total_routes} ruta${b.total_routes!==1?'s':''}</div>
+        <div style="font-weight:500;color:var(--white);font-size:13px">${escHtml(b.notes||b.id.substring(0,8))}</div>
+        <div style="color:var(--muted);font-size:11px">${b.created_at?.split('T')[0]||'—'} · ${escHtml(b.total_routes)} ruta${b.total_routes!==1?'s':''}</div>
       </div>
       <div style="text-align:right">
         ${batchStatusBadge(b.status)}
@@ -5114,7 +5118,7 @@ async function loadClienteBatchHistory(clienteId) {
 
 function clienteFormHTML(c) {
   const isNew = !c;
-  const inp = (id,val,ph,type='text') => `<input id="${id}" type="${type}" value="${val||''}" placeholder="${ph}"
+  const inp = (id,val,ph,type='text') => `<input id="${escHtml(id)}" type="${escHtml(type)}" value="${escHtml(val||'')}" placeholder="${escHtml(ph)}"
     style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">`;
   return `
     <div class="grid2">
@@ -5149,7 +5153,7 @@ function clienteFormHTML(c) {
     </div>` : ''}
     <div id="clienteFormError" style="color:var(--red,#D85A30);font-size:13px;display:none;margin-bottom:8px"></div>
     <button class="btn btn-primary" style="width:100%"
-      onclick="${isNew ? 'submitNewCliente()' : `submitEditCliente('${c.id}')`}">
+      onclick="${isNew ? 'submitNewCliente()' : `submitEditCliente(${jsArg(c.id)})`}">
       ${isNew ? 'Registrar cliente' : 'Guardar cambios'}
     </button>
   `;
@@ -5340,7 +5344,7 @@ function renderInventoryTable() {
   container.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
       <div style="font-size:13px;font-weight:600;color:var(--white)">
-        ${inventoryItems.length} código${inventoryItems.length!==1?'s':''} · ${totalCajas} caja${totalCajas!==1?'s':''} · ${totalPeso.toFixed(1)} lbs
+        ${escHtml(inventoryItems.length)} código${inventoryItems.length!==1?'s':''} · ${escHtml(totalCajas)} caja${totalCajas!==1?'s':''} · ${totalPeso.toFixed(1)} lbs
       </div>
     </div>
     <div style="max-height:320px;overflow-y:auto">
@@ -5359,15 +5363,15 @@ function renderInventoryTable() {
           ${inventoryItems.map((item, idx) => `
             <tr style="border-bottom:1px solid var(--border)">
               <td style="padding:6px 8px;font-family:var(--font-mono);font-size:11px;color:var(--orange)">
-                ${item.raw_code.substring(0,24)}${item.raw_code.length>24?'…':''}
+                ${escHtml(item.raw_code.substring(0,24))}${item.raw_code.length>24?'…':''}
               </td>
               <td style="padding:6px 8px;color:var(--white)">
-                ${item.destino || '<span style="color:var(--muted)">Sin datos</span>'}
-                ${item.direccion ? `<div style="font-size:10px;color:var(--muted)">${item.direccion.substring(0,30)}</div>` : ''}
+                ${escHtml(item.destino) || '<span style="color:var(--muted)">Sin datos</span>'}
+                ${item.direccion ? `<div style="font-size:10px;color:var(--muted)">${escHtml(item.direccion.substring(0,30))}</div>` : ''}
               </td>
-              <td style="padding:6px 8px;color:var(--muted)">${item.codigo_cliente||'—'}</td>
+              <td style="padding:6px 8px;color:var(--muted)">${escHtml(item.codigo_cliente||'—')}</td>
               <td style="padding:6px 8px;text-align:center">
-                <span style="font-weight:700;font-size:14px;color:${item.quantity>1?'var(--orange)':'var(--white)'}">${item.quantity}</span>
+                <span style="font-weight:700;font-size:14px;color:${item.quantity>1?'var(--orange)':'var(--white)'}">${escHtml(item.quantity)}</span>
               </td>
               <td style="padding:6px 8px;text-align:right;color:var(--muted)">${(item.peso_lbs_total||0).toFixed(1)} lbs</td>
               <td style="padding:6px 8px">
@@ -5500,7 +5504,7 @@ function parseClientesCsv(input) {
     }
 
     preview.innerHTML = `
-      <div style="font-size:13px;margin-bottom:10px;color:var(--white)">${csvClientesRows.length} cliente${csvClientesRows.length!==1?'s':''} encontrados en el archivo</div>
+      <div style="font-size:13px;margin-bottom:10px;color:var(--white)">${escHtml(csvClientesRows.length)} cliente${csvClientesRows.length!==1?'s':''} encontrados en el archivo</div>
       <div style="max-height:200px;overflow-y:auto;font-size:12px">
         <table style="width:100%">
           <thead><tr>
@@ -5511,9 +5515,9 @@ function parseClientesCsv(input) {
           <tbody>
             ${csvClientesRows.slice(0,5).map(r => `
               <tr style="border-bottom:1px solid var(--border)">
-                <td style="padding:4px 8px">${r.name}</td>
-                <td style="padding:4px 8px;color:var(--muted)">${r.email}</td>
-                <td style="padding:4px 8px;color:var(--orange);font-family:var(--font-mono)">${r.codigo_cliente||'—'}</td>
+                <td style="padding:4px 8px">${escHtml(r.name)}</td>
+                <td style="padding:4px 8px;color:var(--muted)">${escHtml(r.email)}</td>
+                <td style="padding:4px 8px;color:var(--orange);font-family:var(--font-mono)">${escHtml(r.codigo_cliente||'—')}</td>
               </tr>
             `).join('')}
             ${csvClientesRows.length > 5 ? `<tr><td colspan="3" style="padding:4px 8px;color:var(--muted)">... y ${csvClientesRows.length-5} más</td></tr>` : ''}
@@ -5692,8 +5696,8 @@ function renderListaBody(body) {
       ].map(k => `
         <div class="card" style="padding:12px;text-align:center;cursor:pointer"
           onclick="incidenciaFilter='${k.label==='Abiertas'?'open':k.label==='En revisión'?'under_review':k.label==='Resueltas'?'resolved':'unresolved'}';renderIncidenciasBody()">
-          <div style="font-size:22px;font-weight:700;color:${k.color}">${k.val}</div>
-          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:2px">${k.label}</div>
+          <div style="font-size:22px;font-weight:700;color:${escHtml(k.color)}">${escHtml(k.val)}</div>
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:2px">${escHtml(k.label)}</div>
         </div>
       `).join('')}
     </div>
@@ -5701,12 +5705,12 @@ function renderListaBody(body) {
     <!-- Filtros + search -->
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
       ${STATUS_FILTERS.map(f => `
-        <button onclick="incidenciaFilter='${f.key}';renderIncidenciasBody()"
+        <button onclick="incidenciaFilter=${jsArg(f.key)};renderIncidenciasBody()"
           class="btn ${incidenciaFilter===f.key?'btn-primary':'btn-ghost'}" style="font-size:12px;padding:5px 12px">
-          ${f.label} (${f.key==='todos'?incidenciasList.length:incidenciasList.filter(i=>i.status===f.key).length})
+          ${escHtml(f.label)} (${f.key==='todos'?incidenciasList.length:incidenciasList.filter(i=>i.status===f.key).length})
         </button>
       `).join('')}
-      <input type="text" placeholder="Buscar por título, tipo o ruta..." value="${incidenciaSearch}"
+      <input type="text" placeholder="Buscar por título, tipo o ruta..." value="${escHtml(incidenciaSearch)}"
         oninput="incidenciaSearch=this.value;renderIncidenciasBody()"
         style="margin-left:auto;padding:6px 12px;background:var(--card2);border:1px solid var(--border);
                border-radius:8px;color:var(--white);font-size:13px;width:260px">
@@ -5739,29 +5743,29 @@ function renderListaBody(body) {
               const st  = INC_STATUS_CFG[i.status] || { label: i.status, color:'var(--muted)' };
               return `
                 <tr style="cursor:pointer;border-bottom:1px solid var(--border)"
-                  onclick="openIncidenciaDetail('${i.id}')"
+                  onclick="openIncidenciaDetail(${jsArg(i.id)})"
                   onmouseover="this.style.background='rgba(128,128,128,0.05)'"
                   onmouseout="this.style.background=''">
                   <td style="padding:10px 8px">
-                    <div style="font-weight:600;font-size:13px">${i.type_name || '—'}</div>
-                    <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${i.type_code || ''}</div>
+                    <div style="font-weight:600;font-size:13px">${escHtml(i.type_name || '—')}</div>
+                    <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${escHtml(i.type_code || '')}</div>
                   </td>
                   <td style="text-align:center;padding:10px 8px">
                     <span style="font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;
-                      color:${sev.color};background:${sev.bg}">${sev.label}</span>
+                      color:${escHtml(sev.color)};background:${escHtml(sev.bg)}">${escHtml(sev.label)}</span>
                   </td>
                   <td style="padding:10px 8px;max-width:200px">
-                    <div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.title}</div>
+                    <div style="font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(i.title)}</div>
                   </td>
-                  <td style="padding:10px 8px;font-size:12px;color:var(--orange);font-family:var(--font-mono)">${i.route_number || '—'}</td>
-                  <td style="padding:10px 8px;font-size:12px;color:var(--muted)">${i.reporter_name || '—'}</td>
+                  <td style="padding:10px 8px;font-size:12px;color:var(--orange);font-family:var(--font-mono)">${escHtml(i.route_number || '—')}</td>
+                  <td style="padding:10px 8px;font-size:12px;color:var(--muted)">${escHtml(i.reporter_name || '—')}</td>
                   <td style="padding:10px 8px;font-size:12px;color:var(--muted)">${i.reported_at?.split('T')[0] || '—'}</td>
                   <td style="text-align:center;padding:10px 8px">
-                    <span style="font-size:12px;font-weight:600;color:${st.color}">${st.label}</span>
+                    <span style="font-size:12px;font-weight:600;color:${escHtml(st.color)}">${escHtml(st.label)}</span>
                   </td>
                   <td style="padding:10px 8px">
                     <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px"
-                      onclick="event.stopPropagation();openIncidenciaDetail('${i.id}')">Ver →</button>
+                      onclick="event.stopPropagation();openIncidenciaDetail(${jsArg(i.id)})">Ver →</button>
                   </td>
                 </tr>
               `;
@@ -5770,7 +5774,7 @@ function renderListaBody(body) {
         </table>
       </div>
       <div style="font-size:12px;color:var(--muted);margin-top:8px">
-        ${filtered.length} incidencia${filtered.length!==1?'s':''} mostradas
+        ${escHtml(filtered.length)} incidencia${filtered.length!==1?'s':''} mostradas
       </div>
     `}
   `;
@@ -5779,7 +5783,7 @@ function renderListaBody(body) {
 function renderTiposBody(body) {
   body.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:13px;color:var(--muted)">${incidentTypesList.length} tipos registrados</div>
+      <div style="font-size:13px;color:var(--muted)">${escHtml(incidentTypesList.length)} tipos registrados</div>
       <button class="btn btn-primary" style="font-size:13px" onclick="openNewTipoModal()">+ Nuevo tipo</button>
     </div>
     <div class="table-wrap" style="overflow-x:auto">
@@ -5799,10 +5803,10 @@ function renderTiposBody(body) {
             const sev = SEVERITY_CFG[t.severity] || SEVERITY_CFG.low;
             return `
               <tr style="border-bottom:1px solid var(--border)">
-                <td style="padding:10px 8px;font-family:var(--font-mono);font-size:12px;color:var(--orange)">${t.code}</td>
-                <td style="padding:10px 8px;font-weight:500">${t.name}</td>
+                <td style="padding:10px 8px;font-family:var(--font-mono);font-size:12px;color:var(--orange)">${escHtml(t.code)}</td>
+                <td style="padding:10px 8px;font-weight:500">${escHtml(t.name)}</td>
                 <td style="text-align:center;padding:10px 8px">
-                  <span style="font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;color:${sev.color};background:${sev.bg}">${sev.label}</span>
+                  <span style="font-size:11px;font-weight:600;padding:3px 8px;border-radius:20px;color:${escHtml(sev.color)};background:${escHtml(sev.bg)}">${escHtml(sev.label)}</span>
                 </td>
                 <td style="text-align:center;padding:10px 8px">
                   ${t.affects_route_status
@@ -5817,9 +5821,9 @@ function renderTiposBody(body) {
                 <td style="padding:10px 8px">
                   <div style="display:flex;gap:6px">
                     <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px"
-                      onclick="openEditTipoModal('${t.id}')">Editar</button>
+                      onclick="openEditTipoModal(${jsArg(t.id)})">Editar</button>
                     <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;color:${t.is_active?'var(--red)':'var(--green)'}"
-                      onclick="toggleTipo('${t.id}',${!t.is_active})">
+                      onclick="toggleTipo(${jsArg(t.id)},${!t.is_active})">
                       ${t.is_active ? 'Desactivar' : 'Activar'}
                     </button>
                   </div>
@@ -5847,32 +5851,32 @@ function openIncidenciaDetail(id) {
   document.getElementById('stopModalSub').textContent   = inc.route_number || 'Sin ruta asociada';
   document.getElementById('stopModalBody').innerHTML = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-      <span style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:20px;color:${sev.color};background:${sev.bg}">${sev.label}</span>
-      <span style="font-size:12px;font-weight:600;color:${st.color}">${st.label}</span>
+      <span style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:20px;color:${escHtml(sev.color)};background:${escHtml(sev.bg)}">${escHtml(sev.label)}</span>
+      <span style="font-size:12px;font-weight:600;color:${escHtml(st.color)}">${escHtml(st.label)}</span>
       ${inc.affects_route ? '<span class="badge badge-orange">⚠ Afecta estado de ruta</span>' : ''}
     </div>
 
     <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Descripción</div>
-    <div style="font-size:13px;background:var(--card2);padding:10px 12px;border-radius:8px;margin-bottom:14px;line-height:1.5">${inc.description}</div>
+    <div style="font-size:13px;background:var(--card2);padding:10px 12px;border-radius:8px;margin-bottom:14px;line-height:1.5">${escHtml(inc.description)}</div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;font-size:13px">
-      <div><span style="color:var(--muted)">Tipo:</span> ${inc.type_name||'—'}</div>
-      <div><span style="color:var(--muted)">Ruta:</span> <span style="color:var(--orange);font-family:var(--font-mono)">${inc.route_number||'—'}</span></div>
-      <div><span style="color:var(--muted)">Reportado por:</span> ${inc.reporter_name||'—'}</div>
+      <div><span style="color:var(--muted)">Tipo:</span> ${escHtml(inc.type_name||'—')}</div>
+      <div><span style="color:var(--muted)">Ruta:</span> <span style="color:var(--orange);font-family:var(--font-mono)">${escHtml(inc.route_number||'—')}</span></div>
+      <div><span style="color:var(--muted)">Reportado por:</span> ${escHtml(inc.reporter_name||'—')}</div>
       <div><span style="color:var(--muted)">Fecha:</span> ${inc.reported_at?.replace('T',' ').substring(0,16)||'—'}</div>
       ${inc.resolved_at ? `<div><span style="color:var(--muted)">Resuelto:</span> ${inc.resolved_at?.replace('T',' ').substring(0,16)}</div>` : ''}
-      ${inc.resolver_name ? `<div><span style="color:var(--muted)">Resuelto por:</span> ${inc.resolver_name}</div>` : ''}
+      ${inc.resolver_name ? `<div><span style="color:var(--muted)">Resuelto por:</span> ${escHtml(inc.resolver_name)}</div>` : ''}
     </div>
 
     ${inc.resolution_notes ? `
       <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Notas de resolución</div>
-      <div style="font-size:13px;background:var(--card2);padding:10px 12px;border-radius:8px;margin-bottom:14px">${inc.resolution_notes}</div>
+      <div style="font-size:13px;background:var(--card2);padding:10px 12px;border-radius:8px;margin-bottom:14px">${escHtml(inc.resolution_notes)}</div>
     ` : ''}
 
     ${inc.evidence_urls?.length ? `
       <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px">Evidencias</div>
       <div style="display:flex;flex-direction:column;gap:4px;margin-bottom:14px">
-        ${inc.evidence_urls.map(url => `<a href="${url}" target="_blank" style="color:var(--orange);font-size:12px">🔗 ${url}</a>`).join('')}
+        ${inc.evidence_urls.map(url => `<a href="${safeUrl(url)}" target="_blank" style="color:var(--orange);font-size:12px">🔗 ${escHtml(url)}</a>`).join('')}
       </div>
     ` : ''}
 
@@ -5881,7 +5885,7 @@ function openIncidenciaDetail(id) {
         <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Cambiar estado</div>
         ${canReview ? `
           <button class="btn btn-primary" style="width:100%;margin-bottom:8px"
-            onclick="changeIncidenciaStatus('${inc.id}','under_review','En revisión')">
+            onclick="changeIncidenciaStatus(${jsArg(inc.id)},'under_review','En revisión')">
             🔍 Poner en revisión
           </button>
         ` : ''}
@@ -5893,9 +5897,9 @@ function openIncidenciaDetail(id) {
                      box-sizing:border-box;margin-bottom:8px"></textarea>
             <div style="display:flex;gap:8px">
               <button class="btn btn-primary" style="flex:1"
-                onclick="changeIncidenciaStatus('${inc.id}','resolved','Resuelta')">✓ Marcar resuelta</button>
+                onclick="changeIncidenciaStatus(${jsArg(inc.id)},'resolved','Resuelta')">✓ Marcar resuelta</button>
               <button class="btn btn-ghost" style="flex:1;color:var(--muted)"
-                onclick="changeIncidenciaStatus('${inc.id}','unresolved','Sin resolver')">✕ Sin resolver</button>
+                onclick="changeIncidenciaStatus(${jsArg(inc.id)},'unresolved','Sin resolver')">✕ Sin resolver</button>
             </div>
           </div>
         ` : ''}
@@ -5937,7 +5941,7 @@ function openNewIncidenciaModal() {
         <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Tipo de incidencia *</label>
         <select id="incTipo" style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px">
           <option value="">— Seleccioná un tipo —</option>
-          ${tipos.map(t => `<option value="${t.id}">${t.name} (${SEVERITY_CFG[t.severity]?.label||t.severity})</option>`).join('')}
+          ${tipos.map(t => `<option value="${escHtml(t.id)}">${escHtml(t.name)} (${escHtml(SEVERITY_CFG[t.severity]?.label||t.severity)})</option>`).join('')}
         </select>
       </div>
       <div>
@@ -6012,7 +6016,7 @@ async function submitNewIncidencia() {
 // ── ABM Tipos de incidencia ───────────────────────────────────────────────────
 function tipoFormHTML(t) {
   const isNew = !t;
-  const inp = (id, val, ph) => `<input id="${id}" value="${val||''}" placeholder="${ph}"
+  const inp = (id, val, ph) => `<input id="${escHtml(id)}" value="${escHtml(val||'')}" placeholder="${escHtml(ph)}"
     style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);
            border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">`;
   return `
@@ -6025,7 +6029,7 @@ function tipoFormHTML(t) {
         <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Severidad *</label>
         <select id="tipoSeverity" style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px">
           ${['low','medium','high','critical'].map(s =>
-            `<option value="${s}" ${t?.severity===s?'selected':''}>${SEVERITY_CFG[s]?.label||s}</option>`
+            `<option value="${escHtml(s)}" ${t?.severity===s?'selected':''}>${escHtml(SEVERITY_CFG[s]?.label||s)}</option>`
           ).join('')}
         </select>
       </div>
@@ -6034,7 +6038,7 @@ function tipoFormHTML(t) {
       </label>
       <div id="tipoError" style="color:var(--red,#D85A30);font-size:13px;display:none"></div>
       <button class="btn btn-primary" style="width:100%"
-        onclick="${isNew ? 'submitNewTipo()' : `submitEditTipo('${t?.id}')`}">
+        onclick="${isNew ? 'submitNewTipo()' : `submitEditTipo(${jsArg(t?.id)})`}">
         ${isNew ? 'Crear tipo' : 'Guardar cambios'}
       </button>
     </div>
@@ -6198,18 +6202,18 @@ function renderRecepcionBody() {
         { key: 'in_progress', label: 'En proceso', color: 'var(--orange)' },
         { key: 'completed',   label: 'Cerradas',   color: 'var(--green)'  },
       ].map(k => `
-        <div class="card" style="padding:12px;text-align:center;cursor:pointer" onclick="recepcionFilter='${k.key}';renderRecepcionBody()">
-          <div style="font-size:22px;font-weight:700;color:${k.color}">${recepcionesList.filter(r=>r.status===k.key).length}</div>
-          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:2px">${k.label}</div>
+        <div class="card" style="padding:12px;text-align:center;cursor:pointer" onclick="recepcionFilter=${jsArg(k.key)};renderRecepcionBody()">
+          <div style="font-size:22px;font-weight:700;color:${escHtml(k.color)}">${recepcionesList.filter(r=>r.status===k.key).length}</div>
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;margin-top:2px">${escHtml(k.label)}</div>
         </div>
       `).join('')}
     </div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
       ${STATUS_FILTERS.map(f => `
-        <button onclick="recepcionFilter='${f.key}';renderRecepcionBody()"
+        <button onclick="recepcionFilter=${jsArg(f.key)};renderRecepcionBody()"
           class="btn ${recepcionFilter===f.key?'btn-primary':'btn-ghost'}" style="font-size:12px;padding:5px 12px">
-          ${f.label} (${f.key==='todos'?recepcionesList.length:recepcionesList.filter(r=>r.status===f.key).length})
+          ${escHtml(f.label)} (${f.key==='todos'?recepcionesList.length:recepcionesList.filter(r=>r.status===f.key).length})
         </button>
       `).join('')}
     </div>
@@ -6239,22 +6243,22 @@ function renderRecepcionBody() {
               const s  = r.summary || {};
               return `
                 <tr style="cursor:pointer;border-bottom:1px solid var(--border)"
-                  onclick="openRecepcionDetail('${r.id}')"
+                  onclick="openRecepcionDetail(${jsArg(r.id)})"
                   onmouseover="this.style.background='rgba(128,128,128,0.05)'"
                   onmouseout="this.style.background=''">
-                  <td style="padding:10px 8px;font-family:var(--font-mono);color:var(--orange);font-size:13px">${r.reception_number || '—'}</td>
+                  <td style="padding:10px 8px;font-family:var(--font-mono);color:var(--orange);font-size:13px">${escHtml(r.reception_number || '—')}</td>
                   <td style="padding:10px 8px;font-size:13px">${r.source_type === 'return' ? '↩ Devolución' : '📦 Proveedor'}</td>
-                  <td style="padding:10px 8px;font-size:13px">${r.reference || '—'}</td>
+                  <td style="padding:10px 8px;font-size:13px">${escHtml(r.reference || '—')}</td>
                   <td style="text-align:center;padding:10px 8px;font-size:12px;color:var(--muted)">
-                    ${s.received||0}✓ / ${s.damaged||0}⚠ / ${s.missing||0}✕ / ${s.pending||0} pend.
+                    ${escHtml(s.received||0)}✓ / ${escHtml(s.damaged||0)}⚠ / ${escHtml(s.missing||0)}✕ / ${escHtml(s.pending||0)} pend.
                   </td>
                   <td style="padding:10px 8px;font-size:12px;color:var(--muted)">${r.expected_at?.split('T')[0] || '—'}</td>
                   <td style="text-align:center;padding:10px 8px">
-                    <span style="font-size:12px;font-weight:600;color:${st.color}">${st.label}</span>
+                    <span style="font-size:12px;font-weight:600;color:${escHtml(st.color)}">${escHtml(st.label)}</span>
                   </td>
                   <td style="padding:10px 8px">
                     <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px"
-                      onclick="event.stopPropagation();openRecepcionDetail('${r.id}')">Ver →</button>
+                      onclick="event.stopPropagation();openRecepcionDetail(${jsArg(r.id)})">Ver →</button>
                   </td>
                 </tr>
               `;
@@ -6262,7 +6266,7 @@ function renderRecepcionBody() {
           </tbody>
         </table>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-top:8px">${filtered.length} recepción${filtered.length!==1?'es':''} mostradas</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">${escHtml(filtered.length)} recepción${filtered.length!==1?'es':''} mostradas</div>
     `}
   `;
 }
@@ -6293,7 +6297,7 @@ function renderNewRecepcionForm() {
       </div>
       <div>
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Fecha esperada</label>
-        <input id="nrExpectedAt" type="date" value="${today}"
+        <input id="nrExpectedAt" type="date" value="${escHtml(today)}"
           style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
       </div>
     </div>
@@ -6304,20 +6308,20 @@ function renderNewRecepcionForm() {
         <div style="display:flex;gap:6px">
           <select id="nrOriginRoute" style="flex:1;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
             <option value="">— Sin vincular a una ruta —</option>
-            ${routes.map(r => `<option value="${r.id}">${r.num} — ${r.title}</option>`).join('')}
+            ${routes.map(r => `<option value="${escHtml(r.id)}">${escHtml(r.num)} — ${escHtml(r.title)}</option>`).join('')}
           </select>
           <button class="btn btn-ghost" style="font-size:12px;white-space:nowrap" onclick="loadUndeliveredStopsForReturn()">↻ Cargar paradas</button>
         </div>
       </div>
       <div style="margin-bottom:8px">
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Motivo de la devolución</label>
-        <input id="nrReference" placeholder="Ej: Dirección incorrecta, cliente ausente..." value="${(newRecepcionState.reference||'').replace(/"/g,'&quot;')}"
+        <input id="nrReference" placeholder="Ej: Dirección incorrecta, cliente ausente..." value="${escHtml(newRecepcionState.reference||'')}"
           style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
       </div>
     ` : `
       <div style="margin-bottom:8px">
         <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Proveedor / cliente</label>
-        <input id="nrReference" placeholder="Nombre del proveedor o cliente" value="${(newRecepcionState.reference||'').replace(/"/g,'&quot;')}"
+        <input id="nrReference" placeholder="Nombre del proveedor o cliente" value="${escHtml(newRecepcionState.reference||'')}"
           style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
       </div>
     `}
@@ -6347,8 +6351,8 @@ function renderNewRecepcionItemsList() {
     <div style="display:flex;flex-direction:column;gap:4px">
       ${newRecepcionState.items.map((it,i) => `
         <div style="display:flex;justify-content:space-between;align-items:center;background:var(--card2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px">
-          <span style="color:var(--white)">${it.descripcion || it.codigo_cliente || 'Ítem sin descripción'}</span>
-          <span style="color:var(--muted)">x${it.expected_quantity} · ${it.peso_lbs_unit} lbs</span>
+          <span style="color:var(--white)">${escHtml(it.descripcion || it.codigo_cliente || 'Ítem sin descripción')}</span>
+          <span style="color:var(--muted)">x${escHtml(it.expected_quantity)} · ${escHtml(it.peso_lbs_unit)} lbs</span>
           <button onclick="removeNewRecepcionItem(${i})" style="background:none;border:none;color:var(--muted);cursor:pointer">✕</button>
         </div>
       `).join('')}
@@ -6458,7 +6462,7 @@ async function openRecepcionDetail(id) {
     try {
       reception = await apiGet(`/warehouse/receptions/${id}`);
     } catch (e) {
-      document.getElementById('stopModalBody').innerHTML = `<div style="color:var(--red,#D85A30)">Error: ${e.message}</div>`;
+      document.getElementById('stopModalBody').innerHTML = `<div style="color:var(--red,#D85A30)">Error: ${escHtml(e.message)}</div>`;
       return;
     }
   } else {
@@ -6486,7 +6490,7 @@ function renderRecepcionDetailModal(r) {
 
   document.getElementById('stopModalBody').innerHTML = `
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">
-      <span style="font-size:12px;font-weight:600;color:${st.color}">${st.label}</span>
+      <span style="font-size:12px;font-weight:600;color:${escHtml(st.color)}">${escHtml(st.label)}</span>
       <span style="font-size:12px;color:var(--muted)">${r.source_type === 'return' ? '↩ Devolución' : '📦 Proveedor'}</span>
       ${r.expected_at ? `<span style="font-size:12px;color:var(--muted)">Esperada: ${r.expected_at.split('T')[0]}</span>` : ''}
     </div>
@@ -6497,7 +6501,7 @@ function renderRecepcionDetailModal(r) {
     </div>
 
     ${r.status !== 'completed' ? `
-      <button class="btn btn-primary" style="width:100%" onclick="confirmCompleteRecepcion('${r.id}')">
+      <button class="btn btn-primary" style="width:100%" onclick="confirmCompleteRecepcion(${jsArg(r.id)})">
         ✓ Cerrar recepción${r.summary?.pending ? ` (${r.summary.pending} ítem${r.summary.pending!==1?'s':''} sin llegar quedará${r.summary.pending!==1?'n':''} como faltante)` : ''}
       </button>
     ` : `
@@ -6513,19 +6517,19 @@ function renderRecepcionItemRow(r, it) {
     <div style="background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:10px 12px">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:${canCheckIn?'8px':'0'}">
         <div>
-          <div style="font-size:13px;font-weight:600">${it.descripcion || it.codigo_cliente || 'Ítem sin descripción'}</div>
-          <div style="font-size:11px;color:var(--muted)">${it.codigo_cliente ? it.codigo_cliente+' · ' : ''}esperado x${it.expected_quantity} · ${it.peso_lbs_unit} lbs</div>
+          <div style="font-size:13px;font-weight:600">${escHtml(it.descripcion || it.codigo_cliente || 'Ítem sin descripción')}</div>
+          <div style="font-size:11px;color:var(--muted)">${escHtml(it.codigo_cliente ? it.codigo_cliente+' · ' : '')}esperado x${escHtml(it.expected_quantity)} · ${escHtml(it.peso_lbs_unit)} lbs</div>
         </div>
-        <span style="font-size:12px;font-weight:600;color:${cfg.color};white-space:nowrap">${cfg.label}${it.status!=='pending' ? ` (x${it.received_quantity})` : ''}</span>
+        <span style="font-size:12px;font-weight:600;color:${escHtml(cfg.color)};white-space:nowrap">${escHtml(cfg.label)}${it.status!=='pending' ? ` (x${it.received_quantity})` : ''}</span>
       </div>
       ${canCheckIn ? `
         <div style="display:flex;gap:6px;align-items:center">
-          <input id="ci-qty-${it.id}" type="number" min="0" value="${it.expected_quantity}"
+          <input id="ci-qty-${escHtml(it.id)}" type="number" min="0" value="${escHtml(it.expected_quantity)}"
             style="width:70px;padding:5px 7px;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:12px">
-          <button class="btn btn-ghost" style="flex:1;font-size:12px;color:var(--green,#4CAF50)" onclick="checkInRecepcionItem('${r.id}','${it.id}','received')">✓ Recibido OK</button>
-          <button class="btn btn-ghost" style="flex:1;font-size:12px;color:var(--red,#D85A30)" onclick="checkInRecepcionItem('${r.id}','${it.id}','damaged')">⚠ Dañado</button>
+          <button class="btn btn-ghost" style="flex:1;font-size:12px;color:var(--green,#4CAF50)" onclick="checkInRecepcionItem(${jsArg(r.id)},${jsArg(it.id)},'received')">✓ Recibido OK</button>
+          <button class="btn btn-ghost" style="flex:1;font-size:12px;color:var(--red,#D85A30)" onclick="checkInRecepcionItem(${jsArg(r.id)},${jsArg(it.id)},'damaged')">⚠ Dañado</button>
         </div>
-      ` : it.notas ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">Nota: ${it.notas}</div>` : ''}
+      ` : it.notas ? `<div style="font-size:11px;color:var(--muted);margin-top:4px">Nota: ${escHtml(it.notas)}</div>` : ''}
     </div>
   `;
 }
@@ -6633,9 +6637,9 @@ function renderMensajesBody() {
       </button>
       <button onclick="mensajeFilter='todos';renderMensajesBody()"
         class="btn ${mensajeFilter==='todos'?'btn-primary':'btn-ghost'}" style="font-size:12px;padding:5px 12px">
-        Todos (${mensajesList.length})
+        Todos (${escHtml(mensajesList.length)})
       </button>
-      <input type="text" placeholder="Buscar por código o descripción..." value="${mensajeSearch}"
+      <input type="text" placeholder="Buscar por código o descripción..." value="${escHtml(mensajeSearch)}"
         oninput="mensajeSearch=this.value;renderMensajesBody()"
         style="margin-left:auto;padding:6px 12px;background:var(--card2);border:1px solid var(--border);
                border-radius:8px;color:var(--white);font-size:13px;width:260px">
@@ -6662,25 +6666,25 @@ function renderMensajesBody() {
           <tbody>
             ${filtered.map(m => `
               <tr style="border-bottom:1px solid var(--border)">
-                <td style="padding:10px 8px;font-family:var(--font-mono);color:var(--orange);font-size:13px">${m.code}</td>
-                <td style="padding:10px 8px;font-size:13px">${m.description}</td>
-                <td style="padding:10px 8px;font-size:12px;color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.macro_text}</td>
+                <td style="padding:10px 8px;font-family:var(--font-mono);color:var(--orange);font-size:13px">${escHtml(m.code)}</td>
+                <td style="padding:10px 8px;font-size:13px">${escHtml(m.description)}</td>
+                <td style="padding:10px 8px;font-size:12px;color:var(--muted);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(m.macro_text)}</td>
                 <td style="padding:10px 8px;font-size:11px;color:var(--muted)">
-                  ${(m.variables||[]).map(v => `<span style="background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:1px 7px;margin-right:3px;white-space:nowrap;display:inline-block;margin-bottom:2px">${v}</span>`).join('') || '—'}
+                  ${(m.variables||[]).map(v => `<span style="background:var(--card2);border:1px solid var(--border);border-radius:10px;padding:1px 7px;margin-right:3px;white-space:nowrap;display:inline-block;margin-bottom:2px">${escHtml(v)}</span>`).join('') || '—'}
                 </td>
                 <td style="text-align:center;padding:10px 8px">
                   <span style="font-size:12px;font-weight:600;color:${m.is_active?'var(--green)':'var(--muted)'}">${m.is_active?'Activo':'Inactivo'}</span>
                 </td>
                 <td style="padding:10px 8px;white-space:nowrap">
-                  <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="openEditMensajeModal('${m.id}')">✏️</button>
-                  <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="toggleMensajeActive('${m.id}', ${!m.is_active})">${m.is_active?'Desactivar':'Activar'}</button>
+                  <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="openEditMensajeModal(${jsArg(m.id)})">✏️</button>
+                  <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="toggleMensajeActive(${jsArg(m.id)}, ${!m.is_active})">${m.is_active?'Desactivar':'Activar'}</button>
                 </td>
               </tr>
             `).join('')}
           </tbody>
         </table>
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-top:8px">${filtered.length} mensaje${filtered.length!==1?'s':''} mostrado${filtered.length!==1?'s':''}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:8px">${escHtml(filtered.length)} mensaje${filtered.length!==1?'s':''} mostrado${filtered.length!==1?'s':''}</div>
     `}
   `;
 }
@@ -6711,28 +6715,28 @@ function renderMensajeForm() {
   return `
     <div style="margin-bottom:8px">
       <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Código *</label>
-      <input id="msgCode" value="${(editMensajeState.code||'').replace(/"/g,'&quot;')}" ${isEdit?'disabled':''}
+      <input id="msgCode" value="${escHtml(editMensajeState.code||'')}" ${isEdit?'disabled':''}
         placeholder="Ej: BATCH_APPROVED"
         style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;
                color:${isEdit?'var(--muted)':'var(--white)'};font-size:13px;box-sizing:border-box;text-transform:uppercase">
     </div>
     <div style="margin-bottom:8px">
       <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Descripción *</label>
-      <input id="msgDescription" value="${(editMensajeState.description||'').replace(/"/g,'&quot;')}"
+      <input id="msgDescription" value="${escHtml(editMensajeState.description||'')}"
         placeholder="Etiqueta corta y legible"
         style="width:100%;padding:7px 9px;background:var(--card2);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:13px;box-sizing:border-box">
     </div>
     <div style="margin-bottom:8px">
       <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:2px">Macro estándar * — usá <code>{variable}</code> para valores que se rellenan solos</label>
       <textarea id="msgMacroText" oninput="onMensajeMacroInput()"
-        style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;resize:vertical;min-height:70px;box-sizing:border-box">${(editMensajeState.macro_text||'').replace(/</g,'&lt;')}</textarea>
+        style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:13px;resize:vertical;min-height:70px;box-sizing:border-box">${escHtml(editMensajeState.macro_text||'')}</textarea>
     </div>
 
     <div style="border-top:1px solid var(--border);margin:12px 0;padding-top:10px">
       <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:8px">Probar macro</div>
       ${renderMensajeVarInputs()}
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px">Vista previa</div>
-      <div id="msgPreview" style="background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.5;white-space:pre-wrap">${renderMacroPreview(editMensajeState.macro_text, editMensajeState.previewValues) || '—'}</div>
+      <div id="msgPreview" style="background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:13px;line-height:1.5;white-space:pre-wrap">${escHtml(renderMacroPreview(editMensajeState.macro_text, editMensajeState.previewValues) || '—')}</div>
     </div>
 
     <div style="display:flex;align-items:center;gap:8px;margin:12px 0">
@@ -6751,8 +6755,8 @@ function renderMensajeVarInputs() {
     <div id="msgVarInputs" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
       ${vars.length === 0 ? `<div style="font-size:12px;color:var(--muted)">Esta plantilla no tiene variables</div>` : vars.map(v => `
         <div style="display:flex;align-items:center;gap:8px">
-          <label style="font-size:12px;color:var(--muted);width:120px;flex-shrink:0;font-family:var(--font-mono)">{${v}}</label>
-          <input oninput="editMensajeState.previewValues['${v}']=this.value;updateMensajePreview()" value="${(editMensajeState.previewValues[v]||'').replace(/"/g,'&quot;')}"
+          <label style="font-size:12px;color:var(--muted);width:120px;flex-shrink:0;font-family:var(--font-mono)">{${escHtml(v)}}</label>
+          <input oninput="editMensajeState.previewValues[${jsArg(v)}]=this.value;updateMensajePreview()" value="${escHtml(editMensajeState.previewValues[v]||'')}"
             style="flex:1;padding:5px 8px;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--white);font-size:12px">
         </div>
       `).join('')}
@@ -6843,15 +6847,15 @@ async function loadServicios() {
     box.innerHTML = `
       ${r.service_types.map(st => `
         <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer">
-          <input type="checkbox" class="svcCheck" value="${st.code}" ${st.selected ? 'checked' : ''} style="margin-top:3px">
-          <span><strong>${st.name}</strong><div style="font-size:12px;color:var(--muted)">${st.description || ''}</div></span>
+          <input type="checkbox" class="svcCheck" value="${escHtml(st.code)}" ${st.selected ? 'checked' : ''} style="margin-top:3px">
+          <span><strong>${escHtml(st.name)}</strong><div style="font-size:12px;color:var(--muted)">${escHtml(st.description || '')}</div></span>
         </label>`).join('')}
       <div style="display:flex;align-items:center;gap:12px;margin-top:14px">
         <button class="btn btn-primary" onclick="saveServicios()">Guardar</button>
         <span id="svcMsg" style="font-size:12px;color:var(--muted)"></span>
       </div>`;
   } catch (e) {
-    box.innerHTML = `<div style="color:var(--red)">No pudimos cargar los servicios: ${e.message}</div>`;
+    box.innerHTML = `<div style="color:var(--red)">No pudimos cargar los servicios: ${escHtml(e.message)}</div>`;
   }
 }
 
@@ -6907,7 +6911,7 @@ function renderTarifasBody() {
   const body = document.getElementById('tarifasBody');
   if (!body) return;
   body.innerHTML = `
-    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${tarifasList.length} tipo${tarifasList.length!==1?'s':''} de servicio registrado${tarifasList.length!==1?'s':''}</div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${escHtml(tarifasList.length)} tipo${tarifasList.length!==1?'s':''} de servicio registrado${tarifasList.length!==1?'s':''}</div>
     <div class="table-wrap" style="overflow-x:auto">
       <table style="min-width:980px">
         <thead>
@@ -6927,14 +6931,14 @@ function renderTarifasBody() {
         <tbody>
           ${tarifasList.map(st => `
             <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:10px 8px;font-family:var(--font-mono);font-size:12px;color:var(--orange)">${st.code}</td>
-              <td style="padding:10px 8px;font-weight:500">${st.name}</td>
+              <td style="padding:10px 8px;font-family:var(--font-mono);font-size:12px;color:var(--orange)">${escHtml(st.code)}</td>
+              <td style="padding:10px 8px;font-weight:500">${escHtml(st.name)}</td>
               <td style="text-align:right;padding:10px 8px;font-size:13px">$${Number(st.precio_servicio).toFixed(2)}</td>
               <td style="text-align:right;padding:10px 8px;font-size:13px">$${Number(st.precio_por_km||0).toFixed(2)}</td>
               <td style="text-align:right;padding:10px 8px;font-size:13px">$${Number(st.precio_por_lb||0).toFixed(2)}</td>
               <td style="text-align:right;padding:10px 8px;font-size:13px">$${Number(st.precio_por_ft3||0).toFixed(2)}</td>
-              <td style="text-align:right;padding:10px 8px;font-size:13px">${st.porcentaje_muevo}%</td>
-              <td style="padding:10px 8px;font-size:12px;color:var(--muted)">$${st.importe_minimo} – ${st.importe_maximo ? '$'+st.importe_maximo : '∞'}</td>
+              <td style="text-align:right;padding:10px 8px;font-size:13px">${escHtml(st.porcentaje_muevo)}%</td>
+              <td style="padding:10px 8px;font-size:12px;color:var(--muted)">$${escHtml(st.importe_minimo)} – ${st.importe_maximo ? '$'+st.importe_maximo : '∞'}</td>
               <td style="text-align:center;padding:10px 8px">
                 ${st.habilitado
                   ? '<span class="badge badge-green">● Activo</span>'
@@ -6942,9 +6946,9 @@ function renderTarifasBody() {
               </td>
               <td style="padding:10px 8px">
                 <div style="display:flex;gap:6px">
-                  <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="openEditTarifaModal('${st.id}')">Editar</button>
+                  <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px" onclick="openEditTarifaModal(${jsArg(st.id)})">Editar</button>
                   <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;color:${st.habilitado?'var(--red)':'var(--green)'}"
-                    onclick="toggleTarifa('${st.id}',${!st.habilitado})">
+                    onclick="toggleTarifa(${jsArg(st.id)},${!st.habilitado})">
                     ${st.habilitado ? 'Desactivar' : 'Activar'}
                   </button>
                 </div>
@@ -6959,14 +6963,14 @@ function renderTarifasBody() {
 
 function tarifaFormHTML(t) {
   const isNew = !t;
-  const inpNum = (id, val, ph) => `<input id="${id}" type="number" step="0.01" min="0" value="${val ?? ''}" placeholder="${ph}"
+  const inpNum = (id, val, ph) => `<input id="${escHtml(id)}" type="number" step="0.01" min="0" value="${escHtml(val ?? '')}" placeholder="${escHtml(ph)}"
     style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box">`;
   return `
     <div style="display:flex;flex-direction:column;gap:10px">
       ${isNew ? `<div><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Código *</label>
         <input id="tarCode" placeholder="mensajeria" style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box"></div>` : ''}
       <div><label style="font-size:12px;color:var(--muted);display:block;margin-bottom:4px">Nombre *</label>
-        <input id="tarName" value="${(t?.name||'').replace(/"/g,'&quot;')}" placeholder="📦 Mensajería"
+        <input id="tarName" value="${escHtml(t?.name||'')}" placeholder="📦 Mensajería"
           style="width:100%;padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--white);font-size:14px;box-sizing:border-box"></div>
 
       <div style="border-top:1px solid var(--border);padding-top:10px">
@@ -6991,7 +6995,7 @@ function tarifaFormHTML(t) {
 
       <div id="tarError" style="color:var(--red,#D85A30);font-size:13px;display:none"></div>
       <button class="btn btn-primary" style="width:100%"
-        onclick="${isNew ? 'submitNewTarifa()' : `submitEditTarifa('${t?.id}')`}">
+        onclick="${isNew ? 'submitNewTarifa()' : `submitEditTarifa(${jsArg(t?.id)})`}">
         ${isNew ? 'Crear tipo de servicio' : 'Guardar cambios'}
       </button>
     </div>
@@ -7113,7 +7117,7 @@ function ofertaStatusBadge(status) {
     accepted:                 ['badge-green',  'Cerrado'],
   };
   const [cls, label] = map[status] || ['badge-muted', status];
-  return `<span class="badge ${cls}">${label}</span>`;
+  return `<span class="badge ${escHtml(cls)}">${escHtml(label)}</span>`;
 }
 
 function renderOfertas() {
@@ -7154,14 +7158,14 @@ function renderOfertasBody() {
           ` : rows.map(r => `
             <tr style="border-bottom:1px solid var(--border)">
               <td style="padding:10px 8px">
-                <div style="font-weight:500">${r.title}</div>
-                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${r.num}</div>
+                <div style="font-weight:500">${escHtml(r.title)}</div>
+                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono)">${escHtml(r.num)}</div>
               </td>
               <td style="padding:10px 8px">${ofertaStatusBadge(r.negotiation_status)}</td>
               <td style="text-align:right;padding:10px 8px;font-size:13px">${r.suggested_price != null ? fmt$(r.suggested_price) : '—'}</td>
               <td style="text-align:right;padding:10px 8px;font-size:13px;color:var(--orange);font-weight:600">${fmt$(r.gross || 0)}</td>
               <td style="padding:10px 8px">
-                <button class="btn btn-ghost" style="font-size:12px" onclick="openNegotiationPanel('${r.id}')">Ver ofertas</button>
+                <button class="btn btn-ghost" style="font-size:12px" onclick="openNegotiationPanel(${jsArg(r.id)})">Ver ofertas</button>
               </td>
             </tr>
           `).join('')}
@@ -7198,7 +7202,7 @@ function auditActionBadge(action) {
     delete: ['badge-muted',  '🗑 Eliminado'],
   };
   const [cls, label] = map[action] || ['badge-muted', action];
-  return `<span class="badge ${cls}">${label}</span>`;
+  return `<span class="badge ${escHtml(cls)}">${escHtml(label)}</span>`;
 }
 
 function renderAuditChanges(changes) {
@@ -7207,13 +7211,13 @@ function renderAuditChanges(changes) {
   if (keys.length === 0) return '—';
   const isDiff = typeof changes[keys[0]] === 'object' && changes[keys[0]] !== null && 'old' in changes[keys[0]];
   const preview = keys.slice(0, 2).map(k => isDiff
-    ? `<b>${k}</b>: ${JSON.stringify(changes[k].old)} → ${JSON.stringify(changes[k].new)}`
-    : `<b>${k}</b>: ${JSON.stringify(changes[k])}`
+    ? `<b>${escHtml(k)}</b>: ${escHtml(JSON.stringify(changes[k].old))} → ${escHtml(JSON.stringify(changes[k].new))}`
+    : `<b>${escHtml(k)}</b>: ${escHtml(JSON.stringify(changes[k]))}`
   ).join(' · ');
   return `
     <details>
       <summary style="cursor:pointer;font-size:12px">${preview}${keys.length > 2 ? ` <span style="color:var(--muted)">+${keys.length - 2} más</span>` : ''}</summary>
-      <pre style="margin-top:6px;padding:8px;background:var(--card2);border-radius:6px;font-size:11px;white-space:pre-wrap;word-break:break-all">${JSON.stringify(changes, null, 2)}</pre>
+      <pre style="margin-top:6px;padding:8px;background:var(--card2);border-radius:6px;font-size:11px;white-space:pre-wrap;word-break:break-all">${escHtml(JSON.stringify(changes, null, 2))}</pre>
     </details>
   `;
 }
@@ -7294,7 +7298,7 @@ async function loadAuditoria(offset) {
     if (body) body.innerHTML = `
       <div style="text-align:center;padding:48px;color:var(--muted)">
         <div style="font-size:32px;margin-bottom:8px">🔒</div>
-        <div>No se pudo cargar la auditoría — ${e.message.includes('403') ? 'necesitás un perfil con alcance de todo el holding' : e.message}</div>
+        <div>No se pudo cargar la auditoría — ${escHtml(e.message.includes('403') ? 'necesitás un perfil con alcance de todo el holding' : e.message)}</div>
       </div>
     `;
   }
@@ -7322,10 +7326,10 @@ function renderAuditoriaBody() {
           ` : auditoriaList.map(a => `
             <tr style="border-bottom:1px solid var(--border)">
               <td style="padding:10px 8px;font-size:11px;color:var(--muted);white-space:nowrap">${a.created_at?.replace('T',' ').substring(0,19) || ''}</td>
-              <td style="padding:10px 8px;font-family:var(--font-mono);font-size:12px;color:var(--orange)">${a.table_name}</td>
-              <td style="padding:10px 8px;font-family:var(--font-mono);font-size:11px;color:var(--muted)" title="${a.record_id}">${a.record_id.substring(0,8)}…</td>
+              <td style="padding:10px 8px;font-family:var(--font-mono);font-size:12px;color:var(--orange)">${escHtml(a.table_name)}</td>
+              <td style="padding:10px 8px;font-family:var(--font-mono);font-size:11px;color:var(--muted)" title="${escHtml(a.record_id)}">${a.record_id.substring(0,8)}…</td>
               <td style="padding:10px 8px">${auditActionBadge(a.action)}</td>
-              <td style="padding:10px 8px;font-size:12px">${a.changed_by ? `${a.changed_by.name}<div style="font-size:10.5px;color:var(--muted)">${a.changed_by.email}</div>` : '<span style="color:var(--muted)">sistema</span>'}</td>
+              <td style="padding:10px 8px;font-size:12px">${a.changed_by ? `${escHtml(a.changed_by.name)}<div style="font-size:10.5px;color:var(--muted)">${escHtml(a.changed_by.email)}</div>` : '<span style="color:var(--muted)">sistema</span>'}</td>
               <td style="padding:10px 8px;font-size:12px;max-width:360px">${renderAuditChanges(a.changes)}</td>
             </tr>
           `).join('')}
@@ -7398,7 +7402,7 @@ async function openNegotiationPanel(routeId) {
     negotiationData = await apiGet(`/warehouse/routes/${routeId}/negotiation`);
     renderNegotiationPanel();
   } catch(e) {
-    document.getElementById('stopModalBody').innerHTML = `<div style="color:var(--red,#D85A30)">Error: ${e.message}</div>`;
+    document.getElementById('stopModalBody').innerHTML = `<div style="color:var(--red,#D85A30)">Error: ${escHtml(e.message)}</div>`;
   }
 }
 
@@ -7414,11 +7418,11 @@ function renderOfferRow(o) {
       <div style="flex:1">
         <div style="display:flex;justify-content:space-between;align-items:baseline">
           <span style="font-size:12px;font-weight:600;color:var(--white)">
-            ${o.offered_by === 'warehouse' ? 'Warehouse' : 'Transportista'} ${o.user_name ? '· '+o.user_name : ''}
+            ${o.offered_by === 'warehouse' ? 'Warehouse' : 'Transportista'} ${escHtml(o.user_name ? '· '+o.user_name : '')}
           </span>
           <span style="font-size:14px;font-weight:700;color:var(--orange)">${fmt$(o.amount)}</span>
         </div>
-        ${o.note ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">${o.note}</div>` : ''}
+        ${o.note ? `<div style="font-size:12px;color:var(--muted);margin-top:2px">${escHtml(o.note)}</div>` : ''}
         <div style="display:flex;gap:6px;align-items:center;margin-top:4px">
           <span style="font-size:10px;color:var(--muted)">${o.created_at?.replace('T',' ').substring(0,16)||''}</span>
           ${o.status==='pending'  ? '<span class="badge badge-orange" style="font-size:9px">Pendiente</span>' : ''}
@@ -7467,7 +7471,7 @@ function renderNegotiationPanel() {
       <div class="alert" style="background:rgba(255,159,10,.1);border:1px solid var(--orange);border-radius:8px;padding:12px;margin-bottom:16px">
         <div style="font-size:12px;color:var(--muted);margin-bottom:4px">En holding — pendiente de aprobación</div>
         <div style="font-size:14px;font-weight:600;color:var(--white)">
-          ${n.pending_holding_approval.transport_company_name || 'Transportista'} · ${fmt$(n.pending_holding_approval.amount)}
+          ${escHtml(n.pending_holding_approval.transport_company_name || 'Transportista')} · ${fmt$(n.pending_holding_approval.amount)}
         </div>
         <div id="negError" style="color:var(--red,#D85A30);font-size:13px;display:none;margin:8px 0"></div>
         <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="holdingApproveNegotiation()">✓ Aprobar (holding)</button>
@@ -7482,7 +7486,7 @@ function renderNegotiationPanel() {
 
     ${!isAccepted ? `
       <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:16px 0 8px">
-        Ofertas de transportistas (${n.threads.length})
+        Ofertas de transportistas (${escHtml(n.threads.length)})
       </div>
       <div style="max-height:220px;overflow-y:auto;margin-bottom:16px">
         ${n.threads.length === 0 ? `
@@ -7495,28 +7499,28 @@ function renderNegotiationPanel() {
               <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                 <div>
                   <div style="font-size:13px;font-weight:600;color:var(--white);display:flex;align-items:center;gap:6px">
-                    ${t.transport_company_name || 'Transportista'}
+                    ${escHtml(t.transport_company_name || 'Transportista')}
                     ${t.is_verified
                       ? '<span class="badge badge-green" style="font-size:9px">✓ Verificado</span>'
                       : '<span class="badge badge-muted" style="font-size:9px">Sin verificar</span>'}
                   </div>
                   <div style="font-size:10.5px;color:var(--muted)">
                     ★ ${t.avg_rating?.toFixed(1) ?? '—'} · ${t.on_time_pct != null ? t.on_time_pct.toFixed(0)+'% a tiempo' : 'sin historial'}
-                    · ${t.completed_routes ?? 0} completada${t.completed_routes===1?'':'s'}${t.rejected_routes ? ` · ${t.rejected_routes} rechazada${t.rejected_routes===1?'':'s'}` : ''}
+                    · ${escHtml(t.completed_routes ?? 0)} completada${t.completed_routes===1?'':'s'}${t.rejected_routes ? ` · ${t.rejected_routes} rechazada${t.rejected_routes===1?'':'s'}` : ''}
                     · ${t.routes_with_us ? `${t.routes_with_us} con nosotros` : 'nueva para nosotros'}
                   </div>
                 </div>
-                ${canSelect ? `<button class="btn btn-primary" style="font-size:12px" onclick="selectOffer('${t.transport_company_id}')">Seleccionar esta oferta</button>` : ''}
+                ${canSelect ? `<button class="btn btn-primary" style="font-size:12px" onclick="selectOffer(${jsArg(t.transport_company_id)})">Seleccionar esta oferta</button>` : ''}
               </div>
               <details style="margin-bottom:8px">
                 <summary style="cursor:pointer;font-size:11px;color:var(--muted)">Más información del transportista</summary>
                 <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.7">
-                  ${t.contact_name ? `Contacto: <span style="color:var(--white)">${t.contact_name}</span>${t.contact_phone ? ' · '+t.contact_phone : ''}<br>` : ''}
-                  ${t.city || t.state ? `Base de operación: <span style="color:var(--white)">${[t.city, t.state].filter(Boolean).join(', ')}</span><br>` : ''}
-                  ${t.dot_number ? `DOT: ${t.dot_number}<br>` : ''}
-                  ${t.mc_number ? `MC: ${t.mc_number}<br>` : ''}
-                  Rutas totales: ${t.total_routes ?? 0} · Completadas: ${t.completed_routes ?? 0} · Rechazadas: ${t.rejected_routes ?? 0}<br>
-                  Rutas con esta empresa: ${t.routes_with_us ?? 0}
+                  ${t.contact_name ? `Contacto: <span style="color:var(--white)">${escHtml(t.contact_name)}</span>${escHtml(t.contact_phone ? ' · '+t.contact_phone : '')}<br>` : ''}
+                  ${t.city || t.state ? `Base de operación: <span style="color:var(--white)">${escHtml([t.city, t.state].filter(Boolean).join(', '))}</span><br>` : ''}
+                  ${t.dot_number ? `DOT: ${escHtml(t.dot_number)}<br>` : ''}
+                  ${t.mc_number ? `MC: ${escHtml(t.mc_number)}<br>` : ''}
+                  Rutas totales: ${escHtml(t.total_routes ?? 0)} · Completadas: ${escHtml(t.completed_routes ?? 0)} · Rechazadas: ${escHtml(t.rejected_routes ?? 0)}<br>
+                  Rutas con esta empresa: ${escHtml(t.routes_with_us ?? 0)}
                 </div>
               </details>
               ${t.offers.map(renderOfferRow).join('')}
@@ -7836,7 +7840,7 @@ function updateVehicleOnMap(routeId, lat, lng, routeNumber) {
     });
     vehicleMarkers[routeId] = L.marker([lat, lng], { icon })
       .addTo(liveMapInstance)
-      .bindPopup(`<b>${routeNumber || routeId}</b><br>Posición en vivo`);
+      .bindPopup(`<b>${escHtml(routeNumber || routeId)}</b><br>Posición en vivo`);
     routePolylines[routeId] = L.polyline([[lat, lng]], { color: '#F47B20', weight: 2, opacity: 0.6 }).addTo(liveMapInstance);
     liveMapInstance.setView([lat, lng], 13);
   } else {
@@ -7848,7 +7852,7 @@ function updateVehicleOnMap(routeId, lat, lng, routeNumber) {
 
   const infoEl = document.getElementById('trackingInfo');
   if (infoEl) {
-    infoEl.innerHTML = `<strong style="color:var(--white)">${routeNumber || routeId}</strong> · ${lat.toFixed(5)}, ${lng.toFixed(5)} · ${new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
+    infoEl.innerHTML = `<strong style="color:var(--white)">${escHtml(routeNumber || routeId)}</strong> · ${lat.toFixed(5)}, ${lng.toFixed(5)} · ${new Date().toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
   }
 }
 

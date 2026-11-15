@@ -39,7 +39,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import bcrypt as _bcrypt
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import create_engine, text, select, update, func, delete as sa_delete
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -5033,6 +5033,18 @@ class IncidentCreate(BaseModel):
     title:             str
     description:       str
     evidence_urls:     list[str] = []
+
+    @field_validator("evidence_urls")
+    @classmethod
+    def _evidence_urls_http(cls, urls):
+        """Solo enlaces http(s): un 'javascript:' o 'data:' guardado aquí terminaría como href en los portales."""
+        if len(urls) > 20:
+            raise ValueError("Máximo 20 enlaces de evidencia")
+        for u in urls:
+            u = (u or "").strip()
+            if len(u) > 2000 or not (u.lower().startswith("http://") or u.lower().startswith("https://")):
+                raise ValueError("Los enlaces de evidencia deben empezar con http:// o https://")
+        return [u.strip() for u in urls]
 
 class IncidentResolve(BaseModel):
     status:            str   # "resolved" | "unresolved"

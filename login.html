@@ -94,6 +94,13 @@
 <script>
 const API_BASE = '/api/v1';
 
+// Escape de texto de terceros (p. ej. nombres de empresa) antes de armar HTML.
+function escHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+// Argumento de cadena seguro dentro de onclick="...": JSON + escape HTML.
+function jsArg(v) { return escHtml(JSON.stringify(String(v ?? ''))); }
+
 document.getElementById('loginPassword').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') handleLogin();
 });
@@ -208,15 +215,15 @@ function showCompanySelector(data) {
       <div style="width:36px;height:36px;border-radius:10px;background:#F47B20;display:flex;align-items:center;justify-content:center;font-size:18px">🏢</div>
       <div>
         <div style="font-size:15px;font-weight:600;color:var(--white, #F8FAFB)">Seleccioná una empresa</div>
-        <div style="font-size:12px;color:#8A8A8A">Tenés acceso a ${data.companies.length} compañías</div>
+        <div style="font-size:12px;color:#8A8A8A">Tenés acceso a ${escHtml(data.companies.length)} compañías</div>
       </div>
     </div>
     ${data.companies.map(c => `
-      <button onclick="selectCompany('${c.id}', '${c.name}', '${data.redirect}')"
+      <button onclick="selectCompany(${jsArg(c.id)}, ${jsArg(c.name)}, ${jsArg(data.redirect)})"
         style="width:100%;text-align:left;padding:14px 16px;background:#222;border:1px solid rgba(255,255,255,0.07);
                border-radius:10px;color:#fff;cursor:pointer;margin-bottom:8px;transition:border-color .15s"
         onmouseover="this.style.borderColor='#F47B20'" onmouseout="this.style.borderColor='rgba(255,255,255,0.07)'">
-        <div style="font-size:14px;font-weight:500">${c.name}</div>
+        <div style="font-size:14px;font-weight:500">${escHtml(c.name)}</div>
         <div style="font-size:11px;color:#8A8A8A;margin-top:2px">
           ${c.can_operate ? '✏️ Operación' : '👁 Solo lectura'}
           ${c.can_invoice ? ' · 💰 Facturación' : ''}

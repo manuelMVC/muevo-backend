@@ -103,6 +103,9 @@
 
 <script>
 const $ = id => document.getElementById(id);
+function escHtml(v) {
+  return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 try { document.documentElement.setAttribute('data-theme', localStorage.getItem('muevo_theme') || 'dark'); } catch (e) {}
 
 function showMsg(text, kind) { const m = $('msg'); m.textContent = text; m.className = 'msg ' + kind; m.hidden = false; window.scrollTo({ top: 0, behavior: 'smooth' }); }
@@ -126,7 +129,7 @@ function formatError(body) {
     const res = await fetch('/api/v1/service-types-public');
     const list = await res.json();
     $('modes').innerHTML = list.map(st => `
-      <label><input type="checkbox" value="${st.code}"> <span><strong>${st.name}</strong>${st.description ? ' <span class="hint">— ' + st.description + '</span>' : ''}</span></label>`).join('')
+      <label><input type="checkbox" value="${escHtml(st.code)}"> <span><strong>${escHtml(st.name)}</strong>${st.description ? ' <span class="hint">— ' + escHtml(st.description) + '</span>' : ''}</span></label>`).join('')
       || '<span class="hint">No hay servicios disponibles por ahora.</span>';
   } catch (e) {
     $('modes').innerHTML = '<span class="hint">No pudimos cargar los servicios. Recargá la página.</span>';
